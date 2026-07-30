@@ -1,0 +1,55 @@
+{
+  "name": "forest flythrough",
+  "layers": [
+    {
+      "generator": "ground_grid",
+      "params": {
+        "rails": 7,
+        "rungs": 16
+      }
+    },
+    {
+      "generator": "forest",
+      "params": {
+        "trees": 14,
+        "spread": 5.0
+      }
+    }
+  ],
+  "palette": [
+    "#0b3d0b",
+    "#2f8f4f",
+    "#0a1f3a"
+  ],
+  "modulation": [
+    {
+      "source": "lfo_mid",
+      "dest": "camera.speed",
+      "depth": 0.5,
+      "bias": 0.0
+    }
+  ],
+  "camera": {
+    "fov": 62,
+    "near": 0.4,
+    "far": 14.0,
+    "speed": 0.6,
+    "height": 1.0,
+    "max_strokes": 90,
+    "depth": {
+      "mode": "hue",
+      "near_color": [
+        0.3,
+        0.95,
+        0.5
+      ],
+      "far_color": [
+        0.08,
+        0.15,
+        0.5
+      ],
+      "ttl_quantize": false
+    }
+  },
+  "pps": null
+}

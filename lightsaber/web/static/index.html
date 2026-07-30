@@ -1,0 +1,2032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lightsaber</title>
+<link rel="icon" type="image/svg+xml" href="/static/lightsaber.svg">
+<style>
+  :root{
+    --bg:#0a0b0e; --panel:#121419; --panel2:#181b22; --line:#242833;
+    --ink:#e7eaf0; --dim:#8b93a4; --cyan:#33e0d0; --amber:#f2a623; --red:#ff4d4d;
+    --green:#2ecc71;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       font-size:14px;line-height:1.5}
+  header{display:flex;align-items:center;gap:14px;padding:12px 18px;
+         border-bottom:1px solid var(--line)}
+  header h1{margin:0;font-size:17px;font-weight:500;letter-spacing:.14em}
+  header .logo{width:26px;height:26px;flex-shrink:0}
+  header .dot{color:var(--cyan)}
+  .icon-btn{background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+            border-radius:8px;width:34px;height:34px;font-size:16px;cursor:pointer;
+            display:flex;align-items:center;justify-content:center}
+  .icon-btn:hover{border-color:var(--cyan)}
+  .api-status{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--dim)}
+
+  .modal-backdrop{position:fixed;inset:0;background:rgba(4,5,7,.7);
+    display:none;align-items:flex-start;justify-content:center;z-index:100;
+    padding:6vh 24px;overflow-y:auto}
+  .modal-backdrop.open{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    max-width:640px;width:100%;padding:20px;display:flex;flex-direction:column;gap:14px}
+  .modal-head{display:flex;align-items:center;justify-content:space-between}
+  .modal-head h2{margin:0;font-size:13px;font-weight:600;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink)}
+  .modal-close{background:none;border:none;color:var(--dim);font-size:22px;
+    cursor:pointer;padding:0 4px;line-height:1}
+  .modal-close:hover{color:var(--ink)}
+  header .meta{font-family:var(--mono);color:var(--dim);font-size:12px}
+  /* Page scrolls naturally (body, not per-panel scrollboxes) — a tall
+     Library or several open accordions push the page down instead of being
+     clipped inside a fixed-height box. */
+  main{display:flex;flex-direction:column}
+  .toprow{display:grid;grid-template-columns:minmax(200px,18%) minmax(0,1fr) minmax(182px,17%);gap:0;
+          min-height:720px;border-bottom:1px solid var(--line)}
+  @media(max-width:1100px){
+    .toprow{grid-template-columns:1fr;min-height:0}
+  }
+  .stage{padding:18px;display:flex;flex-direction:column;gap:14px;min-width:0;
+         align-items:center}
+  .sidecol{border-left:1px solid var(--line);background:var(--panel);padding:16px;
+           display:flex;flex-direction:column;gap:14px;min-width:0}
+  .filtercol{border-left:1px solid var(--line);background:var(--panel);padding:16px;
+             display:flex;flex-direction:column;gap:18px;min-width:0}
+  .disabled{opacity:.45;pointer-events:none}
+  /* Focused editing (2) — only Canvas + Shape settings, maximized. Header
+     stays hidden too (the exit control lives on #editor-fullscreen itself,
+     inside #g-canvas, which stays visible). */
+  body.editor-focused header,
+  body.editor-focused .stage,
+  body.editor-focused .filtercol,
+  body.editor-focused #acc-perf { display:none }
+  body.editor-focused .toprow{ grid-template-columns:1fr }
+  body.editor-focused .sidecol{ border-left:none }
+  body.editor-focused #cv-edit{ height:88vh }
+  .spinner{display:inline-block;width:13px;height:13px;border:2px solid rgba(4,33,31,.35);
+           border-top-color:#04211f;border-radius:50%;animation:spin .7s linear infinite;
+           vertical-align:middle}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  /* #cv-edit now fills the available column width and holds a fixed
+     min-height (3) — its backing buffer tracks that rendered box 1:1 (see
+     resizeEditorCanvas), independent of the canvas resolution's own aspect
+     ratio. The resolution's aspect is instead drawn as a letterboxed
+     "artboard" rect inside that box (see getEditorRect/paintCanvasEditor) —
+     background outside the artboard is a grid backdrop, drawn statically
+     (untransformed) so it always fills the widget regardless of zoom/pan. */
+  #cv-edit{width:100%;height:700px;min-height:700px;
+         background:#1b1e26;border:1px solid var(--line);border-radius:12px;
+         display:block}
+  .group{display:flex;flex-direction:column;gap:10px}
+  .group h2{margin:0;font-size:11px;font-weight:500;letter-spacing:.16em;
+            text-transform:uppercase;color:var(--dim)}
+  .field{display:flex;align-items:center;gap:10px;min-width:0}
+  .field label{flex:0 0 84px;font-size:12px;color:var(--dim)}
+  .field input[type=range]{flex:1;min-width:0;accent-color:var(--cyan);height:3px}
+  .field .val{flex:0 0 46px;text-align:right;font-family:var(--mono);
+              font-size:12px;color:var(--cyan)}
+  .row{display:flex;gap:8px}
+  label.flabel{font-size:11px;color:var(--dim);letter-spacing:.04em}
+  input[type=text],input[type=number],textarea{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);
+       color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13px;
+       font-family:var(--sans);resize:vertical}
+  textarea{width:100%;min-height:64px;line-height:1.4}
+  input[type=text]:focus,input[type=number]:focus,textarea:focus{outline:none;border-color:var(--cyan)}
+  select{background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+         border-radius:8px;padding:6px 8px;font-size:12px;font-family:var(--mono);
+         flex:0 0 auto}
+  .field select{flex:1}
+  select:focus{outline:none;border-color:var(--cyan)}
+  button{background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+         border-radius:8px;padding:8px 12px;font-size:13px;cursor:pointer}
+  button:hover{border-color:var(--cyan)}
+  button.go{background:var(--cyan);border-color:var(--cyan);color:#04211f;font-weight:500;
+            min-width:110px}
+  button.amber{border-color:var(--amber)}
+  button:disabled{opacity:.7;cursor:default}
+  .progress{width:100%;height:5px;border-radius:3px;background:var(--panel2);
+            overflow:hidden;display:none}
+  .progress.active{display:block}
+  .progress .bar{height:100%;background:var(--cyan);width:0%;
+                 transition:width .15s ease-out}
+  .lib{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));
+       gap:6px;align-content:start}
+  .lib .item{display:flex;align-items:center;justify-content:space-between;gap:6px;
+             padding:7px 10px;border:1px solid var(--line);border-radius:8px;
+             cursor:pointer;font-family:var(--mono);font-size:12px;min-width:0}
+  .lib .item span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lib .item:hover{border-color:var(--cyan)}
+  .lib .item.active{border-color:var(--cyan);background:rgba(51,224,208,.12)}
+  .lib .item.active span:first-child{color:var(--cyan)}
+  .diagrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-family:var(--mono);
+           font-size:11px;color:var(--dim)}
+  .diagrid b{color:var(--ink);font-weight:500}
+  .diagrid .bad{color:var(--amber)}
+  .underruns{max-height:100px;overflow-y:auto;font-family:var(--mono);font-size:10px;
+             color:var(--dim);display:flex;flex-direction:column;gap:2px}
+  .lib .item .x{color:var(--dim);padding:0 4px;cursor:pointer}
+  .lib .item .x:hover{color:var(--amber)}
+  .lib .item .plus{color:var(--dim);padding:0 4px;cursor:pointer}
+  .lib .item .plus:hover{color:var(--cyan)}
+  .hint{font-size:11px;color:var(--dim);font-family:var(--mono)}
+
+  /* Canvas editor (1a/1b/1c) — #cv-edit picks up the same square/black/
+     bordered look as #view from the generic canvas{} rule above; it draws
+     the same [-1,1] normalized space, just warped per polygon. */
+  #g-canvas .row{align-items:center}
+  /* Its own visually distinct card (1e/5) so it doesn't blend into the
+     plain .group flow around it — same panel2+border+radius language the
+     xfade indicator already uses elsewhere in this column. */
+  #g-sequencer{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--panel2)}
+  .seq-step{display:flex;align-items:center;gap:8px;padding:6px 8px;
+            border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+  .seq-step.active{border-color:var(--cyan)}
+  .seq-step.drag-over{border-color:var(--amber)}
+  .seq-step.dragging{opacity:.4}
+  .seq-step .drag-handle{cursor:grab;color:var(--dim)}
+  .seq-step select{flex:1}
+  .seq-step input[type=number]{width:56px;background:var(--panel2);border:1px solid var(--line);
+       color:var(--ink);border-radius:6px;padding:4px 6px;font-size:12px;font-family:var(--mono)}
+  .seq-step .x{cursor:pointer;color:var(--dim)}
+  .seq-step .x:hover{color:var(--amber)}
+
+  details.accordion{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  details.accordion summary{cursor:pointer;padding:10px 12px;font-size:11px;font-weight:500;
+    letter-spacing:.16em;text-transform:uppercase;color:var(--dim);list-style:none;
+    display:flex;align-items:center;justify-content:space-between;user-select:none}
+  details.accordion summary::-webkit-details-marker{display:none}
+  details.accordion summary::after{content:"▸";font-family:var(--mono);
+    transition:transform .15s;color:var(--dim)}
+  details.accordion[open] summary::after{transform:rotate(90deg)}
+  details.accordion .accordion-body{padding:0 12px 12px;display:flex;flex-direction:column;gap:10px}
+  details.accordion + details.accordion{margin-top:0}
+
+  .statusdot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--red);
+    box-shadow:0 0 6px var(--red);flex:0 0 auto}
+  .statusdot.on{background:var(--green);box-shadow:0 0 6px var(--green)}
+  .statushead{display:flex;align-items:center;gap:8px}
+
+  .global-buttons{display:flex;gap:8px;align-items:center;padding:4px 0 8px}
+
+  .xfade-indicator{display:flex;flex-direction:column;gap:6px;padding:8px 10px;
+    border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+  .xfade-labels{display:flex;justify-content:space-between;font-family:var(--mono);
+    font-size:11px;color:var(--dim)}
+  .xfade-labels.active{color:var(--ink)}
+  .xfade-labels span:last-child{color:var(--dim)}
+  .xfade-labels.active span:last-child{color:var(--cyan)}
+  .xfade-bar{position:relative;height:8px;border-radius:4px;background:var(--bg);
+    border:1px solid var(--line);overflow:hidden}
+  .xfade-glow{position:absolute;top:0;left:0;bottom:0;width:0%;border-radius:4px;
+    background:linear-gradient(90deg,var(--dim),var(--cyan));
+    box-shadow:0 0 10px 1px var(--cyan);transition:width .1s linear}
+</style>
+</head>
+<body>
+<header>
+  <img class="logo" src="/static/lightsaber.svg" alt="">
+  <h1>LIGHTSABER</h1>
+  <button class="icon-btn" id="settings-open" title="Settings">⚙</button>
+  <div class="api-status">
+    <span>Status:</span>
+    <span class="statusdot" id="engine-dot" title="backend engine websocket"></span>
+    <span>Engine</span>
+    <span class="statusdot" id="claude-dot" title="Claude API"></span>
+    <span>Claude API</span>
+  </div>
+  <span class="meta" id="meta">connecting…</span>
+  <span style="flex:1"></span>
+  <button id="output-toggle-1" title="Open a chrome-less output window to drag onto a projector or second screen">🖵 Output 1</button>
+  <button id="output-toggle-2" title="A second output window on the same live feed — independently flippable in Settings, for a second screen/projector">🖵 Output 2</button>
+  <button class="go" id="master-toggle" style="min-width:100px">▶ Start</button>
+</header>
+<main>
+ <div class="toprow">
+  <section class="stage">
+    <div class="group" id="g-project" style="width:100%">
+      <h2>Project</h2>
+      <div class="row">
+        <select id="project-select" style="flex:1"></select>
+        <button id="project-new" title="New project">✚</button>
+        <button id="project-save" title="Save">💾</button>
+        <button id="project-save-as" title="Save as…">💾+</button>
+        <button id="project-delete" title="Delete project">✕</button>
+      </div>
+      <div class="hint">a project owns its own canvases and sequence — scenes and uploaded media stay shared across every project</div>
+    </div>
+
+    <div class="group" id="g-shapes" style="width:100%">
+      <h2>Shapes</h2>
+      <div class="lib" id="shape-list"></div>
+      <div class="hint">click a shape to select it on the canvas</div>
+    </div>
+
+    <div class="group" id="g-input" style="width:100%">
+      <h2>Input</h2>
+      <details class="accordion" id="acc-input-scenelib">
+        <summary>Scene library</summary>
+        <div class="accordion-body">
+          <button class="go" id="gen-open" style="width:100%">Generate scene…</button>
+          <div class="lib" id="lib"></div>
+        </div>
+      </details>
+      <details class="accordion">
+        <summary>Webcam <span style="color:var(--dim);font-weight:400;text-transform:none;letter-spacing:0">(planned)</span></summary>
+        <div class="accordion-body"><div class="hint">not yet available</div></div>
+      </details>
+      <details class="accordion">
+        <summary>Text input <span style="color:var(--dim);font-weight:400;text-transform:none;letter-spacing:0">(planned)</span></summary>
+        <div class="accordion-body"><div class="hint">not yet available</div></div>
+      </details>
+      <details class="accordion" id="acc-input-media">
+        <summary>Local video / image files</summary>
+        <div class="accordion-body">
+          <div class="row">
+            <input type="file" id="media-file-input" multiple accept="image/*,video/*" style="flex:1">
+            <button id="media-upload-btn">Upload</button>
+          </div>
+          <div class="lib" id="media-list"></div>
+        </div>
+      </details>
+    </div>
+
+  </section>
+
+  <aside class="sidecol">
+    <div class="group" id="g-canvas">
+      <h2>Canvas</h2>
+      <div class="row">
+        <select id="canvas-select" style="flex:1"></select>
+        <button id="canvas-new" title="New canvas">✚</button>
+        <button id="canvas-save" title="Save">💾</button>
+        <button id="canvas-save-as" title="Save as…">💾+</button>
+        <button id="canvas-delete" title="Delete canvas">✕</button>
+      </div>
+      <div class="field"><label>size</label>
+        <input type="number" id="canvas-width" min="1" step="1" style="max-width:90px"> ×
+        <input type="number" id="canvas-height" min="1" step="1" style="max-width:90px"> px
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dim);flex:0 0 auto">
+          <input type="checkbox" id="canvas-freeze"> freeze playback</label>
+      </div>
+      <div class="row" style="align-items:center">
+        <button id="tool-select" class="amber" title="Select tool — drag shapes/corners">⇖ Select</button>
+        <button id="tool-hand" title="Hand tool — drag to pan">✋ Hand</button>
+        <span class="hint" style="flex:1">scroll to zoom · hold space (or Hand tool) + drag to pan</span>
+        <button id="editor-reset-view" title="Reset zoom/pan">⟲</button>
+        <button id="editor-fullscreen" title="Focused editing (fullscreen)">⛶</button>
+      </div>
+      <canvas id="cv-edit" width="640" height="360"></canvas>
+      <div class="row">
+        <button id="poly-add-btn">+ Add shape</button>
+      </div>
+      <div class="hint">click a shape to select it, drag its corners to distort · assign a scene from Shape settings below, or the "+" next to a scene in the library below</div>
+    </div>
+
+    <div class="group" id="g-shapesettings" style="display:none">
+      <h2>Shape settings</h2>
+      <div class="field"><label>name</label>
+        <input type="text" id="poly-label" placeholder="e.g. Left panel"></div>
+      <div class="field"><label>fill type</label>
+        <select id="poly-source-type">
+          <option value="scene">Scene</option>
+          <option value="media">Media</option>
+          <option value="knockout">Knockout</option>
+        </select></div>
+      <div class="field" id="poly-scene-field"><label>scene</label>
+        <select id="poly-scene"></select></div>
+      <div class="field" id="poly-media-field" style="display:none"><label>media</label>
+        <select id="poly-media"></select></div>
+      <div class="hint" id="poly-media-hint" style="display:none">images and videos loop automatically — drag corners same as a scene shape</div>
+      <div class="hint" id="poly-knockout-hint" style="display:none">a boolean cutout — solid, blocks the output wherever it overlaps other shapes (see z-index below). Not a quad: double-click an edge to add a point, double-click a point to remove it (min. 3)</div>
+      <div class="field" id="poly-opacity-field"><label>opacity</label>
+        <input type="range" id="poly-opacity" min="0" max="1" step="0.01" value="1">
+        <span class="val" id="v-polyopacity">1.00</span></div>
+      <div class="field" id="poly-fit-field"><label>fit</label>
+        <select id="poly-fit">
+          <option value="stretch">Stretch</option>
+          <option value="fit">Fit (letterbox)</option>
+          <option value="crop">Crop (fill)</option>
+        </select></div>
+      <div class="hint" id="poly-fit-hint">how the scene's own frame shape fits this shape's quad</div>
+      <div class="field" id="poly-clip-field"><label>clip shape</label>
+        <select id="poly-clip-shape">
+          <option value="">none</option>
+          <option value="circle">circle</option>
+          <option value="hexagon">hexagon</option>
+          <option value="triangle">triangle</option>
+          <option value="square">square</option>
+        </select></div>
+      <div class="field"><label>z-index</label>
+        <input type="range" id="poly-zindex" min="1" max="10" step="1" value="5">
+        <span class="val" id="v-polyzindex">5</span></div>
+      <div class="hint">paint order — 10 is furthest back, 1 is furthest front (in front of everything else)</div>
+      <button id="poly-delete" title="Delete this shape">✕ Delete shape</button>
+    </div>
+
+    <details class="accordion" id="acc-perf" closed>
+      <summary>Performance</summary>
+      <div class="accordion-body">
+        <div class="hint" id="perf-status">fps: —</div>
+        <div class="diagrid" id="perfstats"></div>
+        <div class="hint">"dropped" = ticks where render+output overran the frame budget — the direct measure of visible lag/stutter. "during fades" isolates that same count to ticks where a scene crossfade was rendering two full scenes at once.</div>
+        <div class="underruns" id="perf-drops"></div>
+        <div class="row"><button id="perf-copy">Copy diagnostics</button></div>
+      </div>
+    </details>
+
+
+  </aside>
+
+  <aside class="filtercol">
+    <div class="group" id="g-sequencer">
+      <h2>Sequencer</h2>
+      <div class="hint">plays saved canvases in order — this is the output for the monitor windows (🖵 Output 1/2)</div>
+      <div class="row"><button id="seq-add-current">+ Add current canvas</button></div>
+      <div id="seq-list" style="display:flex;flex-direction:column;gap:4px"></div>
+      <div class="row" style="align-items:center;gap:8px">
+        <button id="seq-prev" title="Previous step">⏮</button>
+        <button id="seq-playpause" title="Play/pause">⏵</button>
+        <button id="seq-next" title="Next step">⏭</button>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dim)">
+          <input type="checkbox" id="seq-loop" checked> loop</label>
+      </div>
+      <div class="xfade-indicator" id="seq-progress">
+        <div class="xfade-labels active">
+          <span id="seq-step-label">no steps</span>
+          <span id="seq-time-label">—</span>
+        </div>
+        <div class="xfade-bar"><div class="xfade-glow" id="seq-progress-glow"></div></div>
+      </div>
+    </div>
+
+    <div class="group" id="g-global">
+      <h2>Global</h2>
+      <div class="global-buttons">
+        <button id="disable-visuals">Disable Visuals</button>
+      </div>
+    </div>
+
+    <div class="group" id="g-monitor">
+      <h2>Monitor filters</h2>
+      <div class="hint">applies to the selected shape's monitor output — select a shape with a scene loaded to edit</div>
+      <div class="field"><label>glow</label>
+        <input type="range" id="mf-glow" min="0" max="1" step="0.01" value="0">
+        <span class="val" id="v-mfglow">0.00</span></div>
+      <div class="field"><label>trails</label>
+        <input type="range" id="mf-trail" min="0" max="0.95" step="0.01" value="0">
+        <span class="val" id="v-mftrail">0.00</span></div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="mf-mirror-x"> mirror x</label>
+        <label style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="mf-mirror-y"> mirror y</label>
+      </div>
+    </div>
+
+    <div class="group" id="g-motion">
+      <h2>Motion</h2>
+      <div class="hint">applies to the selected shape's scene</div>
+      <div class="field"><label>flow speed</label>
+        <input type="range" id="s-speed" min="0" max="0.6" step="0.01" value="0.2">
+        <span class="val" id="v-speed">0.20</span></div>
+      <div class="field"><label>turbulence</label>
+        <input type="range" id="s-turb" min="0" max="1" step="0.01" value="0.35">
+        <span class="val" id="v-turb">0.35</span></div>
+      <div class="field"><label>hue</label>
+        <input type="range" id="s-hue" min="0" max="1" step="0.01" value="0.55">
+        <span class="val" id="v-hue">0.55</span></div>
+    </div>
+
+    <div class="group" id="g-shapecamera">
+      <h2>Shape camera</h2>
+      <div class="hint">applies to the selected shape's scene (3D scenes only) — separate from the Camera group in column 1, which drives the single-scene preview</div>
+      <div class="field"><label>mode</label>
+        <select id="sc-mode">
+          <option value="orbit">orbit</option>
+          <option value="drift">drift</option>
+          <option value="fly">fly</option>
+        </select></div>
+      <div class="field"><label>speed</label>
+        <input type="range" id="sc-speed" min="0" max="2" step="0.05" value="0.6">
+        <span class="val" id="v-scspeed">0.60</span></div>
+      <div class="field"><label>orbit dist</label>
+        <input type="range" id="sc-radius" min="3" max="20" step="0.5" value="10">
+        <span class="val" id="v-scradius">10.0</span></div>
+      <div class="field"><label>field of view</label>
+        <input type="range" id="sc-fov" min="30" max="100" step="1" value="62">
+        <span class="val" id="v-scfov">62</span></div>
+      <div class="field"><label>draw depth</label>
+        <input type="range" id="sc-far" min="6" max="40" step="1" value="30">
+        <span class="val" id="v-scfar">30</span></div>
+      <div class="field"><label>max strokes</label>
+        <input type="range" id="sc-max" min="20" max="200" step="5" value="120">
+        <span class="val" id="v-scmax">120</span></div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim)">
+        <input type="checkbox" id="sc-disable-plane"> disable scene planes (if possible)
+      </label>
+    </div>
+  </aside>
+ </div>
+</main>
+
+<div class="modal-backdrop" id="modal-generate">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Generate scene</h2>
+      <button class="modal-close" id="gen-close">&times;</button>
+    </div>
+    <label class="flabel" for="scenename">name</label>
+    <input type="text" id="scenename" placeholder="e.g. Whale Song (optional — Claude names it if blank)">
+    <label class="flabel" for="kw">scene prompt</label>
+    <textarea id="kw" placeholder="exploring underwater with dozens of large jellyfish, long pink trailing tentacles, shafts of light from above…"></textarea>
+
+    <div class="field"><label>model</label>
+      <select id="d-model">
+        <option value="haiku">Haiku · fast/cheap</option>
+        <option value="sonnet">Sonnet · better</option>
+        <option value="opus">Opus · best</option>
+      </select></div>
+    <div class="field"><label>effort</label>
+      <select id="d-effort">
+        <option value="low">low</option>
+        <option value="med">medium</option>
+        <option value="high">high · richest</option>
+      </select></div>
+    <div class="field"><label>scene size</label>
+      <select id="d-size">
+        <option value="small" selected>small</option>
+        <option value="medium">medium</option>
+        <option value="large">large</option>
+      </select></div>
+    <div class="field"><label>frame shape</label>
+      <select id="d-aspect">
+        <option value="1:1" selected>1:1 (square)</option>
+        <option value="16:9">16:9 (widescreen)</option>
+        <option value="4:3">4:3 (standard)</option>
+      </select></div>
+    <div class="hint">bigger 3D environments to fly through — object/detail count is set by effort, not this. Frame shape is saved with the scene, so a shape can fit it to its own quad without distorting.</div>
+    <button class="go" id="gen">Generate</button>
+    <div class="progress" id="genprog"><div class="bar" id="genbar"></div></div>
+    <div class="hint" id="dirhint-modal">keyword → scene (added to the library)</div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-settings">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Settings</h2>
+      <button class="modal-close" id="settings-close">&times;</button>
+    </div>
+
+    <div class="group">
+      <h2 style="font-size:11px">Connection</h2>
+      <div class="row">
+        <input type="password" id="apikey" placeholder="ANTHROPIC_API_KEY (sk-…)">
+      </div>
+      <div class="row">
+        <button id="apisave">Save key</button>
+        <button id="apitest">Test connection</button>
+      </div>
+      <div class="hint" id="apistatus">director: —</div>
+    </div>
+
+    <div class="group">
+      <h2 style="font-size:11px">Scene complexity</h2>
+      <div class="field"><label>point budget</label>
+        <input type="text" inputmode="numeric" id="o-maxpps" value="20000" style="flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:6px 8px;font-size:12px;font-family:var(--mono)"></div>
+      <div class="hint">sent to Claude so generated scenes stay within a stroke-length budget it can actually author well — not a hardware/output setting.</div>
+    </div>
+
+    <div class="group">
+      <h2 style="font-size:11px">Diagnostics</h2>
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px">
+        <input type="checkbox" id="diag-enabled-toggle"> enable perf diagnostics
+      </label>
+      <div class="hint">turns off the render-loop timing instrumentation live, no relaunch needed — for isolating whether the instrumentation itself costs anything.</div>
+    </div>
+
+    <div class="group">
+      <h2 style="font-size:11px">Output monitors</h2>
+      <div class="hint">Output 1 and Output 2 (header buttons) show the same live composite feed. Flip reverses the whole image (no reflection, unlike a shape's own "mirror" override). Keystone here is independent per window — for when each screen is physically mounted/angled differently — display-only, never sent anywhere.</div>
+      <div class="field"><label>Output 1</label>
+        <label style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="out1-flip-x"> flip x</label>
+        <label style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="out1-flip-y"> flip y</label>
+      </div>
+      <div class="field"><label>Out 1 keystone</label>
+        <input type="range" id="out1-ks-h" min="-0.5" max="0.5" step="0.005" value="0">
+        <input type="range" id="out1-ks-v" min="-0.5" max="0.5" step="0.005" value="0"></div>
+      <div class="field"><label>Output 2</label>
+        <label style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="out2-flip-x"> flip x</label>
+        <label style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="out2-flip-y"> flip y</label>
+      </div>
+      <div class="field"><label>Out 2 keystone</label>
+        <input type="range" id="out2-ks-h" min="-0.5" max="0.5" step="0.005" value="0">
+        <input type="range" id="out2-ks-v" min="-0.5" max="0.5" step="0.005" value="0"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-saveas">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Save canvas as</h2>
+      <button class="modal-close" id="saveas-close">&times;</button>
+    </div>
+    <label class="flabel" for="saveas-name">name</label>
+    <input type="text" id="saveas-name" placeholder="e.g. Opening look">
+    <button class="go" id="saveas-confirm">Save</button>
+    <div class="hint">saves the current canvas (its shapes and scene assignments) into the canvas library under this new name</div>
+  </div>
+</div>
+
+<script>
+const ws = new WebSocket(`ws://${location.host}/ws`);
+const $ = id => document.getElementById(id);
+const send = o => ws.readyState === 1 && ws.send(JSON.stringify(o));
+
+ws.onopen = () => { $("meta").textContent = ""; $("engine-dot").classList.add("on"); };
+ws.onclose = () => { $("meta").textContent = ""; $("engine-dot").classList.remove("on"); };
+
+// dirhint is mirrored in two places: the compact hint under the "Generate
+// scene…" button, and the fuller one inside the Generate modal itself.
+const setDirhint = text => { $("dirhint-modal").textContent = text; };
+ws.onmessage = e => {
+  const m = JSON.parse(e.data);
+  if (m.type === "state") {
+    paintState(m.state);
+    _lastComposite = m.composite || [];
+    paintCanvasEditor();
+    updatePolyControlsGate();
+  }
+  else if (m.type === "generate_result") {
+    $("genbar").style.width = "100%";
+    setTimeout(endGen, 200);
+    $("scenename").value = "";
+    setDirhint(m.ok && m.source === "claude" ? "composed by Claude ✓ (added to canvas)"
+      : m.ok && m.source === "cache" ? "from cache ✓"
+      : "local fallback — " + (m.error || "no key"));
+    closeModal("modal-generate");
+    // No single active scene to "watch it land" in any more — put it
+    // straight onto the canvas as a new shape instead, auto-selected.
+    if (m.ok && m.name) { _pendingSelectNewPoly = true; send({type:"poly_add", scene:m.name}); }
+  }
+  else if (m.type === "api_result") {
+    const s = $("apistatus");
+    s.textContent = (m.ok ? "✔ " : "✖ ") + m.detail;
+    s.style.color = m.ok ? "var(--cyan)" : "var(--amber)";
+  }
+};
+
+function paintState(s){
+  _lastState = s;
+  $("meta").textContent = `v${s.version} · ${s.project || "no project"}`;
+  const mt = $("master-toggle");
+  mt.dataset.active = s.active ? "1" : "0";
+  mt.textContent = s.active ? "■ Stop" : "▶ Start";
+  mt.className = s.active ? "amber" : "go";
+  $("claude-dot").classList.toggle("on", !!s.director_online);
+  if (!$("d-model").dataset.init && s.director_choice) {
+    $("d-model").dataset.init = "1";
+    $("d-model").value = s.director_choice;
+    $("d-effort").value = s.director_effort || "med";
+  }
+  if (generating && typeof s.director_progress === "number") {
+    $("genbar").style.width = Math.max(2, Math.round(s.director_progress*100)) + "%";
+  }
+  setDirhint(s.director_online
+    ? "keyword → Claude scene spec (cached; ~1 call per new keyword)"
+    : "keyword → local scene (set a key to use Claude)");
+  if (s.director_source) {
+    if (s.director_source === "claude") setDirhint("last scene: composed by Claude ✓");
+    else if (s.director_source === "cache") setDirhint("last scene: from cache (Claude) ✓");
+    else setDirhint("last scene: local fallback — " + (s.director_error || "no key"));
+  }
+  const as = $("apistatus");
+  if (!as.dataset.touched)
+    as.textContent = s.director_online ? `director: ${s.director_model}` : "director: local (no key)";
+  const lib = $("lib");
+  if (lib.dataset.sig !== s.library.join(",")) {
+    lib.dataset.sig = s.library.join(",");
+    lib.innerHTML = "";
+    s.library.forEach(name => {
+      const el = document.createElement("div");
+      el.className = "item";
+      el.dataset.name = name;
+      el.innerHTML = `<span>${name}</span><span class="plus" title="Add to active canvas">+</span><span class="x">✕</span>`;
+      // No single active scene to "load" any more (2) — click assigns this
+      // scene to the selected shape, or adds a new shape with it if nothing's
+      // selected (same as "+", just the more discoverable default action).
+      el.querySelector("span:first-child").onclick = () => {
+        if (selectedPolyId) send({type:"poly_set", id:selectedPolyId, key:"scene", value:name});
+        else { _pendingSelectNewPoly = true; send({type:"poly_add", scene:name}); }
+      };
+      el.querySelector(".plus").onclick = ev => { ev.stopPropagation();
+        _pendingSelectNewPoly = true; send({type:"poly_add", scene:name}); };
+      el.querySelector(".x").onclick = ev => { ev.stopPropagation();
+        if (confirm(`Delete "${name}"?`)) send({type:"scene_delete",name}); };
+      lib.appendChild(el);
+    });
+  }
+  // highlight scenes currently in use somewhere on this canvas — separate
+  // from the rebuild above since the canvas can change without the
+  // library's name list changing.
+  const scenesInUse = new Set((s.canvas.polygons || []).map(p => p.scene).filter(Boolean));
+  lib.querySelectorAll(".item").forEach(el => {
+    el.classList.toggle("active", scenesInUse.has(el.dataset.name));
+  });
+  // max PPS (scene-generation complexity budget): reflect the persisted
+  // ceiling unless the user is actively editing
+  if (document.activeElement !== $("o-maxpps") && typeof s.max_pps === "number") {
+    $("o-maxpps").value = s.max_pps;
+  }
+  if (document.activeElement !== $("diag-enabled-toggle") && typeof s.diagnostics_enabled === "boolean") {
+    $("diag-enabled-toggle").checked = s.diagnostics_enabled;
+  }
+  updateDisableButtons(s);
+  if (document.activeElement !== $("canvas-freeze") && typeof s.frozen === "boolean") {
+    $("canvas-freeze").checked = s.frozen;
+  }
+  updateMediaPlayback();
+  syncProjectDoc(s);
+  syncCanvasDoc(s);
+  syncPolySceneOptions(s);
+  renderSequencer(s);
+  // Diagnostics off (default) hides this block entirely rather than leaving
+  // it open with a "disabled" message inside. renderPerf() still runs
+  // unconditionally either way — it's what drives the FPS readout under the
+  // visualiser (via LoopStats.tick(), always-on regardless of this toggle),
+  // it just skips its own detailed sub-panel when off.
+  const diagOn = s.diagnostics_enabled !== false;
+  $("acc-perf").style.display = diagOn ? "" : "none";
+  renderPerf(s);
+}
+
+function renderPerf(s){
+  const d = s.perf_diag;
+  const status = $("perf-status");
+  // The FPS readout comes from LoopStats.tick(), which runs every frame
+  // regardless of the diagnostics toggle (see perf.py) — only the fuller
+  // per-stage breakdown below needs the heavier instrumentation on.
+  if (!d || !d.ticks) {
+    status.textContent = "fps: — (not rendering — click Start)";
+    $("perfstats").innerHTML = "";
+    $("perf-drops").innerHTML = "";
+    return;
+  }
+  const diagOff = s.diagnostics_enabled === false;
+  // amber once we're meaningfully behind target FPS or dropping ticks —
+  // this is the at-a-glance version; the accordion below has the detail.
+  const short = d.target_fps - d.fps > 3 || (!diagOff && d.dropped_pct > 2);
+  if (diagOff) {
+    status.textContent = `fps: ${d.fps} (target ${d.target_fps}) · full diagnostics disabled in Settings`;
+    status.style.color = "var(--dim)";
+    $("perfstats").innerHTML = "";
+    $("perf-drops").innerHTML = "";
+    return;
+  }
+  status.textContent = `fps: ${d.fps} (target ${d.target_fps}) · ` +
+    `${d.dropped} dropped ticks (${d.dropped_pct}%)` +
+    (d.xfade_ticks ? ` · ${d.xfade_dropped}/${d.xfade_ticks} dropped during scene fades` : "");
+  status.style.color = short ? "var(--amber)" : "var(--dim)";
+  const g = $("perfstats");
+  g.innerHTML = `
+    <span>render (avg/max)</span><b>${d.avg_render_ms} / ${d.max_render_ms} ms</b>
+    <span>output (avg/max)</span><b>${d.avg_output_ms} / ${d.max_output_ms} ms</b>
+    <span>frame budget</span><b>${d.budget_ms} ms</b>
+    <span>tick interval (avg/max)</span><b class="${d.max_interval_ms > d.budget_ms*1.5 ? 'bad':''}">${d.avg_interval_ms} / ${d.max_interval_ms} ms</b>
+    <span>points (avg/max)</span><b>${d.avg_points} / ${d.max_points}</b>
+    <span>dropped ticks</span><b class="${d.dropped_pct>2?'bad':''}">${d.dropped} (${d.dropped_pct}%)</b>
+  `;
+  const u = $("perf-drops");
+  if ((d.recent_drops||[]).length){
+    u.innerHTML = "recent dropped ticks:<br>" + d.recent_drops.slice(-10).reverse()
+      .map(e => `t+${e.t}s: +${e.over_ms}ms over budget${e.crossfade ? " (during scene fade)" : ""}`).join("<br>");
+  } else {
+    u.innerHTML = "no dropped ticks yet";
+  }
+}
+$("perf-copy").onclick = async () => {
+  const payload = JSON.stringify({
+    perf_diag: _lastState?.perf_diag,
+    project: _lastState?.project,
+    canvas: _lastState?.canvas?.name,
+    n_shapes: _lastState?.canvas?.polygons?.length,
+  }, null, 2);
+  try { await navigator.clipboard.writeText(payload);
+    $("perf-copy").textContent = "copied!"; setTimeout(()=>$("perf-copy").textContent="Copy diagnostics", 1500);
+  } catch(e) { $("perf-copy").textContent = "copy failed"; }
+};
+let _lastState = null;
+
+// ===================================================================
+// Canvas / polygon editor + sequencer — the renderer. Draws whatever the
+// server's composite payload contains (one live Scene per polygon, each
+// warped into that polygon's quad) onto its own canvas, #cv-edit.
+// ===================================================================
+const CSS_VAR = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const COLOR_CYAN = CSS_VAR("--cyan") || "#33e0d0";
+const COLOR_AMBER = CSS_VAR("--amber") || "#f2a623";
+
+let _lastComposite = [];      // last composite payload (per-polygon strokes) from the server
+let _canvasDoc = null;        // last engine.state().canvas — authoritative polygon geometry/assignment
+let selectedPolyId = null;
+let _pendingSelectNewPoly = false;   // set before poly_add, so the newly-created polygon auto-selects
+
+// unit-square [-1,1]->quad homography (Heckbert's standard mapping, source
+// corners implicitly (u,v) = (0,0)/(1,0)/(1,1)/(0,1) matching corners[0..3]
+// = TL/TR/BR/BL) — same idea as the existing per-point keystone warp, just
+// a full 4-corner projective map instead of a 2-parameter bilinear one.
+function homography(corners){
+  const [[x0,y0],[x1,y1],[x2,y2],[x3,y3]] = corners;
+  const dx1=x1-x2, dy1=y1-y2, dx2=x3-x2, dy2=y3-y2;
+  const sx=x0-x1+x2-x3, sy=y0-y1+y2-y3;
+  const den = dx1*dy2 - dx2*dy1;
+  const g = den ? (sx*dy2 - dx2*sy)/den : 0;
+  const h = den ? (dx1*sy - sx*dy1)/den : 0;
+  return {
+    a: x1-x0+g*x1, b: x3-x0+h*x3, c: x0,
+    d: y1-y0+g*y1, e: y3-y0+h*y3, f: y0,
+    g, h,
+  };
+}
+function applyHomography(H, gx, gy){
+  const u = (gx+1)/2, v = (1-gy)/2;
+  const W = H.g*u + H.h*v + 1;
+  const X = H.a*u + H.b*v + H.c;
+  const Y = H.d*u + H.e*v + H.f;
+  return W ? [X/W, Y/W] : [X, Y];
+}
+// normToPx/pxToNorm map normalized [-1,1] generator space to/from screen
+// pixels within a `rect` (the letterboxed "artboard" — see getEditorRect) —
+// NOT the full #cv-edit widget, which is generally larger/differently
+// shaped once (3) decoupled the widget's own box from the canvas
+// resolution's aspect ratio.
+function normToPx(x, y, rect){ return [rect.x + (x*0.5+0.5)*rect.w, rect.y + (0.5-y*0.5)*rect.h]; }
+function pxToNorm(px, py, rect){ return [((px-rect.x)/rect.w-0.5)*2, (0.5-(py-rect.y)/rect.h)*2]; }
+
+// Shape fit (1): a scene's own frame shape (SceneSpec.aspect, e.g. "16:9")
+// vs. the polygon's own on-screen aspect once dragged — without this,
+// content just stretches to fill whatever quad shape it's in. "fit" shrinks
+// the mapped range (always stays within [-1,1], never needs clipping);
+// "crop" zooms the source range instead, which can push points outside
+// [-1,1] — callers doing "crop" without a clip shape must clip to the
+// quad's own path (see paintCanvasEditor).
+function parseAspectRatio(str){
+  const m = /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/.exec(String(str||"").trim());
+  if (!m) return 1;
+  const w = parseFloat(m[1]), h = parseFloat(m[2]);
+  return h > 0 ? w/h : 1;
+}
+function quadAspect(corners, rect){
+  const pts = corners.map(c => normToPx(c[0], c[1], rect));
+  const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
+  const qw = Math.max(...xs)-Math.min(...xs), qh = Math.max(...ys)-Math.min(...ys);
+  return qh > 0 ? qw/qh : 1;
+}
+function fitPoint(gx, gy, mode, ca, qa){
+  if (mode === "fit"){
+    return ca >= qa ? [gx, gy * (qa/ca)] : [gx * (ca/qa), gy];
+  }
+  if (mode === "crop"){
+    return ca >= qa ? [gx * (ca/qa), gy] : [gx, gy * (qa/ca)];
+  }
+  return [gx, gy];   // "stretch" — unchanged, the original always-distort behaviour
+}
+function clipToQuadPath(ctx, corners, rect){
+  ctx.beginPath();
+  corners.forEach((c,i) => { const [px,py]=normToPx(c[0],c[1],rect); i?ctx.lineTo(px,py):ctx.moveTo(px,py); });
+  ctx.closePath();
+  ctx.clip();
+}
+
+const cvEdit = $("cv-edit"), cvCtx = cvEdit.getContext("2d");
+
+// Draws one polygon's warped strokes (incl. glow) into `ctx` — either the
+// visible canvas directly, or a to-be-clipped context (see
+// drawClippedStrokes below).
+function drawWarpedStrokes(ctx, rect, layer, H, opacity, fitMode, ca, qa){
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  const glowPx = (layer.glow||0) * Math.min(rect.w,rect.h) * 0.05;
+  layer.strokes.forEach(st => {
+    const [r,g,b] = st.c;
+    const col = `rgb(${r*255|0},${g*255|0},${b*255|0})`;
+    ctx.strokeStyle = col;
+    ctx.shadowBlur = glowPx > 0 ? glowPx : 0;
+    ctx.shadowColor = col;
+    ctx.lineWidth = 1.4; ctx.lineJoin = "round";
+    ctx.beginPath();
+    st.p.forEach((pt,i) => {
+      let [gx,gy] = pt;
+      if (layer.mirror_x) gx = -gx;
+      if (layer.mirror_y) gy = -gy;
+      [gx,gy] = fitPoint(gx, gy, fitMode, ca, qa);
+      const [wx,wy] = applyHomography(H, gx, gy);
+      const [px,py] = normToPx(wx,wy,rect);
+      i ? ctx.lineTo(px,py) : ctx.moveTo(px,py);
+    });
+    ctx.stroke();
+  });
+  ctx.restore();
+}
+
+function polygonBBoxPx(corners, rect){
+  const pts = corners.map(c => normToPx(c[0], c[1], rect));
+  const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
+  return {
+    cx: (Math.min(...xs)+Math.max(...xs))/2, cy: (Math.min(...ys)+Math.max(...ys))/2,
+    rx: Math.max(1,(Math.max(...xs)-Math.min(...xs))/2), ry: Math.max(1,(Math.max(...ys)-Math.min(...ys))/2),
+  };
+}
+function clipShapePath(ctx, shape, cx, cy, rx, ry){
+  ctx.beginPath();
+  if (shape === "circle") {
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2);
+  } else if (shape === "square") {
+    ctx.rect(cx-rx, cy-ry, rx*2, ry*2);
+  } else if (shape === "triangle") {
+    ctx.moveTo(cx, cy-ry); ctx.lineTo(cx+rx, cy+ry); ctx.lineTo(cx-rx, cy+ry); ctx.closePath();
+  } else if (shape === "hexagon") {
+    for (let i=0;i<6;i++){
+      const a = -Math.PI/2 + i*Math.PI/3;
+      const x = cx+rx*Math.cos(a), y = cy+ry*Math.sin(a);
+      i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    }
+    ctx.closePath();
+  }
+}
+// Clip (4): hard-edged only — Canvas 2D's own clip() does exactly this, no
+// offscreen canvas/blur needed. Used to support a soft/feathered edge (fill
+// the clip shape through a CSS blur filter, composite the content through
+// it with "source-in") but that was expensive enough to visibly stall the
+// render loop with more than a couple of clipped shapes on screen.
+function drawClippedStrokes(ctx, poly, layer, H, rect, opacity, fitMode, ca, qa){
+  const {cx, cy, rx, ry} = polygonBBoxPx(poly.corners, rect);
+  ctx.save();
+  clipShapePath(ctx, poly.clip_shape, cx, cy, rx, ry);
+  ctx.clip();
+  drawWarpedStrokes(ctx, rect, layer, H, opacity, fitMode, ca, qa);
+  ctx.restore();
+}
+
+// Knockout fill type (2/3) — not to be confused with the Clip Shape above:
+// this is a whole polygon whose "content" is just an opaque black fill, with no
+// scene/media of its own, purely there to blank out whatever it overlaps
+// (paint order controlled by z-index — see drawZBadge/paintCanvasEditor).
+// Drawn straight from the polygon's own corners: no homography warp, since
+// there's no [-1,1] generator content being mapped into a quad here, just
+// screen-space geometry — and no fixed point count either (see
+// hitTestEdge/the dblclick handler for add/remove-point editing).
+function drawKnockoutFill(ctx, poly, rect, opacity){
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  ctx.fillStyle = "#000";
+  ctx.beginPath();
+  poly.corners.forEach((c,i) => { const [px,py]=normToPx(c[0],c[1],rect); i?ctx.lineTo(px,py):ctx.moveTo(px,py); });
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// Z-index indicator (3) — small always-on badge near each shape's top-left
+// corner so stacking order is visible at a glance without opening Shape
+// settings for every shape.
+function drawZBadge(ctx, poly, rect){
+  const pts = poly.corners.map(c => normToPx(c[0], c[1], rect));
+  const minX = Math.min(...pts.map(p=>p[0])), minY = Math.min(...pts.map(p=>p[1]));
+  const label = String(poly.z_index ?? 5);
+  ctx.save();
+  ctx.font = "11px " + CSS_VAR("--mono");
+  const tw = ctx.measureText(label).width;
+  ctx.fillStyle = "rgba(0,0,0,.7)";
+  ctx.fillRect(minX+4, minY+4, tw+8, 16);
+  ctx.fillStyle = "#e7eaf0";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, minX+8, minY+12);
+  ctx.restore();
+}
+
+// Media shapes — an uploaded image/video, warped into its quad the same way
+// a scene's strokes are (same homography, same fit/crop/clip system), just
+// drawn as a raster instead of vector strokes.
+//
+// Playback (perf): videos load with autoplay OFF — 'loadeddata' alone
+// decodes frame 0, enough for a static preview, without spending any CPU on
+// an actual playing decode loop while you're just editing. updateMediaPlayback
+// (called from paintState, ~20Hz) starts/stops every loaded video together,
+// keyed off the master Start/Stop + freeze state, same as vector scenes
+// freezing their own clock — so nothing actually plays until you hit Start,
+// and freeze pauses it again without unloading anything.
+const _mediaEls = new Map();   // filename -> {el, kind, ready, frameCanvas?, frameCtx?}
+const _MEDIA_VIDEO_EXT = new Set(["mp4","mov","webm","m4v"]);
+function getMediaEl(name){
+  let m = _mediaEls.get(name);
+  if (m) return m;
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  const kind = _MEDIA_VIDEO_EXT.has(ext) ? "video" : "image";
+  let el;
+  if (kind === "video"){
+    el = document.createElement("video");
+    el.loop = true; el.muted = true; el.playsInline = true; el.preload = "auto";
+    el.src = `/media-files/${encodeURIComponent(name)}`;
+    el.addEventListener("loadeddata", () => { m.ready = true; });
+  } else {
+    el = new Image();
+    el.addEventListener("load", () => { m.ready = true; });
+    el.src = `/media-files/${encodeURIComponent(name)}`;
+  }
+  m = {el, kind, ready: false};
+  _mediaEls.set(name, m);
+  return m;
+}
+function mediaAspect(m){
+  const w = m.kind === "video" ? m.el.videoWidth : m.el.naturalWidth;
+  const h = m.kind === "video" ? m.el.videoHeight : m.el.naturalHeight;
+  return (w && h) ? w / h : 1;
+}
+// Starts/stops every loaded video together — called from paintState, so it
+// tracks the master Start/Stop + freeze state without any per-shape wiring.
+// Guarded by .paused so idempotent repeated calls (every ~20Hz state tick)
+// don't spam play()/pause() on an already-correct element.
+function updateMediaPlayback(){
+  const shouldPlay = !!(_lastState && _lastState.active && !_lastState.frozen);
+  for (const m of _mediaEls.values()){
+    if (m.kind !== "video") continue;
+    if (shouldPlay && m.el.paused) m.el.play().catch(() => {});
+    else if (!shouldPlay && !m.el.paused) m.el.pause();
+  }
+}
+// The actual perf fix (1): a <video> element is expensive to draw from
+// repeatedly — each drawImage(video,...) call can force a fresh frame
+// grab/colour-conversion — and the triangle mesh below needs up to ~70 draws
+// per shape per repaint. Grabbing the live frame into a small offscreen
+// canvas ONCE per repaint, then feeding every triangle from that canvas
+// instead, turns ~70 expensive video reads into 1, which is what made
+// several video shapes playing at once bring the editor to a crawl. Images
+// are already a plain decoded bitmap — cheap to redraw from directly, no
+// cache needed.
+function getMediaFrame(m){
+  if (m.kind !== "video") return m.el;
+  const vw = m.el.videoWidth || 1, vh = m.el.videoHeight || 1;
+  if (!m.frameCanvas){ m.frameCanvas = document.createElement("canvas"); m.frameCtx = m.frameCanvas.getContext("2d"); }
+  if (m.frameCanvas.width !== vw || m.frameCanvas.height !== vh){ m.frameCanvas.width = vw; m.frameCanvas.height = vh; }
+  m.frameCtx.drawImage(m.el, 0, 0, vw, vh);
+  return m.frameCanvas;
+}
+// Canvas 2D's ctx.transform is affine-only, so a true projective warp
+// (needed once a quad's corners aren't a parallelogram) is approximated by
+// subdividing into a fine triangle mesh, each warped by its own local
+// affine transform (standard "canvas texture-mapping" technique). Grid
+// resolution is a quality/cost tradeoff; 6 is smooth enough for typical
+// corner drags. The fast path below (2) skips this entirely for the common
+// case — an un-distorted or uniformly-stretched quad only needs ONE affine
+// transform for the whole image, exactly (not an approximation), since
+// fitPoint's own scaling is itself affine and composes cleanly with it.
+const MEDIA_WARP_GRID = 6;
+function isParallelogram(corners, eps=1e-3){
+  const [[x0,y0],[x1,y1],[x2,y2],[x3,y3]] = corners;
+  return Math.abs((x0+x2)-(x1+x3)) < eps && Math.abs((y0+y2)-(y1+y3)) < eps;
+}
+function affineTriangle(sx0,sy0, sx1,sy1, sx2,sy2, dx0,dy0, dx1,dy1, dx2,dy2){
+  const D = sx0*(sy1-sy2) + sx1*(sy2-sy0) + sx2*(sy0-sy1);
+  if (!D) return null;
+  return {
+    a: (dx0*(sy1-sy2) + dx1*(sy2-sy0) + dx2*(sy0-sy1)) / D,
+    b: (dy0*(sy1-sy2) + dy1*(sy2-sy0) + dy2*(sy0-sy1)) / D,
+    c: (dx0*(sx2-sx1) + dx1*(sx0-sx2) + dx2*(sx1-sx0)) / D,
+    d: (dy0*(sx2-sx1) + dy1*(sx0-sx2) + dy2*(sx1-sx0)) / D,
+    e: (dx0*(sx1*sy2-sx2*sy1) + dx1*(sx2*sy0-sx0*sy2) + dx2*(sx0*sy1-sx1*sy0)) / D,
+    f: (dy0*(sx1*sy2-sx2*sy1) + dy1*(sx2*sy0-sx0*sy2) + dy2*(sx0*sy1-sx1*sy0)) / D,
+  };
+}
+function drawWarpedTriangle(ctx, img, s0,s1,s2, d0,d1,d2){
+  const T = affineTriangle(s0[0],s0[1], s1[0],s1[1], s2[0],s2[1], d0[0],d0[1], d1[0],d1[1], d2[0],d2[1]);
+  if (!T) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(d0[0],d0[1]); ctx.lineTo(d1[0],d1[1]); ctx.lineTo(d2[0],d2[1]); ctx.closePath();
+  ctx.clip();
+  ctx.transform(T.a, T.b, T.c, T.d, T.e, T.f);
+  ctx.drawImage(img, 0, 0);
+  ctx.restore();
+}
+// Grid points are laid out in the SAME raw (pre-fit) [-1,1] generator space
+// vector strokes use — the image is treated as if it already fills that
+// full square, exactly parallel to how fitPoint treats vector content, so
+// the same fit/crop/stretch maths apply unmodified.
+function drawMediaWarped(ctx, rect, H, corners, img, iw, ih, opacity, fitMode, ca, qa){
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  if (isParallelogram(corners)){
+    const uv = [[-1,1],[1,1],[-1,-1]];   // TL, TR, BL — a parallelogram's 4th corner is implied by the other 3
+    const s = uv.map(([gx,gy]) => [(gx*0.5+0.5)*iw, (0.5-gy*0.5)*ih]);
+    const d = uv.map(([gx,gy]) => {
+      const [fgx,fgy] = fitPoint(gx, gy, fitMode, ca, qa);
+      const [wx,wy] = applyHomography(H, fgx, fgy);
+      return normToPx(wx, wy, rect);
+    });
+    const T = affineTriangle(s[0][0],s[0][1], s[1][0],s[1][1], s[2][0],s[2][1], d[0][0],d[0][1], d[1][0],d[1][1], d[2][0],d[2][1]);
+    if (T){
+      ctx.beginPath();
+      corners.forEach((c,i) => { const [px,py]=normToPx(c[0],c[1],rect); i?ctx.lineTo(px,py):ctx.moveTo(px,py); });
+      ctx.closePath();
+      ctx.clip();
+      ctx.transform(T.a, T.b, T.c, T.d, T.e, T.f);
+      ctx.drawImage(img, 0, 0);
+    }
+    ctx.restore();
+    return;
+  }
+  const N = MEDIA_WARP_GRID;
+  const dst = [], src = [];
+  for (let j=0;j<=N;j++){
+    const drow = [], srow = [];
+    for (let i=0;i<=N;i++){
+      const gx = (i/N)*2-1, gy = 1-(j/N)*2;
+      srow.push([(gx*0.5+0.5)*iw, (0.5-gy*0.5)*ih]);
+      const [fgx,fgy] = fitPoint(gx, gy, fitMode, ca, qa);
+      const [wx,wy] = applyHomography(H, fgx, fgy);
+      drow.push(normToPx(wx, wy, rect));
+    }
+    dst.push(drow); src.push(srow);
+  }
+  for (let j=0;j<N;j++){
+    for (let i=0;i<N;i++){
+      drawWarpedTriangle(ctx, img, src[j][i], src[j][i+1], src[j+1][i], dst[j][i], dst[j][i+1], dst[j+1][i]);
+      drawWarpedTriangle(ctx, img, src[j][i+1], src[j+1][i+1], src[j+1][i], dst[j][i+1], dst[j+1][i+1], dst[j+1][i]);
+    }
+  }
+  ctx.restore();
+}
+// Dispatches a media-fill-type polygon's draw, mirroring the scene
+// dispatch's clip/crop handling in paintCanvasEditor below.
+function drawPolyMedia(ctx, poly, rect, gain){
+  if (!poly.media) return;
+  const m = getMediaEl(poly.media);
+  if (!m.ready) return;
+  const img = getMediaFrame(m);
+  const H = homography(poly.corners);
+  const opacity = poly.opacity * gain;
+  const fitMode = poly.fit || "stretch";
+  const ca = mediaAspect(m), qa = quadAspect(poly.corners, rect);
+  const iw = m.kind === "video" ? m.el.videoWidth : m.el.naturalWidth;
+  const ih = m.kind === "video" ? m.el.videoHeight : m.el.naturalHeight;
+  if (poly.clip_shape){
+    const {cx, cy, rx, ry} = polygonBBoxPx(poly.corners, rect);
+    ctx.save();
+    clipShapePath(ctx, poly.clip_shape, cx, cy, rx, ry);
+    ctx.clip();
+    drawMediaWarped(ctx, rect, H, poly.corners, img, iw, ih, opacity, fitMode, ca, qa);
+    ctx.restore();
+  } else if (fitMode === "crop"){
+    ctx.save();
+    clipToQuadPath(ctx, poly.corners, rect);
+    drawMediaWarped(ctx, rect, H, poly.corners, img, iw, ih, opacity, fitMode, ca, qa);
+    ctx.restore();
+  } else {
+    drawMediaWarped(ctx, rect, H, poly.corners, img, iw, ih, opacity, fitMode, ca, qa);
+  }
+}
+
+// The "artboard" (3): #cv-edit's own box (w×h, set by resizeEditorCanvas to
+// match its rendered CSS size) is generally NOT the same aspect ratio as the
+// canvas's own resolution — this letterboxes the resolution's aspect as a
+// rect centred inside that box, as large as it can be ("object-fit:
+// contain"). All content drawing/hit-testing happens in this rect's space
+// (via normToPx/pxToNorm), never the full w×h box.
+function getEditorRect(){
+  const w = cvEdit.width, h = cvEdit.height;
+  const cw = (_canvasDoc && _canvasDoc.width) || 1920, ch = (_canvasDoc && _canvasDoc.height) || 1080;
+  const scale = Math.min(w / cw, h / ch);
+  const rw = cw * scale, rh = ch * scale;
+  return {x: (w - rw) / 2, y: (h - rh) / 2, w: rw, h: rh};
+}
+
+function paintCanvasEditor(){
+  const w = cvEdit.width, h = cvEdit.height;
+  const rect = getEditorRect();
+  cvCtx.setTransform(1,0,0,1,0,0);
+  cvCtx.shadowBlur = 0; cvCtx.globalCompositeOperation = "source-over";
+  // Grid backdrop (3) — the area outside the actual canvas/artboard, drawn
+  // untransformed so it always fills the widget regardless of zoom/pan (an
+  // "infinite background" behind the artboard, same convention as design
+  // tools like Figma).
+  cvCtx.fillStyle = "#1b1e26"; cvCtx.fillRect(0,0,w,h);
+  cvCtx.strokeStyle = "rgba(255,255,255,.05)"; cvCtx.lineWidth = 1;
+  cvCtx.beginPath();
+  for (let x=0;x<=w;x+=24){ cvCtx.moveTo(x+0.5,0); cvCtx.lineTo(x+0.5,h); }
+  for (let y=0;y<=h;y+=24){ cvCtx.moveTo(0,y+0.5); cvCtx.lineTo(w,y+0.5); }
+  cvCtx.stroke();
+  cvCtx.save();
+  cvCtx.translate(rect.x + rect.w/2 + _view.panX, rect.y + rect.h/2 + _view.panY);
+  cvCtx.scale(_view.zoom, _view.zoom);
+  cvCtx.translate(-(rect.x + rect.w/2), -(rect.y + rect.h/2));
+  // The artboard itself — actual canvas/output area, true black, with a
+  // bounding box (3) so it's clear where the real canvas ends and the grid
+  // backdrop begins.
+  cvCtx.fillStyle = "#000"; cvCtx.fillRect(rect.x, rect.y, rect.w, rect.h);
+  cvCtx.strokeStyle = "rgba(51,224,208,.35)"; cvCtx.lineWidth = 1;
+  cvCtx.strokeRect(rect.x+0.5, rect.y+0.5, rect.w-1, rect.h-1);
+  // Paint order (3): highest z-index first (furthest back), lowest last
+  // (furthest front) — so e.g. a low-numbered "knockout" cutout shape ends up
+  // drawn on top of whatever it should blank out.
+  const polys = [...((_canvasDoc && _canvasDoc.polygons) || [])]
+    .sort((a, b) => (b.z_index ?? 5) - (a.z_index ?? 5));
+  const gain = _lastState?.master_gain ?? 1;
+  polys.forEach(poly => {
+    const isKnockout = poly.source_type === "knockout";
+    const isMedia = poly.source_type === "media";
+    const layer = (isKnockout || isMedia) ? null : _lastComposite.find(l => l.id === poly.id);
+    if (isKnockout){
+      drawKnockoutFill(cvCtx, poly, rect, poly.opacity * gain);
+    } else if (isMedia){
+      drawPolyMedia(cvCtx, poly, rect, gain);
+    } else if (layer && layer.strokes && layer.strokes.length){
+      const H = homography(poly.corners);
+      const opacity = poly.opacity * gain;
+      const fitMode = poly.fit || "stretch";
+      const ca = parseAspectRatio(layer.aspect), qa = quadAspect(poly.corners, rect);
+      if (poly.clip_shape) {
+        drawClippedStrokes(cvCtx, poly, layer, H, rect, opacity, fitMode, ca, qa);
+      } else if (fitMode === "crop") {
+        // Unclipped crop needs an explicit clip — zoomed content can spill
+        // past the quad's own edges otherwise.
+        cvCtx.save();
+        clipToQuadPath(cvCtx, poly.corners, rect);
+        drawWarpedStrokes(cvCtx, rect, layer, H, opacity, fitMode, ca, qa);
+        cvCtx.restore();
+      } else {
+        drawWarpedStrokes(cvCtx, rect, layer, H, opacity, fitMode, ca, qa);
+      }
+    }
+    cvCtx.save();
+    cvCtx.shadowBlur = 0; cvCtx.globalAlpha = 1;
+    cvCtx.strokeStyle = poly.id === selectedPolyId ? COLOR_CYAN
+      : isKnockout ? "rgba(255,120,120,.5)"
+      : (isMedia ? !poly.media : layer && layer.missing) ? COLOR_AMBER : "rgba(255,255,255,.25)";
+    cvCtx.lineWidth = poly.id === selectedPolyId ? 2 : 1;
+    cvCtx.beginPath();
+    poly.corners.forEach((c,i) => { const [px,py]=normToPx(c[0],c[1],rect); i?cvCtx.lineTo(px,py):cvCtx.moveTo(px,py); });
+    cvCtx.closePath(); cvCtx.stroke();
+    if (poly.id === selectedPolyId){
+      cvCtx.fillStyle = COLOR_CYAN;
+      poly.corners.forEach(c => {
+        const [px,py]=normToPx(c[0],c[1],rect);
+        cvCtx.beginPath(); cvCtx.arc(px,py,6,0,Math.PI*2); cvCtx.fill();
+      });
+    }
+    cvCtx.restore();
+    drawZBadge(cvCtx, poly, rect);
+  });
+  cvCtx.restore();   // matches the view-transform save() above
+}
+
+function polyById(id){ return _canvasDoc && _canvasDoc.polygons.find(p=>p.id===id); }
+
+// Zoom/pan (2) — a view transform applied only around the draw calls in
+// paintCanvasEditor (the grid backdrop stays full-bleed, untransformed),
+// pivoted on the artboard rect's own centre (not the widget's, now that (3)
+// decoupled the two) — so normToPx/pxToNorm and all the hit-testing below
+// stay in the same "pre-transform" rect-relative pixel space they always
+// were; cvEditPoint just needs to invert the view transform once, up front,
+// rather than every downstream function knowing about zoom/pan.
+const _view = {zoom: 1, panX: 0, panY: 0};
+function cvEditPoint(e){
+  const domRect = cvEdit.getBoundingClientRect();
+  const w = cvEdit.width, h = cvEdit.height;
+  const rect = getEditorRect();
+  const ox = rect.x + rect.w/2, oy = rect.y + rect.h/2;
+  const bx = (e.clientX-domRect.left)*(w/domRect.width), by = (e.clientY-domRect.top)*(h/domRect.height);
+  return [(bx - ox - _view.panX)/_view.zoom + ox, (by - oy - _view.panY)/_view.zoom + oy];
+}
+// Generalized over N corners, not just 4 (quads for scene/media shapes,
+// arbitrary-point paths for knockout cutout shapes — see drawKnockoutFill).
+function hitTestCorner(px, py, poly, rect){
+  if (!poly) return -1;
+  for (let i=0;i<poly.corners.length;i++){
+    const [cx,cy] = normToPx(poly.corners[i][0], poly.corners[i][1], rect);
+    if (Math.hypot(px-cx, py-cy) < 12) return i;
+  }
+  return -1;
+}
+function pointInPoly(px, py, poly, rect){
+  const pts = poly.corners.map(c => normToPx(c[0],c[1],rect));
+  let inside = false;
+  const n = pts.length;
+  for (let i=0,j=n-1;i<n;j=i++){
+    const [xi,yi]=pts[i], [xj,yj]=pts[j];
+    if (((yi>py)!==(yj>py)) && (px < (xj-xi)*(py-yi)/(yj-yi)+xi)) inside = !inside;
+  }
+  return inside;
+}
+// Nearest-edge hit-test (2) — for adding a point to a knockout shape by
+// double-clicking on one of its edges (see the dblclick handler below).
+// Returns the index i such that the new point should be inserted between
+// corners[i] and corners[i+1], or -1 if the click isn't close to any edge.
+function hitTestEdge(px, py, poly, rect){
+  const pts = poly.corners.map(c => normToPx(c[0], c[1], rect));
+  let best = -1, bestDist = 14;
+  for (let i=0;i<pts.length;i++){
+    const [x1,y1] = pts[i], [x2,y2] = pts[(i+1) % pts.length];
+    const dx = x2-x1, dy = y2-y1;
+    const len2 = dx*dx + dy*dy;
+    let t = len2 ? ((px-x1)*dx + (py-y1)*dy) / len2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const dist = Math.hypot(px - (x1+t*dx), py - (y1+t*dy));
+    if (dist < bestDist){ bestDist = dist; best = i; }
+  }
+  return best;
+}
+
+let _drag = null;   // {type:"corner"|"body"|"pan", polyId?, idx?, start?, origCorners?, startPanX?, startPanY?}
+let _lastCornerSend = 0;
+
+// Spacebar-drag pan (2) — holding space over the page shouldn't scroll it
+// (that's the standard "hand tool" convention), but must NOT swallow space
+// while typing in an actual text field elsewhere on the page.
+let _spaceDown = false;
+function _isTypingTarget(el){
+  return el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT");
+}
+window.addEventListener("keydown", e => {
+  if (e.code === "Space" && !e.repeat && !_isTypingTarget(document.activeElement)){
+    _spaceDown = true;
+    cvEdit.style.cursor = "grab";
+    e.preventDefault();
+  }
+});
+window.addEventListener("keyup", e => {
+  if (e.code === "Space"){ _spaceDown = false; if (!_drag) cvEdit.style.cursor = _tool === "hand" ? "grab" : ""; }
+});
+
+// Scroll-wheel zoom (2), centred on the cursor: keep whatever content point
+// is currently under the cursor fixed on screen as zoom changes, the same
+// convention as design/map tools.
+cvEdit.addEventListener("wheel", e => {
+  e.preventDefault();
+  const domRect = cvEdit.getBoundingClientRect();
+  const w = cvEdit.width, h = cvEdit.height;
+  const rect = getEditorRect();
+  const ox = rect.x + rect.w/2, oy = rect.y + rect.h/2;
+  const bx = (e.clientX-domRect.left)*(w/domRect.width), by = (e.clientY-domRect.top)*(h/domRect.height);
+  const oldZoom = _view.zoom;
+  const newZoom = Math.max(0.2, Math.min(8, oldZoom * Math.exp(-e.deltaY * 0.0015)));
+  const cx0 = (bx - ox - _view.panX)/oldZoom + ox;
+  const cy0 = (by - oy - _view.panY)/oldZoom + oy;
+  _view.panX = bx - ox - (cx0-ox)*newZoom;
+  _view.panY = by - oy - (cy0-oy)*newZoom;
+  _view.zoom = newZoom;
+  paintCanvasEditor();
+}, {passive:false});
+$("editor-reset-view").onclick = () => { _view.zoom = 1; _view.panX = 0; _view.panY = 0; paintCanvasEditor(); };
+
+// Focused editing (2) — CSS-only "just Canvas + Shape settings" layout,
+// plus a best-effort real Fullscreen API request (silently ignored if the
+// browser/context refuses it — the CSS layout is what actually matters).
+// #cv-edit's own box changes size when this toggles (its height rule swaps
+// between 700px and 88vh — see CSS), so the backing buffer + artboard
+// letterbox need recomputing, same as any other resize (3).
+let _editorFocused = false;
+function setEditorFocused(on){
+  _editorFocused = on;
+  document.body.classList.toggle("editor-focused", on);
+  const btn = $("editor-fullscreen");
+  btn.classList.toggle("amber", on);
+  btn.title = on ? "Exit focused editing" : "Focused editing (fullscreen)";
+  if (on) document.documentElement.requestFullscreen?.().catch(()=>{});
+  else if (document.fullscreenElement) document.exitFullscreen?.().catch(()=>{});
+  requestAnimationFrame(resizeEditorCanvas);
+}
+$("editor-fullscreen").onclick = () => setEditorFocused(!_editorFocused);
+// Esc (or any other way out of native fullscreen) should drop the focused
+// layout too, not leave it stuck showing only Canvas with a normal window.
+document.addEventListener("fullscreenchange", () => {
+  if (!document.fullscreenElement && _editorFocused) setEditorFocused(false);
+});
+
+// Toolbar (4) — Select is the normal corner/body drag behaviour; Hand is a
+// persistent version of the spacebar-drag pan below, for trackpad users who
+// don't want to hold a key. Either way, cursor reflects whichever mode/state
+// is actually active.
+let _tool = "select";
+function setTool(t){
+  _tool = t;
+  $("tool-select").classList.toggle("amber", t === "select");
+  $("tool-hand").classList.toggle("amber", t === "hand");
+  if (!_drag) cvEdit.style.cursor = (t === "hand") ? "grab" : "";
+}
+$("tool-select").onclick = () => setTool("select");
+$("tool-hand").onclick = () => setTool("hand");
+
+cvEdit.addEventListener("mousedown", e => {
+  if (_spaceDown || _tool === "hand"){
+    _drag = {type:"pan", startClientX:e.clientX, startClientY:e.clientY, startPanX:_view.panX, startPanY:_view.panY};
+    cvEdit.style.cursor = "grabbing";
+    return;
+  }
+  if (!_canvasDoc) return;
+  const [px,py] = cvEditPoint(e);
+  const rect = getEditorRect();
+  const selPoly = polyById(selectedPolyId);
+  const cIdx = hitTestCorner(px, py, selPoly, rect);
+  if (selPoly && cIdx >= 0){ _drag = {type:"corner", polyId:selPoly.id, idx:cIdx}; return; }
+  // Frontmost (lowest z-index) first, matching the paint order in
+  // paintCanvasEditor — otherwise clicking an overlap could select whatever
+  // shape happens to be earliest in the list instead of whatever's visually
+  // on top.
+  const zOrdered = [...(_canvasDoc.polygons)].sort((a, b) => (a.z_index ?? 5) - (b.z_index ?? 5));
+  for (const poly of zOrdered){
+    if (pointInPoly(px, py, poly, rect)){
+      selectedPolyId = poly.id;
+      _drag = {type:"body", polyId:poly.id, start:[px,py], origCorners: poly.corners.map(c=>[...c])};
+      renderPolyInspector(); updatePolyControlsGate(); paintCanvasEditor();
+      return;
+    }
+  }
+  selectedPolyId = null;
+  renderPolyInspector(); updatePolyControlsGate(); paintCanvasEditor();
+});
+window.addEventListener("mousemove", e => {
+  if (!_drag) return;
+  if (_drag.type === "pan"){
+    const domRect = cvEdit.getBoundingClientRect();
+    const scaleX = cvEdit.width/domRect.width, scaleY = cvEdit.height/domRect.height;
+    _view.panX = _drag.startPanX + (e.clientX - _drag.startClientX)*scaleX;
+    _view.panY = _drag.startPanY + (e.clientY - _drag.startClientY)*scaleY;
+    paintCanvasEditor();
+    return;
+  }
+  if (!_canvasDoc) return;
+  const [px,py] = cvEditPoint(e);
+  const rect = getEditorRect();
+  const poly = polyById(_drag.polyId);
+  if (!poly) { _drag = null; return; }
+  if (_drag.type === "corner"){
+    const [nx,ny] = pxToNorm(px, py, rect);
+    poly.corners[_drag.idx] = [Math.max(-1,Math.min(1,nx)), Math.max(-1,Math.min(1,ny))];
+  } else {
+    // Body drag (4): translate the whole shape by a uniform delta. The delta
+    // itself is clamped (not each corner independently after the fact) so
+    // the shape stops as a rigid body once ANY corner would cross ±1 —
+    // clamping per-corner let the corners nearest the edge stop early while
+    // the far side kept moving, visibly squashing/distorting the shape.
+    const [nx0,ny0] = pxToNorm(_drag.start[0], _drag.start[1], rect);
+    const [nx1,ny1] = pxToNorm(px, py, rect);
+    let dx = nx1-nx0, dy = ny1-ny0;
+    const xs = _drag.origCorners.map(c=>c[0]), ys = _drag.origCorners.map(c=>c[1]);
+    dx = Math.max(-1-Math.min(...xs), Math.min(1-Math.max(...xs), dx));
+    dy = Math.max(-1-Math.min(...ys), Math.min(1-Math.max(...ys), dy));
+    poly.corners = _drag.origCorners.map(c => [c[0]+dx, c[1]+dy]);
+  }
+  paintCanvasEditor();
+  const now = performance.now();
+  if (now - _lastCornerSend > 33){ _lastCornerSend = now; send({type:"poly_corners", id:poly.id, corners:poly.corners}); }
+});
+window.addEventListener("mouseup", () => {
+  if (_drag && _drag.type !== "pan"){
+    const poly = polyById(_drag.polyId);
+    if (poly) send({type:"poly_corners", id:poly.id, corners:poly.corners});
+  }
+  if (_drag && _drag.type === "pan") cvEdit.style.cursor = (_spaceDown || _tool === "hand") ? "grab" : "";
+  _drag = null;
+});
+
+// Editable points (2) — only knockout-fill-type shapes support add/remove-point
+// editing (scene/media stay fixed-4-corner quads, since homography() needs
+// exactly that). Double-click an edge to insert a point there; double-click
+// an existing point to remove it (never below a triangle).
+cvEdit.addEventListener("dblclick", e => {
+  const poly = polyById(selectedPolyId);
+  if (!poly || poly.source_type !== "knockout") return;
+  const [px,py] = cvEditPoint(e);
+  const rect = getEditorRect();
+  const cIdx = hitTestCorner(px, py, poly, rect);
+  if (cIdx >= 0){
+    if (poly.corners.length > 3){
+      poly.corners.splice(cIdx, 1);
+      send({type:"poly_corners", id:poly.id, corners:poly.corners});
+      paintCanvasEditor();
+    }
+    return;
+  }
+  const eIdx = hitTestEdge(px, py, poly, rect);
+  if (eIdx >= 0){
+    const [nx,ny] = pxToNorm(px, py, rect);
+    poly.corners.splice(eIdx+1, 0, [Math.max(-1,Math.min(1,nx)), Math.max(-1,Math.min(1,ny))]);
+    send({type:"poly_corners", id:poly.id, corners:poly.corners});
+    paintCanvasEditor();
+  }
+});
+
+// Hover cursor for knockout point-editing — signals "double-click here to
+// add a point" while hovering an edge, so the add/remove-point gesture
+// above isn't undiscoverable. Only touches the cursor when nothing else
+// already owns it (an active drag, spacebar-pan, or the Hand tool).
+cvEdit.addEventListener("mousemove", e => {
+  if (_drag || _spaceDown || _tool === "hand") return;
+  const poly = polyById(selectedPolyId);
+  if (!poly || poly.source_type !== "knockout"){ cvEdit.style.cursor = ""; return; }
+  const [px,py] = cvEditPoint(e);
+  const rect = getEditorRect();
+  if (hitTestCorner(px, py, poly, rect) >= 0){ cvEdit.style.cursor = ""; return; }
+  cvEdit.style.cursor = hitTestEdge(px, py, poly, rect) >= 0 ? "copy" : "";
+});
+
+// Shape settings (2): what this shape shows (a scene, an uploaded media
+// file — see drawPolyMedia — or a knockout cutout) plus opacity. Replaces
+// the old inline poly-inspector row with its own block, same "own block"
+// treatment #g-sequencer got earlier.
+function renderPolyInspector(){
+  renderShapeList();   // Shapes list (6) tracks selection/existence too — same trigger points
+  const box = $("g-shapesettings");
+  const poly = polyById(selectedPolyId);
+  if (!poly){ box.style.display = "none"; return; }
+  box.style.display = "flex";
+  if (document.activeElement !== $("poly-label")) $("poly-label").value = poly.label || "";
+  const fillType = poly.source_type || "scene";
+  const isMedia = fillType === "media", isKnockout = fillType === "knockout";
+  if (document.activeElement !== $("poly-source-type")) $("poly-source-type").value = fillType;
+  $("poly-scene-field").style.display = (!isMedia && !isKnockout) ? "flex" : "none";
+  $("poly-media-field").style.display = isMedia ? "flex" : "none";
+  $("poly-media-hint").style.display = isMedia ? "block" : "none";
+  $("poly-knockout-hint").style.display = isKnockout ? "block" : "none";
+  // fit/clip only mean anything for content-bearing shapes (scene/media) —
+  // a knockout cutout is its own arbitrary-point shape already, nothing to fit
+  // or further clip.
+  $("poly-fit-field").style.display = isKnockout ? "none" : "flex";
+  $("poly-fit-hint").style.display = isKnockout ? "none" : "block";
+  $("poly-clip-field").style.display = isKnockout ? "none" : "flex";
+  if (document.activeElement !== $("poly-scene")) $("poly-scene").value = poly.scene || "";
+  if (document.activeElement !== $("poly-media")) $("poly-media").value = poly.media || "";
+  if (document.activeElement !== $("poly-opacity")){
+    $("poly-opacity").value = poly.opacity;
+    $("v-polyopacity").textContent = poly.opacity.toFixed(2);
+  }
+  if (document.activeElement !== $("poly-clip-shape")) $("poly-clip-shape").value = poly.clip_shape || "";
+  if (document.activeElement !== $("poly-fit")) $("poly-fit").value = poly.fit || "stretch";
+  if (document.activeElement !== $("poly-zindex")){
+    $("poly-zindex").value = poly.z_index ?? 5;
+    $("v-polyzindex").textContent = poly.z_index ?? 5;
+  }
+}
+// Shapes list (6) — column 1, every shape on the current canvas by name (its
+// label, falling back to the assigned scene's name, then a plain index) so
+// they're identifiable without hunting for the right quad on the canvas.
+// Signature-gated rebuild (same pattern as the Scene library list) — a full
+// innerHTML rebuild on every ~20Hz state broadcast risked losing clicks
+// mid-gesture if the DOM got replaced between mousedown and mouseup (4);
+// now the DOM only changes when the actual shape list changes, and
+// selection just toggles a class on whatever's already there.
+function renderShapeList(){
+  const box = $("shape-list");
+  const polys = (_canvasDoc && _canvasDoc.polygons) || [];
+  const sig = polys.map(p => p.id + ":" + (p.label || "") + ":" + (p.scene || "")).join(",");
+  if (box.dataset.sig !== sig){
+    box.dataset.sig = sig;
+    box.innerHTML = "";
+    polys.forEach((poly, i) => {
+      const el = document.createElement("div");
+      el.className = "item";
+      el.dataset.id = poly.id;
+      el.innerHTML = `<span>${poly.label || poly.scene || ("shape " + (i+1))}</span><span class="x" title="Delete shape">✕</span>`;
+      el.querySelector("span:first-child").onclick = () => {
+        selectedPolyId = poly.id;
+        renderPolyInspector(); updatePolyControlsGate(); paintCanvasEditor();
+      };
+      el.querySelector(".x").onclick = ev => {
+        ev.stopPropagation();
+        if (!confirm("Delete this shape?")) return;
+        if (selectedPolyId === poly.id) selectedPolyId = null;
+        send({type:"poly_delete", id:poly.id});
+      };
+      box.appendChild(el);
+    });
+  }
+  box.querySelectorAll(".item").forEach(el => el.classList.toggle("active", el.dataset.id === selectedPolyId));
+}
+$("poly-label").onchange = () => selectedPolyId &&
+  send({type:"poly_set", id:selectedPolyId, key:"label", value:$("poly-label").value});
+$("poly-source-type").onchange = () => selectedPolyId &&
+  send({type:"poly_set", id:selectedPolyId, key:"source_type", value:$("poly-source-type").value});
+$("poly-scene").onchange = () => selectedPolyId &&
+  send({type:"poly_set", id:selectedPolyId, key:"scene", value:$("poly-scene").value || null});
+$("poly-media").onchange = () => selectedPolyId &&
+  send({type:"poly_set", id:selectedPolyId, key:"media", value:$("poly-media").value || null});
+$("poly-opacity").oninput = () => {
+  $("v-polyopacity").textContent = (+$("poly-opacity").value).toFixed(2);
+  if (selectedPolyId) send({type:"poly_set", id:selectedPolyId, key:"opacity", value:+$("poly-opacity").value});
+};
+$("poly-fit").onchange = () => selectedPolyId &&
+  send({type:"poly_set", id:selectedPolyId, key:"fit", value:$("poly-fit").value});
+$("poly-zindex").oninput = () => {
+  $("v-polyzindex").textContent = $("poly-zindex").value;
+  if (selectedPolyId) send({type:"poly_set", id:selectedPolyId, key:"z_index", value:+$("poly-zindex").value});
+};
+// Clip Shape (4): hard-edged only now — see drawClippedStrokes. Used to support a
+// soft/feathered edge via a CSS blur on an offscreen canvas per shape per
+// tick, which was expensive enough to visibly stall the render loop with
+// more than a couple of shapes on screen.
+$("poly-clip-shape").onchange = () => selectedPolyId &&
+  send({type:"poly_set", id:selectedPolyId, key:"clip_shape", value:$("poly-clip-shape").value || null});
+$("poly-delete").onclick = () => {
+  if (selectedPolyId && confirm("Delete this shape?")) { send({type:"poly_delete", id:selectedPolyId}); selectedPolyId = null; }
+};
+$("poly-add-btn").onclick = () => { _pendingSelectNewPoly = true; send({type:"poly_add"}); };
+
+// Monitor filters/Motion/Shape camera (column 3) — active only when a
+// polygon is selected AND has a scene assigned (media-sourced shapes don't
+// qualify — see renderPolyInspector). Motion and Shape camera are mutually
+// exclusive by the selected shape's scene type (2D vs 3D, same split the
+// single-scene Camera/Motion pair used before) — both stay visible always
+// (hiding either read as "missing" per earlier feedback), whichever doesn't
+// apply just greys out alongside Monitor filters when nothing's selected.
+function updatePolyControlsGate(){
+  const poly = polyById(selectedPolyId);
+  const enabled = !!(poly && poly.scene);
+  const layer = poly ? _lastComposite.find(l=>l.id===poly.id) : null;
+  const is3d = layer ? layer.is_3d : false;
+  const motionEnabled = enabled && !is3d, cameraEnabled = enabled && is3d;
+  const gMonitor = $("g-monitor"), gMotion = $("g-motion"), gCamera = $("g-shapecamera");
+  gMonitor.classList.toggle("disabled", !enabled);
+  gMotion.classList.toggle("disabled", !motionEnabled);
+  gCamera.classList.toggle("disabled", !cameraEnabled);
+  gMonitor.querySelectorAll("input").forEach(inp => inp.disabled = !enabled);
+  gMotion.querySelectorAll("input").forEach(inp => inp.disabled = !motionEnabled);
+  gCamera.querySelectorAll("input,select").forEach(inp => inp.disabled = !cameraEnabled);
+  if (!enabled) return;
+  const ov = poly.overrides || {}, l0 = ov.layer0 || {}, cam = ov.camera || {};
+  if (document.activeElement !== $("mf-glow")) { $("mf-glow").value = ov.glow||0; $("v-mfglow").textContent = (ov.glow||0).toFixed(2); }
+  if (document.activeElement !== $("mf-trail")) { $("mf-trail").value = ov.trail||0; $("v-mftrail").textContent = (ov.trail||0).toFixed(2); }
+  if (document.activeElement !== $("mf-mirror-x")) $("mf-mirror-x").checked = !!ov.mirror_x;
+  if (document.activeElement !== $("mf-mirror-y")) $("mf-mirror-y").checked = !!ov.mirror_y;
+  if (motionEnabled){
+    if (document.activeElement !== $("s-speed")) { $("s-speed").value = l0.speed ?? 0.2; $("v-speed").textContent = (+$("s-speed").value).toFixed(2); }
+    if (document.activeElement !== $("s-turb")) { $("s-turb").value = l0.turbulence ?? 0.35; $("v-turb").textContent = (+$("s-turb").value).toFixed(2); }
+    if (document.activeElement !== $("s-hue")) { $("s-hue").value = l0.hue ?? 0.55; $("v-hue").textContent = (+$("s-hue").value).toFixed(2); }
+  }
+  if (cameraEnabled){
+    if (document.activeElement !== $("sc-mode")) $("sc-mode").value = cam.mode ?? "orbit";
+    if (document.activeElement !== $("sc-speed")) { $("sc-speed").value = cam.speed ?? 0.6; $("v-scspeed").textContent = (+$("sc-speed").value).toFixed(2); }
+    if (document.activeElement !== $("sc-radius")) { $("sc-radius").value = cam.orbit_radius ?? 10; $("v-scradius").textContent = (+$("sc-radius").value).toFixed(1); }
+    if (document.activeElement !== $("sc-fov")) { $("sc-fov").value = cam.fov ?? 62; $("v-scfov").textContent = (+$("sc-fov").value).toFixed(0); }
+    if (document.activeElement !== $("sc-far")) { $("sc-far").value = cam.far ?? 30; $("v-scfar").textContent = (+$("sc-far").value).toFixed(0); }
+    if (document.activeElement !== $("sc-max")) { $("sc-max").value = cam.max_strokes ?? 120; $("v-scmax").textContent = (+$("sc-max").value).toFixed(0); }
+    if (document.activeElement !== $("sc-disable-plane")) $("sc-disable-plane").checked = !!ov.disable_plane;
+  }
+}
+
+// #cv-edit's backing buffer (3) tracks its own rendered CSS box 1:1 — the
+// box is sized by CSS (full column width, min-height 700px, or 88vh while
+// focused) independent of the canvas resolution's aspect ratio, which is
+// instead drawn as a letterboxed artboard inside it (getEditorRect). Any
+// resize of the box itself (column width changing, focused-mode toggling,
+// browser window resizing) needs a fresh backing buffer + repaint.
+function resizeEditorCanvas(){
+  const bw = Math.max(1, Math.round(cvEdit.clientWidth)), bh = Math.max(1, Math.round(cvEdit.clientHeight));
+  if (cvEdit.width !== bw || cvEdit.height !== bh) { cvEdit.width = bw; cvEdit.height = bh; }
+  paintCanvasEditor();
+}
+new ResizeObserver(resizeEditorCanvas).observe(cvEdit);
+
+// Canvas switcher toolbar (1b) + syncing the authoritative polygon doc.
+// Canvas resolution (1) inputs — purely metadata for the compositor/output
+// windows and this editor's own letterboxed artboard (getEditorRect); the
+// TARGET resolution (e.g. a real projector's native mode) is decoupled from
+// the editor widget's own on-screen size (see resizeEditorCanvas above).
+function applyCanvasResolution(canvasDoc){
+  const w = canvasDoc.width || 1920, h = canvasDoc.height || 1080;
+  if (document.activeElement !== $("canvas-width")) $("canvas-width").value = w;
+  if (document.activeElement !== $("canvas-height")) $("canvas-height").value = h;
+}
+// Commit on change (not input, which fires per keystroke) and send both
+// dimensions together, so editing one field can't race the other's value.
+function commitCanvasResolution(){
+  const w = Math.max(1, Math.min(16384, parseInt($("canvas-width").value, 10) || 1920));
+  const h = Math.max(1, Math.min(16384, parseInt($("canvas-height").value, 10) || 1080));
+  send({type:"canvas_set_resolution", width:w, height:h});
+}
+$("canvas-width").addEventListener("change", commitCanvasResolution);
+$("canvas-height").addEventListener("change", commitCanvasResolution);
+
+// Freeze shape playback (3): content stays visible, just stops animating —
+// unlike the main Start/Stop, which blanks everything. Engine-wide (there's
+// one compositor rendering whatever canvas is currently open/playing), not
+// saved into the canvas itself.
+$("canvas-freeze").onchange = () => send({type:"set_frozen", value:$("canvas-freeze").checked});
+
+// Project panel — the base-level container (owns its own canvas library +
+// sequence, see projects.py). Same icon-toolbar pattern as the Canvas panel
+// below it, since a project is also a singular open document, not a list to
+// browse (that's the Scene-library accordion's job).
+let _currentProjectName = null;
+function syncProjectDoc(s){
+  const psel = $("project-select");
+  const libSig = (s.project_library||[]).join(",");
+  if (psel.dataset.sig !== libSig){
+    psel.dataset.sig = libSig;
+    psel.innerHTML = "";
+    (s.project_library||[]).forEach(name => {
+      const opt = document.createElement("option"); opt.value = name; opt.textContent = name;
+      psel.appendChild(opt);
+    });
+  }
+  _currentProjectName = s.project;
+  if (s.project && document.activeElement !== psel) psel.value = s.project;
+}
+$("project-select").onchange = () => send({type:"project_open", name:$("project-select").value});
+$("project-new").onclick = () => openNameModal("project-new");
+$("project-save").onclick = () => {
+  if (_currentProjectName) send({type:"project_save", name:_currentProjectName});
+};
+$("project-save-as").onclick = () =>
+  openNameModal("project-dup", _currentProjectName ? _currentProjectName + " copy" : "");
+$("project-delete").onclick = () => {
+  if (_currentProjectName &&
+      confirm(`Delete project "${_currentProjectName}"? This deletes its canvases and sequence too.`)) {
+    send({type:"project_delete", name:_currentProjectName});
+  }
+};
+
+function syncCanvasDoc(s){
+  const prevIds = _canvasDoc ? new Set(_canvasDoc.polygons.map(p=>p.id)) : new Set();
+  _canvasDoc = s.canvas;
+  applyCanvasResolution(_canvasDoc);
+  if (_pendingSelectNewPoly){
+    const added = _canvasDoc.polygons.find(p => !prevIds.has(p.id));
+    if (added){ selectedPolyId = added.id; _pendingSelectNewPoly = false; }
+  }
+  if (selectedPolyId && !_canvasDoc.polygons.some(p=>p.id===selectedPolyId)) selectedPolyId = null;
+  const csel = $("canvas-select");
+  const libSig = (s.canvas_library||[]).join(",");
+  if (csel.dataset.sig !== libSig){
+    csel.dataset.sig = libSig;
+    csel.innerHTML = "";
+    (s.canvas_library||[]).forEach(name => {
+      const opt = document.createElement("option"); opt.value = name; opt.textContent = name;
+      csel.appendChild(opt);
+    });
+  }
+  if (!(s.canvas_library||[]).includes(_canvasDoc.name) &&
+      !csel.querySelector(`option[value="${CSS.escape(_canvasDoc.name)}"]`)) {
+    const opt = document.createElement("option");
+    opt.value = _canvasDoc.name; opt.textContent = _canvasDoc.name + " (unsaved)";
+    csel.appendChild(opt);
+  }
+  if (document.activeElement !== csel) csel.value = _canvasDoc.name;
+  renderPolyInspector();
+}
+function syncPolySceneOptions(s){
+  const sel = $("poly-scene");
+  const sig = (s.library||[]).join(",");
+  if (sel.dataset.sig === sig) return;
+  sel.dataset.sig = sig;
+  sel.innerHTML = '<option value="">— none —</option>';
+  (s.library||[]).forEach(name => {
+    const opt = document.createElement("option"); opt.value = name; opt.textContent = name;
+    sel.appendChild(opt);
+  });
+}
+$("canvas-select").onchange = () => send({type:"canvas_load", name:$("canvas-select").value});
+$("canvas-new").onclick = () => { selectedPolyId = null; send({type:"canvas_new"}); };
+$("canvas-save").onclick = () => {
+  const name = _canvasDoc && _canvasDoc.name;
+  if (!name || name === "untitled") { $("canvas-save-as").click(); return; }
+  send({type:"canvas_save", name});
+};
+$("canvas-delete").onclick = () => {
+  const name = _canvasDoc && _canvasDoc.name;
+  if (name && confirm(`Delete canvas "${name}"?`)) send({type:"canvas_delete", name});
+};
+
+// Sequencer pane (1d): drag-reorder step list + transport.
+function renderSequencer(s){
+  const seq = s.sequence || {steps:[], playing:false, loop:true, n_steps:0};
+  const list = $("seq-list");
+  const sig = seq.steps.map(st=>st.id).join(",") + "|" + (s.canvas_library||[]).join(",");
+  if (list.dataset.sig !== sig){
+    list.dataset.sig = sig;
+    list.innerHTML = "";
+    seq.steps.forEach(step => {
+      const row = document.createElement("div");
+      row.className = "seq-step"; row.draggable = true; row.dataset.id = step.id;
+      row.innerHTML = `<span class="drag-handle">⠿</span><select></select>
+        <input type="number" min="0.5" step="0.5"><span class="x">✕</span>`;
+      const sel = row.querySelector("select");
+      (s.canvas_library||[]).forEach(name => {
+        const opt = document.createElement("option"); opt.value = name; opt.textContent = name;
+        sel.appendChild(opt);
+      });
+      sel.value = step.canvas;
+      sel.onchange = () => send({type:"seq_set", id:step.id, canvas:sel.value});
+      const dur = row.querySelector("input");
+      dur.value = step.duration;
+      dur.addEventListener("change", () => send({type:"seq_set", id:step.id, duration:+dur.value}));
+      row.querySelector(".x").onclick = () => send({type:"seq_remove", id:step.id});
+      row.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", step.id); row.classList.add("dragging"); });
+      row.addEventListener("dragend", () => row.classList.remove("dragging"));
+      row.addEventListener("dragover", e => { e.preventDefault(); row.classList.add("drag-over"); });
+      row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
+      row.addEventListener("drop", e => {
+        e.preventDefault(); row.classList.remove("drag-over");
+        const draggedId = e.dataTransfer.getData("text/plain");
+        if (draggedId && draggedId !== step.id)
+          send({type:"seq_reorder", id:draggedId, index: Array.from(list.children).indexOf(row)});
+      });
+      list.appendChild(row);
+    });
+  }
+  list.querySelectorAll(".seq-step").forEach(row => row.classList.toggle("active", row.dataset.id === seq.step_id));
+  $("seq-playpause").textContent = seq.playing ? "⏸" : "⏵";
+  if (document.activeElement !== $("seq-loop")) $("seq-loop").checked = seq.loop;
+  const step = seq.steps.find(st => st.id === seq.step_id);
+  $("seq-step-label").textContent = step ? `${seq.index+1}/${seq.n_steps} · ${step.canvas}`
+    : (seq.n_steps ? `${seq.n_steps} steps` : "no steps");
+  $("seq-time-label").textContent = step ? `${seq.elapsed.toFixed(1)}s / ${seq.duration.toFixed(1)}s` : "—";
+  $("seq-progress-glow").style.width = (step ? Math.min(1, seq.elapsed/Math.max(0.1,seq.duration))*100 : 0).toFixed(1) + "%";
+}
+$("seq-add-current").onclick = () => {
+  const name = _canvasDoc && _canvasDoc.name;
+  if (!name || !(_lastState && (_lastState.canvas_library||[]).includes(name))) {
+    alert("Save this canvas first, then add it to the sequence.");
+    return;
+  }
+  send({type:"seq_add", canvas:name, duration:8});
+};
+$("seq-prev").onclick = () => send({type:"seq_prev"});
+$("seq-next").onclick = () => send({type:"seq_next"});
+$("seq-playpause").onclick = () => send({type: $("seq-playpause").textContent === "⏸" ? "seq_pause" : "seq_play"});
+$("seq-loop").onchange = () => send({type:"seq_loop", value:$("seq-loop").checked});
+
+// Media upload widget (Input > Local video/image files) — plain HTTP to
+// /media/*, not the websocket (file bodies don't belong on the state-
+// broadcast channel). Storage/listing only for now; not wired into any
+// scene/canvas yet.
+async function refreshMediaList(){
+  const box = $("media-list");
+  let files;
+  try { files = await (await fetch("/media/list")).json(); }
+  catch (e) { return; }   // best-effort — a transient fetch failure just leaves the old list showing
+  box.innerHTML = "";
+  files.forEach(f => {
+    const el = document.createElement("div");
+    el.className = "item";
+    el.innerHTML = `<span>${f.name}</span><span class="x">✕</span>`;
+    el.querySelector("span:first-child").onclick = () => window.open(f.url, "_blank");
+    el.querySelector(".x").onclick = async ev => {
+      ev.stopPropagation();
+      if (!confirm(`Delete "${f.name}"?`)) return;
+      await fetch(`/media/${encodeURIComponent(f.name)}`, {method:"DELETE"});
+      refreshMediaList();
+    };
+    box.appendChild(el);
+  });
+  // keep the Shape settings "media" dropdown (poly-media) in sync with the
+  // same list, since it's the same underlying files
+  const sel = $("poly-media"), cur = sel.value;
+  sel.innerHTML = '<option value="">— none —</option>';
+  files.forEach(f => {
+    const opt = document.createElement("option"); opt.value = f.name; opt.textContent = f.name;
+    sel.appendChild(opt);
+  });
+  if (files.some(f => f.name === cur)) sel.value = cur;
+}
+$("media-upload-btn").onclick = async () => {
+  const input = $("media-file-input");
+  if (!input.files.length) return;
+  const fd = new FormData();
+  for (const f of input.files) fd.append("file", f);
+  $("media-upload-btn").disabled = true;
+  try {
+    await fetch("/media/upload", {method:"POST", body:fd});
+    input.value = "";
+    await refreshMediaList();
+  } finally {
+    $("media-upload-btn").disabled = false;
+  }
+};
+$("acc-input-media").addEventListener("toggle", () => {
+  if ($("acc-input-media").open) refreshMediaList();
+});
+refreshMediaList();
+
+function slider(id, key, label, fmt=(v)=>(+v).toFixed(2)){
+  const s=$(id), v=$("v-"+label);
+  s.oninput = () => { v.textContent = fmt(s.value); send({type:"set",key,value:+s.value}); };
+}
+
+// Monitor filter / Motion controls — per SELECTED POLYGON now (1f): these
+// edit that polygon's canvas-local overrides via poly_set, not the single
+// active scene. Disabled (see updatePolyControlsGate) unless a polygon is
+// selected and has a scene assigned.
+function polySlider(id, key, label, fmt=(v)=>(+v).toFixed(2)){
+  const s=$(id), v=$("v-"+label);
+  s.oninput = () => {
+    v.textContent = fmt(s.value);
+    if (selectedPolyId) send({type:"poly_set", id:selectedPolyId, key, value:+s.value});
+  };
+}
+polySlider("mf-glow", "glow", "mfglow");
+polySlider("mf-trail", "trail", "mftrail");
+$("mf-mirror-x").onchange = () => selectedPolyId &&
+  send({type:"poly_set", id:selectedPolyId, key:"mirror_x", value:$("mf-mirror-x").checked});
+$("mf-mirror-y").onchange = () => selectedPolyId &&
+  send({type:"poly_set", id:selectedPolyId, key:"mirror_y", value:$("mf-mirror-y").checked});
+polySlider("s-speed","layer0.speed","speed");
+polySlider("s-turb","layer0.turbulence","turb");
+polySlider("s-hue","layer0.hue","hue");
+
+// Shape camera (column 3) — same per-polygon poly_set round-trip as Motion
+// above, just addressed at the selected shape's camera.* instead of
+// layer0.* (see composite.py's set_polygon). Distinct from column 1's plain
+// "Camera", which still drives the single-scene #view preview.
+polySlider("sc-speed","camera.speed","scspeed",(v)=>(+v).toFixed(2));
+polySlider("sc-radius","camera.orbit_radius","scradius",(v)=>(+v).toFixed(1));
+polySlider("sc-fov","camera.fov","scfov",(v)=>(+v).toFixed(0));
+polySlider("sc-far","camera.far","scfar",(v)=>(+v).toFixed(0));
+polySlider("sc-max","camera.max_strokes","scmax",(v)=>(+v).toFixed(0));
+$("sc-mode").onchange = () => selectedPolyId &&
+  send({type:"poly_set", id:selectedPolyId, key:"camera.mode", value:$("sc-mode").value});
+$("sc-disable-plane").onchange = () => selectedPolyId &&
+  send({type:"poly_set", id:selectedPolyId, key:"disable_plane", value:$("sc-disable-plane").checked});
+
+let generating = false, genTimer = null;
+function startGen(){
+  if (generating) return;
+  generating = true;
+  $("gen").disabled = true;
+  $("gen").innerHTML = '<span class="spinner"></span>';
+  $("genprog").classList.add("active");
+  $("genbar").style.width = "2%";
+  genTimer = setTimeout(endGen, 120000);   // safety restore
+}
+function endGen(){
+  generating = false;
+  $("gen").disabled = false;
+  $("gen").textContent = "Generate";
+  $("genprog").classList.remove("active");
+  $("genbar").style.width = "0%";
+  if (genTimer) { clearTimeout(genTimer); genTimer = null; }
+}
+$("gen").onclick = () => {
+  const k = $("kw").value.trim();
+  if (!k || generating) return;
+  startGen();
+  send({type:"generate", keyword:k, name:$("scenename").value.trim(), size:$("d-size").value,
+        aspect:$("d-aspect").value});
+};
+// multiline field: Ctrl/Cmd+Enter submits, plain Enter makes a new line
+$("kw").addEventListener("keydown", e => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("gen").click();
+});
+
+$("d-model").onchange = () => send({type:"set_model", value:$("d-model").value});
+$("d-effort").onchange = () => send({type:"set_effort", value:$("d-effort").value});
+
+$("o-maxpps").addEventListener("change", () => {
+  const n = parseInt($("o-maxpps").value.trim(), 10);
+  if (!isNaN(n) && n > 0) send({type:"set_max_pps", value:n});
+});
+
+$("master-toggle").onclick = () => {
+  const nowActive = $("master-toggle").dataset.active === "1";
+  send({type:"set_active", value: !nowActive});
+};
+// Disable Visuals: a gracefully-fading gate — separate from Start/Stop,
+// which is instant.
+function updateDisableButtons(s){
+  const vb = $("disable-visuals");
+  vb.textContent = s.visuals_disabled ? "Enable Visuals" : "Disable Visuals";
+  vb.className = s.visuals_disabled ? "amber" : "";
+}
+$("disable-visuals").onclick = () => {
+  send({type:"set_visuals_disabled", value: !_lastState?.visuals_disabled, fade: 2.0});
+};
+
+// Output windows: separate, chrome-less browser windows for a projector or
+// second screen, driven by the same websocket composite feed the control UI
+// uses. Output 2 is the same live feed as Output 1, just a second window —
+// each one reads its own flip-x/flip-y state (Settings > Output monitors)
+// via a `?out=` id in its URL, so the two can be flipped independently
+// (e.g. one physically rear-projected).
+const outputWins = {1: null, 2: null};
+function updateOutputBtn(id){
+  const open = outputWins[id] && !outputWins[id].closed;
+  const btn = $("output-toggle-" + id);
+  btn.textContent = open ? `🖵 Close Output ${id}` : `🖵 Output ${id}`;
+  btn.className = open ? "amber" : "";
+}
+function toggleOutputWin(id){
+  if (outputWins[id] && !outputWins[id].closed) {
+    outputWins[id].close(); outputWins[id] = null; updateOutputBtn(id); return;
+  }
+  outputWins[id] = window.open(`/output?out=${id}`, `lightsaber-output-${id}`,
+    "width=1280,height=720,menubar=no,toolbar=no,location=no,status=no");
+  updateOutputBtn(id);
+}
+$("output-toggle-1").onclick = () => toggleOutputWin(1);
+$("output-toggle-2").onclick = () => toggleOutputWin(2);
+// catches a window being closed via its own OS close button, not just ours
+setInterval(() => {
+  for (const id of [1, 2]) {
+    if (outputWins[id] && outputWins[id].closed) { outputWins[id] = null; updateOutputBtn(id); }
+  }
+}, 1000);
+
+$("apisave").onclick = () => {
+  const k = $("apikey").value.trim();
+  if (!k) return;
+  $("apistatus").dataset.touched = "1";
+  $("apistatus").textContent = "saving…";
+  send({type:"set_api_key", key:k});
+};
+$("apitest").onclick = () => {
+  $("apistatus").dataset.touched = "1";
+  $("apistatus").textContent = "testing…";
+  $("apistatus").style.color = "var(--dim)";
+  send({type:"test_api_key"});
+};
+
+// modals: open/close by class toggle, backdrop click (not bubbled from
+// inside the dialog itself) also closes
+function openModal(id){ $(id).classList.add("open"); }
+function closeModal(id){ $(id).classList.remove("open"); }
+$("gen-open").onclick = () => openModal("modal-generate");
+$("gen-close").onclick = () => closeModal("modal-generate");
+$("settings-open").onclick = () => openModal("modal-settings");
+$("settings-close").onclick = () => closeModal("modal-settings");
+$("diag-enabled-toggle").onchange = () => {
+  send({type: "set_diagnostics", value: $("diag-enabled-toggle").checked});
+};
+
+// Per-output-monitor flip (Settings > Output monitors) — a whole-image
+// reverse, NOT the Global section's half-reflect "mirror" above. Purely
+// client-side, same localStorage + "storage" event pattern as
+// monitorFilters, just scoped per output id so Output 1 and Output 2 can be
+// flipped independently. output.html reads these via its own `?out=` id.
+function outputFlipCheckbox(id, outputId, axis){
+  const key = `pw_filter_flip${axis}_${outputId}`;
+  const el = $(id);
+  el.checked = localStorage.getItem(key) === "1";
+  el.onchange = () => localStorage.setItem(key, el.checked ? "1" : "0");
+}
+outputFlipCheckbox("out1-flip-x", 1, "x");
+outputFlipCheckbox("out1-flip-y", 1, "y");
+outputFlipCheckbox("out2-flip-x", 2, "x");
+outputFlipCheckbox("out2-flip-y", 2, "y");
+
+// Per-output-monitor keystone (Settings > Output monitors) — independent per
+// window, display-only, never sent anywhere. Same localStorage pattern as
+// the flip checkboxes just above.
+function outputKeystoneSlider(id, outputId, axis){
+  const key = `pw_filter_keystone${axis}_${outputId}`;
+  const el = $(id);
+  el.value = parseFloat(localStorage.getItem(key) || "0");
+  el.oninput = () => localStorage.setItem(key, el.value);
+}
+outputKeystoneSlider("out1-ks-h", 1, "h");
+outputKeystoneSlider("out1-ks-v", 1, "v");
+outputKeystoneSlider("out2-ks-h", 2, "h");
+outputKeystoneSlider("out2-ks-v", 2, "v");
+
+$("saveas-close").onclick = () => closeModal("modal-saveas");
+document.querySelectorAll(".modal-backdrop").forEach(el => {
+  el.addEventListener("click", e => { if (e.target === el) el.classList.remove("open"); });
+});
+
+// Naming modal — shared by "Save canvas as", "New project" and "Save
+// project as" (they're all "type a name, then create/duplicate something
+// under it"), one small mode switch rather than three near-identical modals.
+let _nameModalMode = "canvas";
+function openNameModal(mode, prefill){
+  _nameModalMode = mode;
+  $("saveas-name").value = prefill || "";
+  const copy = {
+    "canvas": ["Save canvas as", "saves the current canvas (its shapes and scene assignments) into the canvas library under this new name"],
+    "project-new": ["New project", "creates an empty project with its own canvas library and sequence"],
+    "project-dup": ["Save project as", "duplicates the current project — canvases, sequence, and all — under this new name"],
+  }[mode];
+  $("modal-saveas").querySelector(".modal-head h2").textContent = copy[0];
+  $("modal-saveas").querySelector(".hint").textContent = copy[1];
+  openModal("modal-saveas");
+}
+$("canvas-save-as").onclick = () =>
+  openNameModal("canvas", (_canvasDoc && _canvasDoc.name !== "untitled") ? _canvasDoc.name : "");
+$("saveas-confirm").onclick = () => {
+  const n = $("saveas-name").value.trim();
+  if (!n) return;
+  if (_nameModalMode === "canvas") send({type:"canvas_save", name:n});
+  else if (_nameModalMode === "project-new") send({type:"project_new", name:n});
+  else if (_nameModalMode === "project-dup") send({type:"project_save_as", src:_currentProjectName, dst:n});
+  closeModal("modal-saveas");
+};
+$("saveas-name").addEventListener("keydown", e => { if (e.key === "Enter") $("saveas-confirm").click(); });
+</script>
+</body>
+</html>

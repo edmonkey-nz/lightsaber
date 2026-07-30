@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lightsaber — Output</title>
+<link rel="icon" type="image/svg+xml" href="/static/lightsaber.svg">
+<style>
+  html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden;
+            cursor:none}
+  canvas{display:block;width:100vw;height:100vh}
+  #hint{position:fixed;left:0;right:0;bottom:24px;text-align:center;
+        font:13px ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:#5a5f6b;
+        opacity:1;transition:opacity 1.5s ease-out;pointer-events:none;user-select:none}
+  #hint.gone{opacity:0}
+  #status{position:fixed;left:0;right:0;top:24px;text-align:center;
+          font:13px ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:#a04040;
+          display:none;pointer-events:none;user-select:none}
+  #status.show{display:block}
+</style>
+</head>
+<body>
+<canvas id="out"></canvas>
+<div id="hint">Lightsaber output — drag this window to your projector/second screen, then press F11 for fullscreen</div>
+<div id="status">disconnected — retrying…</div>
+<script>
+const cv = document.getElementById("out"), cx = cv.getContext("2d");
+const statusEl = document.getElementById("status");
+const hintEl = document.getElementById("hint");
+
+function resize(){
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(window.innerWidth * dpr);
+  cv.height = Math.round(window.innerHeight * dpr);
+}
+window.addEventListener("resize", resize);
+resize();
+
+setTimeout(() => hintEl.classList.add("gone"), 4000);
+
+const outputId = new URLSearchParams(location.search).get("out") || "1";
+document.title = `Lightsaber — Output ${outputId}`;
+hintEl.textContent = `Lightsaber output ${outputId} — drag this window to your projector/second screen, then press F11 for fullscreen`;
+
+// Monitor-only visual filters — pure canvas rendering, no effect on the
+// vector data. glow/trail/mirror are per-POLYGON now (see composite.py's
+// overrides, carried on each layer in the composite payload itself), not a
+// window-level setting read from here any more. flip is different: a
+// per-OUTPUT-MONITOR physical-orientation setting (Settings > Output
+// monitors on the control page), keyed by this window's own `?out=` id,
+// that has nothing to do with any scene/polygon — that one still lives in
+// localStorage + the "storage" event, since it's not engine state at all.
+const filters = {
+  flipX: localStorage.getItem(`pw_filter_flipx_${outputId}`) === "1",
+  flipY: localStorage.getItem(`pw_filter_flipy_${outputId}`) === "1",
+  // This window's OWN keystone (Settings > Output monitors) — independent
+  // of the other output window's. Display-only: never sent anywhere.
+  keystoneH: parseFloat(localStorage.getItem(`pw_filter_keystoneh_${outputId}`) || "0"),
+  keystoneV: parseFloat(localStorage.getItem(`pw_filter_keystonev_${outputId}`) || "0"),
+};
+window.addEventListener("storage", e => {
+  if (e.key === `pw_filter_flipx_${outputId}`) filters.flipX = e.newValue === "1";
+  if (e.key === `pw_filter_flipy_${outputId}`) filters.flipY = e.newValue === "1";
+  if (e.key === `pw_filter_keystoneh_${outputId}`) filters.keystoneH = parseFloat(e.newValue || "0");
+  if (e.key === `pw_filter_keystonev_${outputId}`) filters.keystoneV = parseFloat(e.newValue || "0");
+});
+
+// Per-output-monitor keystone correction — display-only, this window's own
+// physical-mount compensation (Settings > Output monitors).
+function applyKeystone(x, y, kh, kv){
+  const xk = x * (1 + kh * y);
+  const yk = y * (1 + kv * xk);
+  return [Math.max(-1, Math.min(1, xk)), Math.max(-1, Math.min(1, yk))];
+}
+
+// Reverses the WHOLE image, no reflection — the per-output-monitor "flip"
+// (Settings > Output monitors). Unlike per-polygon mirror (a same-shape
+// axis flip applied to each layer's own strokes before warping, see
+// paintComposite), this runs the finished composited frame through a
+// physical-orientation correction for this specific screen.
+function applyFlip(ctx, canvas, flipX, flipY){
+  const w = canvas.width, h = canvas.height;
+  ctx.save();
+  ctx.shadowBlur = 0;
+  ctx.globalCompositeOperation = "source-over";
+  ctx.translate(flipX ? w : 0, flipY ? h : 0);
+  ctx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+  ctx.drawImage(canvas, 0, 0, w, h);
+  ctx.restore();
+}
+
+// Unit-square->quad homography — identical to index.html's canvas editor
+// (see its comment for the derivation); kept in sync so this window warps
+// each polygon exactly the way the editor previews it.
+function homography(corners){
+  const [[x0,y0],[x1,y1],[x2,y2],[x3,y3]] = corners;
+  const dx1=x1-x2, dy1=y1-y2, dx2=x3-x2, dy2=y3-y2;
+  const sx=x0-x1+x2-x3, sy=y0-y1+y2-y3;
+  const den = dx1*dy2 - dx2*dy1;
+  const g = den ? (sx*dy2 - dx2*sy)/den : 0;
+  const h = den ? (dx1*sy - sx*dy1)/den : 0;
+  return { a: x1-x0+g*x1, b: x3-x0+h*x3, c: x0, d: y1-y0+g*y1, e: y3-y0+h*y3, f: y0, g, h };
+}
+function applyHomography(H, gx, gy){
+  const u = (gx+1)/2, v = (1-gy)/2;
+  const W = H.g*u + H.h*v + 1;
+  return W ? [(H.a*u+H.b*v+H.c)/W, (H.d*u+H.e*v+H.f)/W] : [H.a*u+H.b*v+H.c, H.d*u+H.e*v+H.f];
+}
+
+function polygonBBoxPx(corners, mapWin){
+  const pts = corners.map(c => mapWin(c[0], c[1]));
+  const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
+  return {
+    cx: (Math.min(...xs)+Math.max(...xs))/2, cy: (Math.min(...ys)+Math.max(...ys))/2,
+    rx: Math.max(1,(Math.max(...xs)-Math.min(...xs))/2), ry: Math.max(1,(Math.max(...ys)-Math.min(...ys))/2),
+  };
+}
+
+// Shape fit (1) — identical maths to index.html's canvas editor; see its
+// comment for the derivation. Only difference here is quadAspect uses this
+// window's own letterboxed mapWin instead of a plain square normToPx.
+function parseAspectRatio(str){
+  const m = /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/.exec(String(str||"").trim());
+  if (!m) return 1;
+  const w = parseFloat(m[1]), h = parseFloat(m[2]);
+  return h > 0 ? w/h : 1;
+}
+function quadAspect(corners, mapWin){
+  const pts = corners.map(c => mapWin(c[0], c[1]));
+  const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
+  const qw = Math.max(...xs)-Math.min(...xs), qh = Math.max(...ys)-Math.min(...ys);
+  return qh > 0 ? qw/qh : 1;
+}
+function fitPoint(gx, gy, mode, ca, qa){
+  if (mode === "fit"){
+    return ca >= qa ? [gx, gy * (qa/ca)] : [gx * (ca/qa), gy];
+  }
+  if (mode === "crop"){
+    return ca >= qa ? [gx * (ca/qa), gy] : [gx, gy * (qa/ca)];
+  }
+  return [gx, gy];
+}
+function clipToQuadPath(ctx, corners, mapWin){
+  ctx.beginPath();
+  corners.forEach((c,i) => { const [X,Y]=mapWin(c[0],c[1]); i?ctx.lineTo(X,Y):ctx.moveTo(X,Y); });
+  ctx.closePath();
+  ctx.clip();
+}
+function clipShapePath(ctx, shape, cx, cy, rx, ry){
+  ctx.beginPath();
+  if (shape === "circle") {
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2);
+  } else if (shape === "square") {
+    ctx.rect(cx-rx, cy-ry, rx*2, ry*2);
+  } else if (shape === "triangle") {
+    ctx.moveTo(cx, cy-ry); ctx.lineTo(cx+rx, cy+ry); ctx.lineTo(cx-rx, cy+ry); ctx.closePath();
+  } else if (shape === "hexagon") {
+    for (let i=0;i<6;i++){
+      const a = -Math.PI/2 + i*Math.PI/3;
+      const x = cx+rx*Math.cos(a), y = cy+ry*Math.sin(a);
+      i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    }
+    ctx.closePath();
+  }
+}
+
+// Draws one polygon's warped strokes (incl. glow) into `ctx` — identical
+// structure to index.html's canvas editor, just using this window's own
+// letterboxed mapWin instead of a plain square normToPx.
+function drawWarpedStrokes(ctx, w, h, layer, H, mapWin, opacity, fitMode, ca, qa){
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  const glowPx = (layer.glow || 0) * Math.min(w, h) * 0.05;
+  layer.strokes.forEach(st => {
+    const [r, g, b] = st.c;
+    const col = `rgb(${r*255|0},${g*255|0},${b*255|0})`;
+    ctx.strokeStyle = col;
+    ctx.shadowBlur = glowPx > 0 ? glowPx : 0;
+    ctx.shadowColor = col;
+    ctx.lineWidth = Math.max(1, Math.min(w,h) / 520);
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    st.p.forEach((pt, i) => {
+      // Per-polygon mirror: a same-shape axis flip of its own strokes, not
+      // a true half-reflect kaleidoscope fold (that needs a hard centerline;
+      // scoping it per warped, possibly-irregular quad would need clipping
+      // vector paths at their own crossing — deferred past v1).
+      let [gx, gy] = pt;
+      if (layer.mirror_x) gx = -gx;
+      if (layer.mirror_y) gy = -gy;
+      [gx, gy] = fitPoint(gx, gy, fitMode, ca, qa);
+      const [wx, wy] = applyHomography(H, gx, gy);
+      const [X, Y] = mapWin(wx, wy);
+      i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y);
+    });
+    ctx.stroke();
+  });
+  ctx.restore();
+}
+// Clip Shape (4) — hard-edged only now, same as index.html's drawClippedStrokes:
+// Canvas 2D's own clip() does this directly, no offscreen canvas/blur (used
+// to support a soft/feathered edge, but that was expensive enough to
+// visibly stall the render loop with more than a couple of clipped shapes).
+function drawClippedStrokes(ctx, w, h, layer, H, mapWin, opacity, fitMode, ca, qa){
+  const {cx, cy, rx, ry} = polygonBBoxPx(layer.corners, mapWin);
+  ctx.save();
+  clipShapePath(ctx, layer.clip_shape, cx, cy, rx, ry);
+  ctx.clip();
+  drawWarpedStrokes(ctx, w, h, layer, H, mapWin, opacity, fitMode, ca, qa);
+  ctx.restore();
+}
+
+// Knockout fill type (2/3) — a boolean cutout: opaque black fill, no scene
+// content, no homography warp (already screen-space geometry via mapWin),
+// arbitrary point count. No outline here (unlike the editor) — this is the
+// real projected output, so it should be invisible other than blocking
+// whatever's behind it.
+function drawKnockoutFill(ctx, layer, mapWin, opacity){
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  ctx.fillStyle = "#000";
+  ctx.beginPath();
+  layer.corners.forEach((c,i) => { const [X,Y]=mapWin(c[0],c[1]); i?ctx.lineTo(X,Y):ctx.moveTo(X,Y); });
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// Media shapes — same idea as index.html's drawPolyMedia (see its comments
+// for the full rationale, including the perf technique below), using this
+// window's own mapWin instead of a rect. Kept in sync with the editor's
+// version by hand, same as every other paired function in this file.
+//
+// Playback: videos load with autoplay OFF, and only actually play while the
+// engine is active and not frozen (updateMediaPlayback, driven by the
+// websocket's own state messages below) — same "doesn't play until Start"
+// behaviour as the editor. Unlike the editor though, this window does NOT
+// draw a media layer at all while inactive (see paintComposite's `active`
+// check) — matching how vector scenes already go fully black on Stop here,
+// rather than showing a static preview frame (that's an editing aid, this
+// is the real output).
+const _mediaEls = new Map();
+const _MEDIA_VIDEO_EXT = new Set(["mp4","mov","webm","m4v"]);
+function getMediaEl(name){
+  let m = _mediaEls.get(name);
+  if (m) return m;
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  const kind = _MEDIA_VIDEO_EXT.has(ext) ? "video" : "image";
+  let el;
+  if (kind === "video"){
+    el = document.createElement("video");
+    el.loop = true; el.muted = true; el.playsInline = true; el.preload = "auto";
+    el.src = `/media-files/${encodeURIComponent(name)}`;
+    el.addEventListener("loadeddata", () => { m.ready = true; });
+  } else {
+    el = new Image();
+    el.addEventListener("load", () => { m.ready = true; });
+    el.src = `/media-files/${encodeURIComponent(name)}`;
+  }
+  m = {el, kind, ready: false};
+  _mediaEls.set(name, m);
+  return m;
+}
+function mediaAspect(m){
+  const w = m.kind === "video" ? m.el.videoWidth : m.el.naturalWidth;
+  const h = m.kind === "video" ? m.el.videoHeight : m.el.naturalHeight;
+  return (w && h) ? w / h : 1;
+}
+function updateMediaPlayback(active, frozen){
+  const shouldPlay = !!(active && !frozen);
+  for (const m of _mediaEls.values()){
+    if (m.kind !== "video") continue;
+    if (shouldPlay && m.el.paused) m.el.play().catch(() => {});
+    else if (!shouldPlay && !m.el.paused) m.el.pause();
+  }
+}
+// Grabs the live video frame into a small offscreen canvas ONCE per repaint
+// (see index.html's getMediaFrame for the full rationale) so the triangle
+// mesh's ~70 draws/shape/tick read a cheap already-rasterized bitmap
+// instead of hitting the live <video> element that many times.
+function getMediaFrame(m){
+  if (m.kind !== "video") return m.el;
+  const vw = m.el.videoWidth || 1, vh = m.el.videoHeight || 1;
+  if (!m.frameCanvas){ m.frameCanvas = document.createElement("canvas"); m.frameCtx = m.frameCanvas.getContext("2d"); }
+  if (m.frameCanvas.width !== vw || m.frameCanvas.height !== vh){ m.frameCanvas.width = vw; m.frameCanvas.height = vh; }
+  m.frameCtx.drawImage(m.el, 0, 0, vw, vh);
+  return m.frameCanvas;
+}
+const MEDIA_WARP_GRID = 6;
+function isParallelogram(corners, eps=1e-3){
+  const [[x0,y0],[x1,y1],[x2,y2],[x3,y3]] = corners;
+  return Math.abs((x0+x2)-(x1+x3)) < eps && Math.abs((y0+y2)-(y1+y3)) < eps;
+}
+function affineTriangle(sx0,sy0, sx1,sy1, sx2,sy2, dx0,dy0, dx1,dy1, dx2,dy2){
+  const D = sx0*(sy1-sy2) + sx1*(sy2-sy0) + sx2*(sy0-sy1);
+  if (!D) return null;
+  return {
+    a: (dx0*(sy1-sy2) + dx1*(sy2-sy0) + dx2*(sy0-sy1)) / D,
+    b: (dy0*(sy1-sy2) + dy1*(sy2-sy0) + dy2*(sy0-sy1)) / D,
+    c: (dx0*(sx2-sx1) + dx1*(sx0-sx2) + dx2*(sx1-sx0)) / D,
+    d: (dy0*(sx2-sx1) + dy1*(sx0-sx2) + dy2*(sx1-sx0)) / D,
+    e: (dx0*(sx1*sy2-sx2*sy1) + dx1*(sx2*sy0-sx0*sy2) + dx2*(sx0*sy1-sx1*sy0)) / D,
+    f: (dy0*(sx1*sy2-sx2*sy1) + dy1*(sx2*sy0-sx0*sy2) + dy2*(sx0*sy1-sx1*sy0)) / D,
+  };
+}
+function drawWarpedTriangle(ctx, img, s0,s1,s2, d0,d1,d2){
+  const T = affineTriangle(s0[0],s0[1], s1[0],s1[1], s2[0],s2[1], d0[0],d0[1], d1[0],d1[1], d2[0],d2[1]);
+  if (!T) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(d0[0],d0[1]); ctx.lineTo(d1[0],d1[1]); ctx.lineTo(d2[0],d2[1]); ctx.closePath();
+  ctx.clip();
+  ctx.transform(T.a, T.b, T.c, T.d, T.e, T.f);
+  ctx.drawImage(img, 0, 0);
+  ctx.restore();
+}
+function drawMediaWarped(ctx, mapWin, H, corners, img, iw, ih, opacity, fitMode, ca, qa){
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  if (isParallelogram(corners)){
+    const uv = [[-1,1],[1,1],[-1,-1]];
+    const s = uv.map(([gx,gy]) => [(gx*0.5+0.5)*iw, (0.5-gy*0.5)*ih]);
+    const d = uv.map(([gx,gy]) => {
+      const [fgx,fgy] = fitPoint(gx, gy, fitMode, ca, qa);
+      const [wx,wy] = applyHomography(H, fgx, fgy);
+      return mapWin(wx, wy);
+    });
+    const T = affineTriangle(s[0][0],s[0][1], s[1][0],s[1][1], s[2][0],s[2][1], d[0][0],d[0][1], d[1][0],d[1][1], d[2][0],d[2][1]);
+    if (T){
+      ctx.beginPath();
+      corners.forEach((c,i) => { const [X,Y]=mapWin(c[0],c[1]); i?ctx.lineTo(X,Y):ctx.moveTo(X,Y); });
+      ctx.closePath();
+      ctx.clip();
+      ctx.transform(T.a, T.b, T.c, T.d, T.e, T.f);
+      ctx.drawImage(img, 0, 0);
+    }
+    ctx.restore();
+    return;
+  }
+  const N = MEDIA_WARP_GRID;
+  const dst = [], src = [];
+  for (let j=0;j<=N;j++){
+    const drow = [], srow = [];
+    for (let i=0;i<=N;i++){
+      const gx = (i/N)*2-1, gy = 1-(j/N)*2;
+      srow.push([(gx*0.5+0.5)*iw, (0.5-gy*0.5)*ih]);
+      const [fgx,fgy] = fitPoint(gx, gy, fitMode, ca, qa);
+      const [wx,wy] = applyHomography(H, fgx, fgy);
+      drow.push(mapWin(wx, wy));
+    }
+    dst.push(drow); src.push(srow);
+  }
+  for (let j=0;j<N;j++){
+    for (let i=0;i<N;i++){
+      drawWarpedTriangle(ctx, img, src[j][i], src[j][i+1], src[j+1][i], dst[j][i], dst[j][i+1], dst[j+1][i]);
+      drawWarpedTriangle(ctx, img, src[j][i+1], src[j+1][i+1], src[j+1][i], dst[j][i+1], dst[j+1][i+1], dst[j+1][i]);
+    }
+  }
+  ctx.restore();
+}
+function drawLayerMedia(ctx, layer, mapWin, opacity){
+  if (!layer.media) return;
+  const m = getMediaEl(layer.media);
+  if (!m.ready) return;
+  const img = getMediaFrame(m);
+  const H = homography(layer.corners);
+  const fitMode = layer.fit || "stretch";
+  const ca = mediaAspect(m), qa = quadAspect(layer.corners, mapWin);
+  const iw = m.kind === "video" ? m.el.videoWidth : m.el.naturalWidth;
+  const ih = m.kind === "video" ? m.el.videoHeight : m.el.naturalHeight;
+  if (layer.clip_shape){
+    const {cx, cy, rx, ry} = polygonBBoxPx(layer.corners, mapWin);
+    ctx.save();
+    clipShapePath(ctx, layer.clip_shape, cx, cy, rx, ry);
+    ctx.clip();
+    drawMediaWarped(ctx, mapWin, H, layer.corners, img, iw, ih, opacity, fitMode, ca, qa);
+    ctx.restore();
+  } else if (fitMode === "crop"){
+    ctx.save();
+    clipToQuadPath(ctx, layer.corners, mapWin);
+    drawMediaWarped(ctx, mapWin, H, layer.corners, img, iw, ih, opacity, fitMode, ca, qa);
+    ctx.restore();
+  } else {
+    drawMediaWarped(ctx, mapWin, H, layer.corners, img, iw, ih, opacity, fitMode, ca, qa);
+  }
+}
+
+// THE monitor output (2): one Scene per canvas polygon, each warped into
+// that polygon's quad and composited here — the only rendering path this
+// window has now. Letterboxed to the canvas's own resolution/aspect —
+// resW/resH is whatever's set in the editor's width/height fields — rather
+// than assuming a square, so this window matches the editor 1:1.
+function paintComposite(layers, resW, resH, masterGain, active){
+  const w = cv.width, h = cv.height;
+  cx.shadowBlur = 0;
+  cx.globalCompositeOperation = "source-over";
+  // No single global "trail" setting any more (glow/trail are per-polygon
+  // overrides now — see composite.py) — approximate the window-level
+  // persistence fade with whichever active layer wants the most trail.
+  const windowTrail = layers && layers.length ? Math.max(0, ...layers.map(l => l.trail || 0)) : 0;
+  cx.fillStyle = windowTrail > 0 ? `rgba(0,0,0,${(1 - windowTrail).toFixed(3)})` : "#000";
+  cx.fillRect(0, 0, w, h);
+  if (!layers || !layers.length) return;
+  const scale = Math.min(w / resW, h / resH);
+  const halfW = (resW * scale) / 2, halfH = (resH * scale) / 2;
+  const cx0 = w / 2, cy0 = h / 2;
+  const mapWin = (x, y) => {
+    const [xk, yk] = applyKeystone(x, y, filters.keystoneH, filters.keystoneV);
+    return [cx0 + xk * halfW, cy0 - yk * halfH];
+  };
+  const gain = masterGain ?? 1;
+  // Paint order (3): highest z-index first (furthest back), lowest last
+  // (furthest front) — matches the editor's stacking exactly.
+  const ordered = [...layers].sort((a, b) => (b.z_index ?? 5) - (a.z_index ?? 5));
+  ordered.forEach(layer => {
+    const opacity = (layer.opacity ?? 1) * gain;
+    if (layer.source_type === "knockout"){
+      drawKnockoutFill(cx, layer, mapWin, opacity);
+      return;
+    }
+    if (layer.source_type === "media"){
+      // Real output stays fully black on Stop, same as vector scenes
+      // (empty frame) — a media layer would otherwise keep showing its
+      // last frame regardless of active, since it isn't scene-clock-driven.
+      if (active) drawLayerMedia(cx, layer, mapWin, opacity);
+      return;
+    }
+    if (!layer.strokes || !layer.strokes.length) return;
+    const H = homography(layer.corners);
+    const fitMode = layer.fit || "stretch";
+    const ca = parseAspectRatio(layer.aspect), qa = quadAspect(layer.corners, mapWin);
+    if (layer.clip_shape) {
+      drawClippedStrokes(cx, w, h, layer, H, mapWin, opacity, fitMode, ca, qa);
+    } else if (fitMode === "crop") {
+      cx.save();
+      clipToQuadPath(cx, layer.corners, mapWin);
+      drawWarpedStrokes(cx, w, h, layer, H, mapWin, opacity, fitMode, ca, qa);
+      cx.restore();
+    } else {
+      drawWarpedStrokes(cx, w, h, layer, H, mapWin, opacity, fitMode, ca, qa);
+    }
+  });
+  cx.shadowBlur = 0;
+  if (filters.flipX || filters.flipY) applyFlip(cx, cv, filters.flipX, filters.flipY);
+}
+
+let ws = null;
+function connect(){
+  ws = new WebSocket(`ws://${location.host}/ws?hq=1`);
+  ws.onopen = () => statusEl.classList.remove("show");
+  ws.onclose = () => { statusEl.classList.add("show"); setTimeout(connect, 1000); };
+  ws.onerror = () => ws.close();
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.type !== "state") return;
+    const canvasDoc = (m.state && m.state.canvas) || {};
+    const active = !!(m.state && m.state.active);
+    updateMediaPlayback(active, m.state && m.state.frozen);
+    paintComposite(m.composite, canvasDoc.width || 1920, canvasDoc.height || 1080,
+                    m.state && m.state.master_gain, active);
+  };
+}
+connect();
+</script>
+</body>
+</html>

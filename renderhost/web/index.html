@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Render host control</title>
+<style>
+  :root{
+    --bg:#0a0b0e; --panel:#121419; --panel2:#181b22; --line:#242833;
+    --ink:#e7eaf0; --dim:#8b93a4; --cyan:#33e0d0; --amber:#f2a623; --green:#2ecc71;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       font-size:14px;line-height:1.5;padding:24px}
+  h1{font-size:15px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;
+     margin:0 0 4px;display:flex;align-items:center;gap:10px}
+  .statusdot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff4d4d;flex:0 0 auto}
+  .statusdot.on{background:var(--green)}
+  .meta{color:var(--dim);font-family:var(--mono);font-size:12px;margin:0 0 20px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+        padding:16px;margin-bottom:14px;max-width:520px}
+  .card h2{margin:0 0 12px;font-size:11px;font-weight:500;letter-spacing:.14em;
+           text-transform:uppercase;color:var(--dim)}
+  .field{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .field label{flex:0 0 90px;font-size:12px;color:var(--dim)}
+  .field input[type=range]{flex:1;accent-color:var(--cyan)}
+  .field .val{flex:0 0 56px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--cyan)}
+  .toggles{display:flex;gap:8px;margin-bottom:10px}
+  button{background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+         border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer}
+  button:hover{border-color:var(--cyan)}
+  button.amber{border-color:var(--amber);color:var(--amber)}
+  button.go{background:var(--cyan);border-color:var(--cyan);color:#04211f;font-weight:500}
+  .outputs{display:flex;flex-direction:column;gap:6px;font-family:var(--mono);font-size:12px}
+  .outputs .row{display:flex;justify-content:space-between;padding:6px 10px;
+                border:1px solid var(--line);border-radius:6px;background:var(--panel2)}
+  .hint{font-size:11px;color:var(--dim);margin-top:8px}
+  #save-status{font-size:12px;color:var(--dim);margin-left:10px}
+  select{background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+         border-radius:8px;padding:6px 8px;font-size:12px;font-family:var(--mono);width:100%}
+  #corner-canvas{width:100%;background:#000;border:1px solid var(--line);border-radius:8px;
+                 display:block;margin-top:10px;cursor:default}
+</style>
+</head>
+<body>
+
+<h1><span class="statusdot" id="dot"></span>Render host control</h1>
+<p class="meta" id="meta">connecting…</p>
+
+<div class="card">
+  <h2>Group</h2>
+  <div class="outputs" id="group-info"></div>
+  <div class="hint">Switching which group is rendered isn't wired up yet — restart the server with <code>--group</code> to pick a different one.</div>
+</div>
+
+<div class="card">
+  <h2>Outputs</h2>
+  <div class="outputs" id="outputs"></div>
+</div>
+
+<div class="card">
+  <h2>Corner-pin / keystone</h2>
+  <select id="output-select"></select>
+  <canvas id="corner-canvas" width="480" height="270"></canvas>
+  <div class="row" style="display:flex;gap:8px;margin-top:10px">
+    <button id="reset-corners-btn">Reset keystone</button>
+  </div>
+  <div class="hint">Drag a corner. Changes apply live immediately, same as the sliders below — nothing is written to disk until you save.</div>
+</div>
+
+<div class="card">
+  <h2>Edge blend</h2>
+  <div class="toggles">
+    <button id="blend-toggle">Blend</button>
+    <button id="lift-toggle">Lift</button>
+  </div>
+  <div class="field"><label>overlap</label>
+    <input type="range" id="overlap" min="0" max="800" step="4">
+    <span class="val" id="v-overlap">0px</span></div>
+  <div class="field"><label>gamma</label>
+    <input type="range" id="gamma" min="0.2" max="4" step="0.05">
+    <span class="val" id="v-gamma">2.20</span></div>
+  <div class="field"><label>lift</label>
+    <input type="range" id="lift" min="0" max="0.2" step="0.002">
+    <span class="val" id="v-lift">0.000</span></div>
+  <div class="hint">These apply live to the running render immediately. Nothing is written to disk until you save.</div>
+</div>
+
+<div class="card">
+  <button class="go" id="save-btn">Save to profile</button>
+  <span id="save-status"></span>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const ws = new WebSocket(`ws://${location.host}/ws`);
+const send = o => ws.readyState === 1 && ws.send(JSON.stringify(o));
+
+ws.onopen = () => $("dot").classList.add("on");
+ws.onclose = () => { $("dot").classList.remove("on"); $("meta").textContent = "disconnected"; };
+
+let _lastState = null;
+let _outputsById = {};
+let _selectedOutput = null;
+ws.onmessage = e => {
+  const m = JSON.parse(e.data);
+  if (m.type === "state") paintState(m.state);
+};
+
+function paintState(s){
+  _lastState = s;
+  $("meta").textContent = `${s.profile}  ·  canvas ${s.canvas_w}×${s.canvas_h}`;
+
+  $("group-info").innerHTML =
+    `<div class="row"><span>${s.group}</span><span>${s.outputs.length} output(s)</span></div>`;
+
+  $("outputs").innerHTML = s.outputs.map(o =>
+    `<div class="row"><span>${o.name}</span><span>${o.viewport.join(", ")}</span></div>`
+  ).join("");
+
+  $("blend-toggle").className = s.blend_enabled ? "amber" : "";
+  $("blend-toggle").textContent = s.blend_enabled ? "Blend: on" : "Blend: OFF";
+  $("lift-toggle").className = s.lift_enabled ? "amber" : "";
+  $("lift-toggle").textContent = s.lift_enabled ? "Lift: on" : "Lift: OFF";
+
+  if (document.activeElement !== $("overlap")) { $("overlap").value = s.overlap; $("v-overlap").textContent = s.overlap + "px"; }
+  if (document.activeElement !== $("gamma")) { $("gamma").value = s.gamma; $("v-gamma").textContent = s.gamma.toFixed(2); }
+  if (document.activeElement !== $("lift")) { $("lift").value = s.lift; $("v-lift").textContent = s.lift.toFixed(3); }
+
+  _outputsById = {};
+  s.outputs.forEach(o => { _outputsById[o.name] = o; });
+  if (!_selectedOutput || !(_selectedOutput in _outputsById)) {
+    _selectedOutput = s.outputs.length ? s.outputs[0].name : null;
+  }
+  const sel = $("output-select");
+  const sig = s.outputs.map(o => o.name).join(",");
+  if (sel.dataset.sig !== sig) {
+    sel.dataset.sig = sig;
+    sel.innerHTML = "";
+    s.outputs.forEach(o => {
+      const opt = document.createElement("option"); opt.value = o.name; opt.textContent = o.name;
+      sel.appendChild(opt);
+    });
+  }
+  if (document.activeElement !== sel && _selectedOutput) sel.value = _selectedOutput;
+
+  // Don't stomp an in-progress local drag with a stale broadcast — same
+  // "activeElement" idea as the sliders above, just canvases aren't
+  // focusable inputs so an explicit flag stands in for it.
+  if (!_cornerDrag) paintCornerEditor();
+}
+
+// Corner-pin editor (§5, step 2) — one output at a time, draggable corner
+// handles over its own real pixel space (matching profile.py's on-disk
+// convention directly, so what's dragged here is exactly what gets saved,
+// no unit surprises). Mirrors lightsaber's own index.html shape editor:
+// same drag-a-handle-with-hit-testing pattern, just one quad, no zoom/pan,
+// no multi-shape selection — genuinely simpler, not a cut-down copy.
+let _cornerDrag = null;   // {idx, corners}
+let _lastCornerSend = 0;
+const cvCanvas = $("corner-canvas"), cvCtx = cvCanvas.getContext("2d");
+
+function currentCorners(o, w, h){
+  return (o.corners && o.corners.length) ? o.corners : [[0,0],[w,0],[w,h],[0,h]];
+}
+
+function paintCornerEditor(){
+  const o = _selectedOutput ? _outputsById[_selectedOutput] : null;
+  if (!o) { cvCtx.clearRect(0, 0, cvCanvas.width, cvCanvas.height); return; }
+  const [, , w, h] = o.viewport;
+  const dispH = Math.max(1, Math.round(cvCanvas.width * h / w));
+  if (cvCanvas.height !== dispH) cvCanvas.height = dispH;
+
+  const toCanvas = (x, y) => [x / w * cvCanvas.width, y / h * cvCanvas.height];
+  const corners = currentCorners(o, w, h);
+
+  cvCtx.clearRect(0, 0, cvCanvas.width, cvCanvas.height);
+  cvCtx.strokeStyle = "rgba(255,255,255,.08)"; cvCtx.lineWidth = 1;
+  cvCtx.beginPath();
+  for (let x = 0; x <= cvCanvas.width; x += 24) { cvCtx.moveTo(x + .5, 0); cvCtx.lineTo(x + .5, cvCanvas.height); }
+  for (let y = 0; y <= cvCanvas.height; y += 24) { cvCtx.moveTo(0, y + .5); cvCtx.lineTo(cvCanvas.width, y + .5); }
+  cvCtx.stroke();
+
+  // Nominal (identity) rect, dim, as a reference for how far the keystone has moved
+  cvCtx.strokeStyle = "rgba(255,255,255,.2)"; cvCtx.setLineDash([4, 4]);
+  cvCtx.strokeRect(0.5, 0.5, cvCanvas.width - 1, cvCanvas.height - 1);
+  cvCtx.setLineDash([]);
+
+  cvCtx.strokeStyle = "#33e0d0"; cvCtx.lineWidth = 2;
+  cvCtx.beginPath();
+  corners.forEach((c, i) => { const [px, py] = toCanvas(c[0], c[1]); i ? cvCtx.lineTo(px, py) : cvCtx.moveTo(px, py); });
+  cvCtx.closePath(); cvCtx.stroke();
+
+  cvCtx.fillStyle = "#33e0d0";
+  corners.forEach(c => {
+    const [px, py] = toCanvas(c[0], c[1]);
+    cvCtx.beginPath(); cvCtx.arc(px, py, 6, 0, Math.PI * 2); cvCtx.fill();
+  });
+}
+
+function canvasPoint(e){
+  const rect = cvCanvas.getBoundingClientRect();
+  return [(e.clientX - rect.left) * (cvCanvas.width / rect.width),
+          (e.clientY - rect.top) * (cvCanvas.height / rect.height)];
+}
+function hitTestCorner(px, py, corners, w, h){
+  for (let i = 0; i < corners.length; i++) {
+    const cx = corners[i][0] / w * cvCanvas.width, cy = corners[i][1] / h * cvCanvas.height;
+    if (Math.hypot(px - cx, py - cy) < 12) return i;
+  }
+  return -1;
+}
+cvCanvas.addEventListener("mousedown", e => {
+  const o = _selectedOutput ? _outputsById[_selectedOutput] : null;
+  if (!o) return;
+  const [, , w, h] = o.viewport;
+  const [px, py] = canvasPoint(e);
+  const corners = currentCorners(o, w, h).map(c => [...c]);
+  const idx = hitTestCorner(px, py, corners, w, h);
+  if (idx >= 0) {
+    o.corners = corners;   // working copy, replacing [] if this was identity
+    _cornerDrag = {idx, corners};
+  }
+});
+window.addEventListener("mousemove", e => {
+  if (!_cornerDrag) return;
+  const o = _outputsById[_selectedOutput];
+  const [, , w, h] = o.viewport;
+  const [px, py] = canvasPoint(e);
+  const rx = px / cvCanvas.width * w, ry = py / cvCanvas.height * h;
+  // A generous overshoot beyond the nominal rect is allowed on purpose —
+  // real keystone corrections often need a corner pulled past the
+  // viewport's own edge, matching common projector alignment tools.
+  const clamped = [Math.max(-w * 0.5, Math.min(w * 1.5, rx)), Math.max(-h * 0.5, Math.min(h * 1.5, ry))];
+  _cornerDrag.corners[_cornerDrag.idx] = clamped;
+  paintCornerEditor();
+  const now = performance.now();
+  if (now - _lastCornerSend > 33) {
+    _lastCornerSend = now;
+    send({type: "set_corners", output: _selectedOutput, corners: _cornerDrag.corners});
+  }
+});
+window.addEventListener("mouseup", () => {
+  if (_cornerDrag) {
+    send({type: "set_corners", output: _selectedOutput, corners: _cornerDrag.corners});
+  }
+  _cornerDrag = null;
+});
+$("output-select").onchange = () => { _selectedOutput = $("output-select").value; paintCornerEditor(); };
+$("reset-corners-btn").onclick = () => {
+  if (_selectedOutput) send({type: "reset_corners", output: _selectedOutput});
+};
+
+$("blend-toggle").onclick = () => send({type: "toggle_blend"});
+$("lift-toggle").onclick = () => send({type: "toggle_lift"});
+
+$("overlap").oninput = () => {
+  $("v-overlap").textContent = $("overlap").value + "px";
+  send({type: "set_overlap", value: +$("overlap").value});
+};
+$("gamma").oninput = () => {
+  $("v-gamma").textContent = (+$("gamma").value).toFixed(2);
+  send({type: "set_gamma", value: +$("gamma").value});
+};
+$("lift").oninput = () => {
+  $("v-lift").textContent = (+$("lift").value).toFixed(3);
+  send({type: "set_lift", value: +$("lift").value});
+};
+
+$("save-btn").onclick = () => {
+  send({type: "save"});
+  $("save-status").textContent = "saved";
+  setTimeout(() => { $("save-status").textContent = ""; }, 1500);
+};
+</script>
+</body>
+</html>

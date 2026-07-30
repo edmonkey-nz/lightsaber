@@ -1,0 +1,8 @@
+# Kept separate from the top-level requirements.txt on purpose — this is a
+# prototype toward the ARCHITECTURE.md render host, not a dependency of the
+# lightsaber web app. Someone running just the browser control surface
+# shouldn't need a GL context or SDL2 to install it.
+moderngl>=5.10
+PySDL2>=0.9.17
+Pillow>=10.0   # only for the --screenshot flag on the demo scripts
+aiohttp>=3.9   # only for serve.py's web control panel — already a lightsaber dependency

@@ -1,0 +1,10 @@
+# core (required)
+numpy>=1.24
+aiohttp>=3.9
+
+# optional — install to unlock features:
+#   anthropic      Claude scene director (else a local keyword mapping is used;
+#                  needs messages.stream() for the live progress bar, so >=0.34)
+#
+# pip install anthropic
+#   anthropic>=0.34.0

@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments (any name/location convention)
+.venv/
+.venv*/
+venv/
+env/
+
+# Lightsaber local/runtime state — never commit secrets or machine-specific data
+settings.json
+scenes/generated/*.json
+media/*
+# Each project's canvases/sequence — run.py bootstraps an empty "default"
+# project from scratch on first run (ProjectManager), so nothing here needs
+# to be shipped.
+projects/
+# canvases/*.json and sequence.json (repo root) are the pre-Projects legacy
+# location, superseded by projects/<name>/ above — kept in case an old
+# checkout still writes there via run.py's one-time migration path.
+canvases/*.json
+sequence.json
+ARCHITECTURE.md
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+
+# VSCode: keep the shared config, ignore personal machine-specific overrides
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Node (only present if jsdom or similar dev tooling was installed locally)
+node_modules/
