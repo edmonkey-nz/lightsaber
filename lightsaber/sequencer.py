@@ -19,6 +19,10 @@ class Step:
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     canvas: str = ""          # CanvasManager library key
     duration: float = 8.0     # seconds
+    # How long the transition INTO this step takes: dips master_gain to
+    # black, swaps the canvas, then fades back in (see composite.py's
+    # _swap_sequencer_canvas) — 0 is an instant cut, the old/only behaviour.
+    crossfade: float = 0.0
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -27,7 +31,8 @@ class Step:
     def from_dict(d: dict) -> "Step":
         return Step(id=d.get("id") or uuid.uuid4().hex[:8],
                     canvas=d.get("canvas", ""),
-                    duration=float(d.get("duration", 8.0)))
+                    duration=float(d.get("duration", 8.0)),
+                    crossfade=float(d.get("crossfade", 0.0)))
 
 
 @dataclass
@@ -81,8 +86,9 @@ class Sequencer:
         os.replace(tmp, self.path)
 
     # editing -----------------------------------------------------------
-    def add_step(self, canvas: str, duration: float = 8.0) -> Step:
-        step = Step(canvas=canvas, duration=max(0.5, float(duration)))
+    def add_step(self, canvas: str, duration: float = 8.0, crossfade: float = 0.0) -> Step:
+        step = Step(canvas=canvas, duration=max(0.5, float(duration)),
+                    crossfade=max(0.0, float(crossfade)))
         self.sequence.steps.append(step)
         self.save()
         return step
@@ -103,13 +109,16 @@ class Sequencer:
         steps.insert(max(0, min(index, len(steps))), step)
         self.save()
 
-    def set_step(self, step_id: str, canvas: str | None = None, duration: float | None = None):
+    def set_step(self, step_id: str, canvas: str | None = None, duration: float | None = None,
+                 crossfade: float | None = None):
         for s in self.sequence.steps:
             if s.id == step_id:
                 if canvas is not None:
                     s.canvas = canvas
                 if duration is not None:
                     s.duration = max(0.5, float(duration))
+                if crossfade is not None:
+                    s.crossfade = max(0.0, float(crossfade))
                 break
         self.save()
 

@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import json
 import os
+
+from .effectors import EffectorMatrix, ANCHOR_POINTS
 import uuid
 from dataclasses import dataclass, field, asdict
 
@@ -26,6 +28,30 @@ from dataclasses import dataclass, field, asdict
 # shape — see SceneSpec.aspect). Same 1.0 total width span as the old
 # square, height scaled to 16:9 (0.5625 = 9/16).
 DEFAULT_CORNERS = [[-0.5, 0.28125], [0.5, 0.28125], [0.5, -0.28125], [-0.5, -0.28125]]
+
+# The quad's own outline in UV space — what a freshly-switched-on custom
+# mask starts as (see PolygonSpec.clip_points), so turning it on is a visual
+# no-op you then carve away from rather than an instant blank-out.
+DEFAULT_CLIP_POINTS = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+MAX_CLIP_POINTS = 64
+
+
+def sanitize_clip_points(value) -> list:
+    """Coerce a wire payload into a valid clip_points list, or [] (= no
+    custom mask). Fewer than 3 points can't bound an area, so that degrades
+    to 'no mask' rather than clipping everything away to nothing."""
+    if not isinstance(value, (list, tuple)):
+        return []
+    pts = []
+    for p in list(value)[:MAX_CLIP_POINTS]:
+        try:
+            u, v = float(p[0]), float(p[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        # Clamped to the quad: content only exists inside the quad, so a
+        # mask point beyond it can only ever be a no-op anyway.
+        pts.append([max(0.0, min(1.0, u)), max(0.0, min(1.0, v))])
+    return pts if len(pts) >= 3 else []
 
 
 @dataclass
@@ -42,12 +68,23 @@ class PolygonSpec:
     # warped into the quad client-side, same homography as a scene's strokes;
     # the compositor itself doesn't touch pixels, it just carries the
     # filename on the layer payload — see drawPolyMedia/paintComposite in the
-    # two HTML files), or "knockout" — a boolean cutout: an arbitrary-point
-    # (not just a quad) opaque black shape with no content of its own,
-    # purely there to blank out whatever it overlaps on the monitor output.
-    # Stacking against other shapes is controlled by z_index below.
+    # two HTML files), "webcam" (a single still frame grabbed from a camera
+    # device at load time, via `webcam_device`
+    # below — same client-side warp pipeline as media, just sourced from
+    # getUserMedia instead of an uploaded file), "text" (rendered from
+    # `text_content`/`text_color`/`text_size` below onto an offscreen canvas,
+    # then warped exactly like media/webcam), or "knockout" — a boolean
+    # cutout: an arbitrary-point (not just a quad) opaque black shape with no
+    # content of its own, purely there to blank out whatever it overlaps on
+    # the monitor output. Stacking against other shapes is controlled by
+    # z_index below.
     source_type: str = "scene"
     media: str | None = None   # filename under media_dir, meaningful iff source_type=="media"
+    webcam_device: str | None = None   # MediaDeviceInfo.deviceId, meaningful iff source_type=="webcam";
+                                        # None = browser's default camera
+    text_content: str = ""     # meaningful iff source_type=="text"
+    text_color: str = "#ffffff"
+    text_size: float = 0.2     # font size as a fraction of the rendered text raster's height
     opacity: float = 1.0
     # seconds — without this, two polygons showing the same scene render
     # pixel-identical (2D generators are pure functions of t; see composite.py)
@@ -63,7 +100,28 @@ class PolygonSpec:
     # (soft-edged, via a CSS blur on an offscreen canvas) but that was
     # expensive enough to visibly stall the render loop with more than a
     # couple of shapes on screen, so it's hard-edged only now.
-    clip_shape: str | None = None   # None | "circle" | "hexagon" | "triangle" | "square"
+    clip_shape: str | None = None   # None | "circle" | "hexagon" | "triangle" | "square" | "custom"
+    # Custom mask (8) — the point list for clip_shape=="custom", stored in
+    # the quad's own UV space ([0,1]^2: u runs corners[0]->corners[1], v runs
+    # corners[0]->corners[3]), NOT canvas space. That's the whole point of
+    # the feature: mapping these through the same homography the content
+    # itself is warped by makes the silhouette ride the corner pins, so
+    # dragging a pin distorts the mask and the content together as one
+    # object. (Same model as an After Effects mask, which lives in layer
+    # space and is therefore warped by a Corner Pin effect applied after it.)
+    # A preset clip_shape above is bbox-based by contrast and deliberately
+    # stays that way — a circle clip stays a circle under keystone.
+    # Empty = fall back to the quad outline, i.e. no visible masking.
+    # If a canvas-space ("stencil the content slides behind") variant is
+    # ever wanted too, it wants a separate clip_space field rather than a
+    # different interpretation of these numbers.
+    clip_points: list = field(default_factory=list)
+    # Clip Shape size (6) — scales the clip shape about its own centre,
+    # independent of the quad's own corners. 1.0 = exactly inscribed in the
+    # quad's bounding box (the original, only-ever behaviour); <1 shrinks
+    # the cutout, >1 grows it past the quad's own edges (still hard-clipped
+    # by the quad/crop path wherever one applies).
+    clip_scale: float = 1.0
     # Paint order (3): 1-10, 10 = furthest back, 1 = furthest front. Lets a
     # "knockout" cutout shape (see source_type above) sit in front of the
     # shapes it should blank out.
@@ -77,6 +135,11 @@ class PolygonSpec:
     # paintCanvasEditor/paintComposite). Applies equally to a future
     # media-sourced polygon's own native aspect.
     fit: str = "stretch"   # "stretch" | "fit" | "crop"
+    # Where position/scale/rotation effector routes pivot from (see
+    # effectors.py's transform_corners/ANCHOR_FRACTIONS) — one of the 3x3
+    # grid positions, a fraction of this polygon's own bounding box.
+    # Irrelevant unless a route actually targets one of those params.
+    transform_anchor: str = "center"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -90,12 +153,20 @@ class PolygonSpec:
             scene=d.get("scene"),
             source_type=d.get("source_type", "scene"),
             media=d.get("media"),
+            webcam_device=d.get("webcam_device"),
+            text_content=d.get("text_content", ""),
+            text_color=d.get("text_color", "#ffffff"),
+            text_size=float(d.get("text_size", 0.2)),
             opacity=float(d.get("opacity", 1.0)),
             time_offset=float(d.get("time_offset", 0.0)),
             overrides=dict(d.get("overrides", {})),
             clip_shape=d.get("clip_shape"),
+            clip_points=sanitize_clip_points(d.get("clip_points")),
+            clip_scale=float(d.get("clip_scale", 1.0)),
             z_index=max(1, min(10, int(d.get("z_index", 5)))),
             fit=d.get("fit", "stretch"),
+            transform_anchor=d.get("transform_anchor")
+                if d.get("transform_anchor") in ANCHOR_POINTS else "center",
         )
 
 
@@ -103,24 +174,26 @@ class PolygonSpec:
 class CanvasSpec:
     name: str = "untitled"
     polygons: list = field(default_factory=list)   # list[PolygonSpec]
-    # Target output resolution (e.g. a projector's native mode) — purely
-    # informational for the compositor (polygon coordinates stay normalized
-    # [-1,1] regardless), but drives the aspect ratio both the editor
-    # (#cv-edit) and the monitor output windows render at.
-    width: int = 1920
-    height: int = 1080
+    # The effector/modulation matrix (see effectors.py) — creative config,
+    # lives with the canvas the same way its polygons do (PROMPT-effectors.md:
+    # "Sources and routes are creative config — they save into the show
+    # file, not the profile"). Routes target a specific polygon on THIS
+    # canvas by id, so it travels with the canvas, not the project.
+    effectors: EffectorMatrix = field(default_factory=EffectorMatrix)
 
     def to_dict(self) -> dict:
         return {"name": self.name, "polygons": [p.to_dict() for p in self.polygons],
-                "width": self.width, "height": self.height}
+                "effectors": self.effectors.to_dict()}
 
     @staticmethod
     def from_dict(d: dict) -> "CanvasSpec":
+        # Ignores a "width"/"height" key if present — pre-migration canvas
+        # files on disk may still carry their old per-canvas resolution;
+        # that's now ProjectSpec's (see projects.py), harmless leftover data.
         return CanvasSpec(
             name=d.get("name", "untitled"),
             polygons=[PolygonSpec.from_dict(p) for p in d.get("polygons", [])],
-            width=int(d.get("width", 1920)),
-            height=int(d.get("height", 1080)),
+            effectors=EffectorMatrix.from_dict(d.get("effectors", {})),
         )
 
 
@@ -164,6 +237,14 @@ class CanvasManager:
         safe = "".join(c for c in name if c.isalnum() or c in " _-").strip()
         return os.path.join(self.library_dir, f"{safe or 'untitled'}.json")
 
+    def thumb_path_for(self, name: str) -> str:
+        # Sibling file, same sanitised base name as the canvas's own .json —
+        # see save_thumbnail's comment for why this is a file on disk rather
+        # than a field on CanvasSpec (avoids bloating every canvas load/save
+        # with an unrelated image blob nothing else reads).
+        safe = "".join(c for c in name if c.isalnum() or c in " _-").strip()
+        return os.path.join(self.library_dir, f"{safe or 'untitled'}.thumb.jpg")
+
     def save(self, name: str, spec: CanvasSpec | None = None):
         spec = spec or self.current
         spec.name = name
@@ -172,6 +253,21 @@ class CanvasManager:
             json.dump(spec.to_dict(), f, indent=2)
         os.replace(tmp, self.path_for(name))
         self._names_cache = None
+
+    def save_thumbnail(self, name: str, jpeg_bytes: bytes):
+        # A low-res preview of this canvas's editor view, captured
+        # client-side (cv-edit's own rendered pixels — see index.html's
+        # canvas-save handler) and pushed up as a separate small message
+        # right after canvas_save. Kept as its own file rather than a
+        # CanvasSpec field: it's a presentation artifact for the sequencer
+        # list (see server.py's /canvas-thumb/ route), not canvas content —
+        # bloating every save/load with an embedded image nobody but that
+        # one <img> tag reads would be wasteful, and canvases are hand-
+        # editable JSON that shouldn't need a giant base64 blob in them.
+        tmp = self.thumb_path_for(name) + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(jpeg_bytes)
+        os.replace(tmp, self.thumb_path_for(name))
 
     def load_spec(self, name: str) -> CanvasSpec:
         """Read-only fetch — does NOT touch `current`. Used both by the
@@ -185,4 +281,7 @@ class CanvasManager:
         p = self.path_for(name)
         if os.path.exists(p):
             os.remove(p)
+        tp = self.thumb_path_for(name)
+        if os.path.exists(tp):
+            os.remove(tp)
         self._names_cache = None

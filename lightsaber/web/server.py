@@ -20,16 +20,48 @@ Project messages (see projects.py):
 Canvas/sequencer messages (the renderer — see composite.py):
 
     {"type":"canvas_new"} / canvas_load / canvas_save / canvas_delete  {"name":...}
-    {"type":"canvas_set_resolution", "width":1920, "height":1080}
+
+GET/POST /canvas-thumb/{name} — a low-res JPEG snapshot of that canvas's
+editor view, captured client-side right after canvas_save (see index.html)
+and pushed up as a plain HTTP POST (raw JPEG bytes, not the websocket —
+same reasoning as media upload below: binary payloads don't belong on the
+state-broadcast channel). GET serves it back for the sequencer step list's
+thumbnails; 404 if that canvas was never saved since this feature shipped.
+
+    {"type":"project_set_resolution", "width":1920, "height":1080}   # per-project, not per-canvas
+    {"type":"project_set_notes", "notes":"..."}   # free text, this project's own run sheet
+    {"type":"project_set_output", "index":0,
+     "key":"flip_x|flip_y|keystone_h|keystone_v|viewport_x|viewport_y|viewport_w|viewport_h|duplicate_of",
+     "value":...}
+        # index 0 = Output 1, 1 = Output 2, etc — see projects.py's
+        # OutputMonitorConfig. Edited/saved only via explicit Project save,
+        # same as resolution above — not auto-persisted per keystroke.
+    {"type":"project_set_output_count", "count":2}   # resizes the outputs list — see set_output_count
+    {"type":"project_set_viewports_enabled", "value":true}
+    {"type":"project_set_show_fps", "value":true}
+    {"type":"set_test_pattern", "index":0, "value":true}
+        # Calibration aid, NOT persisted (engine-runtime only — see
+        # composite.py's set_test_pattern): shows a keystone-aware alignment
+        # grid on that output window instead of the live composite.
     {"type":"poly_add", "scene":"..."}           # scene optional
     {"type":"poly_delete", "id":"..."}
     {"type":"poly_corners", "id":"...", "corners":[[x,y]x4]}
     {"type":"poly_set", "id":"...", "key":"scene|opacity|...", "value":...}
     {"type":"poly_reorder", "id":"...", "index":0}
-    {"type":"seq_add", "canvas":"...", "duration":8.0}
-    {"type":"seq_remove"/"seq_reorder"/"seq_set", "id":"..."}
+    {"type":"seq_add", "canvas":"...", "duration":8.0, "crossfade":0.0}
+    {"type":"seq_remove"/"seq_reorder"/"seq_set", "id":"..."}   # seq_set: canvas/duration/crossfade optional
     {"type":"seq_play"/"seq_pause"/"seq_stop"/"seq_next"/"seq_prev"}
     {"type":"seq_goto", "index":0}
+
+Effector matrix messages (see effectors.py) — sources/routes/tempo live on
+the current canvas, saved with it:
+
+    {"type":"set_tempo", "value":120}
+    {"type":"set_audio_bands", "low":0.0, "mid":0.0, "high":0.0}   # engine-wide, not per-canvas — see composite.py
+    {"type":"effector_source_add"} / effector_source_remove {"id":...}
+    {"type":"effector_source_set", "id":"...", "key":"shape|rate_hz|sync|phase|pulse_width|name", "value":...}
+    {"type":"effector_route_add"} / effector_route_remove {"id":...}
+    {"type":"effector_route_set", "id":"...", "key":"source_id|target_poly|target_param|depth|offset|curve|mode", "value":...}
 
 Media upload widget (Input > Local video/image files) is plain HTTP, not the
 websocket — see media_list/media_upload/media_delete below.
@@ -110,7 +142,15 @@ def make_app(engine, media_dir: str) -> web.Application:
         # ?hq=1 (the standalone output window) asks for a much less thinned
         # composite than the small in-page control-UI canvas needs — it's
         # the actual thing being watched, not just a status glance.
-        request.app["clients"][ws] = {"hq": request.query.get("hq") == "1"}
+        # ?client=renderhost identifies a renderhost/serve.py process phoning
+        # home (see its --lightsaber-url flag) purely so the header's "Render
+        # Host" dot can reflect whether one is actually up and reachable —
+        # not yet a content pipeline (renderhost doesn't consume the
+        # composite broadcast at all yet, see ARCHITECTURE.md §12).
+        request.app["clients"][ws] = {
+            "hq": request.query.get("hq") == "1",
+            "renderhost": request.query.get("client") == "renderhost",
+        }
         try:
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:
@@ -122,8 +162,17 @@ def make_app(engine, media_dir: str) -> web.Application:
         return ws
 
     async def broadcaster(app):
+        # Paced by engine.composite.fps (--fps), NOT a fixed rate — this
+        # used to be a hardcoded 20Hz (`asyncio.sleep(0.05)`) regardless of
+        # what --fps was set to, which silently capped every client's
+        # observed frame rate at ~20 no matter how fast the compositor's own
+        # render loop (composite.py's _loop, which DOES already respect
+        # --fps) was actually producing frames. --fps 60 looked like it did
+        # nothing because the broadcaster was still only picking up and
+        # sending a new frame 20 times a second.
         try:
             while True:
+                period = 1.0 / max(1, engine.composite.fps)
                 if app["clients"]:
                     try:
                         state = engine.state()
@@ -136,25 +185,31 @@ def make_app(engine, media_dir: str) -> web.Application:
                         # silently — the UI would show "linked" (the websocket
                         # itself is fine) but never receive another update for
                         # the rest of the session, with the error only surfacing
-                        # in the terminal on process exit.
+                        # in the terminal on process exit. Fixed short backoff
+                        # here (not `period`) on purpose — an error retry loop
+                        # shouldn't spin at whatever --fps happens to be.
                         print(f"[lightsaber] broadcaster: skipped a bad state "
                               f"tick ({e}); continuing")
                         await asyncio.sleep(0.05)
                         continue
-                    payload_std = json.dumps({"type": "state", "state": state, "composite": composite_std})
+                    renderhost_connected = any(
+                        meta.get("renderhost") for meta in app["clients"].values())
+                    payload_std = json.dumps({"type": "state", "state": state, "composite": composite_std,
+                                              "renderhost_connected": renderhost_connected})
                     payload_hq = None   # built lazily, only if an hq client is actually connected
                     for ws, meta in list(app["clients"].items()):
                         try:
                             if meta.get("hq"):
                                 if payload_hq is None:
                                     composite_hq = engine.composite_preview(max_points=8000, stroke_thin=400)
-                                    payload_hq = json.dumps({"type": "state", "state": state, "composite": composite_hq})
+                                    payload_hq = json.dumps({"type": "state", "state": state, "composite": composite_hq,
+                                                             "renderhost_connected": renderhost_connected})
                                 await ws.send_str(payload_hq)
                             else:
                                 await ws.send_str(payload_std)
                         except Exception:
                             app["clients"].pop(ws, None)
-                await asyncio.sleep(0.05)   # ~20 Hz
+                await asyncio.sleep(period)
         except asyncio.CancelledError:
             pass
 
@@ -211,12 +266,32 @@ def make_app(engine, media_dir: str) -> web.Application:
             return web.json_response({"ok": True})
         return web.json_response({"ok": False, "error": "not found"}, status=404)
 
+    # Canvas thumbnails (see the module docstring above) — plain HTTP, same
+    # channel as media upload, not the websocket. Looked up via
+    # engine.canvases (live reference, reflects whichever project is
+    # currently open) rather than a static mount, since the on-disk
+    # directory changes on project switch.
+    async def canvas_thumb_get(request):
+        path = engine.canvases.thumb_path_for(request.match_info["name"])
+        if not os.path.isfile(path):
+            return web.Response(status=404)
+        return web.FileResponse(path)
+
+    async def canvas_thumb_post(request):
+        data = await request.read()
+        if not data or len(data) > 2_000_000:
+            return web.json_response({"ok": False, "error": "bad thumbnail"}, status=400)
+        engine.canvases.save_thumbnail(request.match_info["name"], data)
+        return web.json_response({"ok": True})
+
     app.router.add_get("/", index)
     app.router.add_get("/output", output_page)
     app.router.add_get("/ws", ws_handler)
     app.router.add_get("/media/list", media_list)
     app.router.add_post("/media/upload", media_upload)
     app.router.add_delete("/media/{filename}", media_delete)
+    app.router.add_get("/canvas-thumb/{name}", canvas_thumb_get)
+    app.router.add_post("/canvas-thumb/{name}", canvas_thumb_post)
     app.router.add_static("/static/", _STATIC)
     app.router.add_static("/media-files/", media_dir)
     app.on_startup.append(on_start)
@@ -282,8 +357,20 @@ async def _handle(engine, m: dict):
         engine.composite.save_canvas(m["name"])
     elif t == "canvas_delete":
         engine.composite.delete_canvas(m["name"])
-    elif t == "canvas_set_resolution":
-        engine.composite.set_canvas_resolution(m["width"], m["height"])
+    elif t == "project_set_resolution":
+        engine.composite.set_project_resolution(m["width"], m["height"])
+    elif t == "project_set_notes":
+        engine.composite.set_project_notes(m.get("notes", ""))
+    elif t == "project_set_output":
+        engine.composite.set_output_config(m["index"], m["key"], m.get("value"))
+    elif t == "project_set_output_count":
+        engine.composite.set_output_count(m["count"])
+    elif t == "project_set_viewports_enabled":
+        engine.composite.set_viewports_enabled(bool(m.get("value")))
+    elif t == "project_set_show_fps":
+        engine.composite.set_show_fps(bool(m.get("value")))
+    elif t == "set_test_pattern":
+        engine.composite.set_test_pattern(m["index"], bool(m.get("value")))
     elif t == "poly_add":
         engine.composite.add_polygon(m.get("scene"))
     elif t == "poly_delete":
@@ -294,14 +381,34 @@ async def _handle(engine, m: dict):
         engine.composite.set_polygon(m["id"], m["key"], m.get("value"))
     elif t == "poly_reorder":
         engine.composite.reorder_polygon(m["id"], m["index"])
+    # Effector matrix (see effectors.py) — sources/routes/tempo live on the
+    # current canvas (CanvasSpec.effectors), same queued-mutation discipline
+    # as everything else in composite.py.
+    elif t == "set_tempo":
+        engine.composite.set_tempo(m.get("value", 120))
+    elif t == "set_audio_bands":
+        engine.composite.set_audio_bands(m.get("low", 0), m.get("mid", 0), m.get("high", 0))
+    elif t == "effector_source_add":
+        engine.composite.effector_source_add()
+    elif t == "effector_source_remove":
+        engine.composite.effector_source_remove(m["id"])
+    elif t == "effector_source_set":
+        engine.composite.effector_source_set(m["id"], m["key"], m.get("value"))
+    elif t == "effector_route_add":
+        engine.composite.effector_route_add()
+    elif t == "effector_route_remove":
+        engine.composite.effector_route_remove(m["id"])
+    elif t == "effector_route_set":
+        engine.composite.effector_route_set(m["id"], m["key"], m.get("value"))
     elif t == "seq_add":
-        engine.composite.seq_add(m["canvas"], m.get("duration", 8.0))
+        engine.composite.seq_add(m["canvas"], m.get("duration", 8.0), m.get("crossfade", 0.0))
     elif t == "seq_remove":
         engine.composite.seq_remove(m["id"])
     elif t == "seq_reorder":
         engine.composite.seq_reorder(m["id"], m["index"])
     elif t == "seq_set":
-        engine.composite.seq_set(m["id"], canvas=m.get("canvas"), duration=m.get("duration"))
+        engine.composite.seq_set(m["id"], canvas=m.get("canvas"), duration=m.get("duration"),
+                                  crossfade=m.get("crossfade"))
     elif t == "seq_loop":
         engine.composite.seq_set_loop(bool(m.get("value")))
     elif t == "seq_play":

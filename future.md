@@ -4,3 +4,13 @@ future enchancements
 3)DONE -  in the header area, change the indicator approach to this "Connections - [indicator light] Engine - [indicator light] Claude API" - so that the backend engine and API are simply shown.
 4) add a oscilator mode (waveform options - sine etc, with effect) that can map to 2 options, a) the XXXXX a dropdown of objects/shapes inthe scene's json file - so that they could be scaled/morphed inde
 5) add a 'hue' override in the global section. this overrides the color of the output's scene
+7) add a 'FPS" setting per project, still seems low in output (19fps)
+8) when collasping the 'imput' sidebar, collapse all subsections inside it
+9) add a 'lock' to a shape, )via shape settings) so that you can't easy edit it in the canvas, and show padlock icon in shapelist.
+10) update shape buttons in shape list so that whole button is clickable, not just text inside button.
+11) tidy up project pane, break sections into vertical panes.
+12) improve 'not yet saved' inidactor, maybe needs better UX approach, as not very obious, maybe a sticky hovering thin panel at bottom right of window??
+13) move the 'add shape' to the bothom of hte 'shape list' 
+14) remove the words from the tools (select/hand)
+15) when collasping the 'imput' sidebar, collapse all subsections inside it
+add a video media playbook filter, eg in/out points, playback(loop,ping-pong,once)

@@ -266,6 +266,47 @@ def start_web_server(rhs: RenderHostServer, port: int, host: str) -> threading.T
     return t
 
 
+def start_heartbeat_client(lightsaber_url: str) -> threading.Thread:
+    """Phones home to the lightsaber control server's `/ws` (tagged
+    `?client=renderhost`) purely so its header's "Render Host" dot can
+    reflect whether a render host process is actually up and reachable —
+    see server.py's ws_handler. This is NOT the content pipeline: renderhost
+    doesn't consume lightsaber's composite broadcast at all yet (still a
+    separate profile-tuning demo — see ARCHITECTURE.md §12), so this
+    connection carries nothing but the fact of being open. Runs in its own
+    thread/event loop, same discipline as start_web_server above, and
+    reconnects forever on drop (the lightsaber server restarting, or this
+    process starting before it, shouldn't require a manual retry)."""
+    import asyncio
+
+    from aiohttp import ClientSession, WSMsgType
+
+    sep = "&" if "?" in lightsaber_url else "?"
+    full_url = f"{lightsaber_url}{sep}client=renderhost"
+
+    async def _run():
+        while True:
+            try:
+                async with ClientSession() as session:
+                    async with session.ws_connect(full_url, heartbeat=20) as ws:
+                        print(f"[serve] connected to lightsaber ({lightsaber_url})")
+                        async for msg in ws:
+                            if msg.type in (WSMsgType.ERROR, WSMsgType.CLOSED, WSMsgType.CLOSING):
+                                break
+            except Exception as e:
+                print(f"[serve] lightsaber heartbeat: {e} — retrying in 5s")
+            await asyncio.sleep(5)
+
+    def _thread():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(_run())
+
+    t = threading.Thread(target=_thread, daemon=True)
+    t.start()
+    return t
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("profile")
@@ -275,6 +316,10 @@ def main(argv=None):
                      help="deliberately different from lightsaber's own default 8080, "
                           "so both can run side by side without a port clash")
     ap.add_argument("--host", default="0.0.0.0")
+    ap.add_argument("--lightsaber-url", default=None,
+                     help="e.g. ws://192.168.50.1:8080/ws — if set, phones home so the "
+                          "lightsaber control panel's header can show this render host as "
+                          "connected (a heartbeat only, see start_heartbeat_client)")
     args = ap.parse_args(argv)
 
     spec_groups = profilemod.load_profile(args.profile).groups
@@ -285,6 +330,8 @@ def main(argv=None):
     rhs = RenderHostServer(args.profile, group_id, args.fullscreen)
     start_web_server(rhs, args.port, args.host)
     print(f"[serve] control panel: http://localhost:{args.port}")
+    if args.lightsaber_url:
+        start_heartbeat_client(args.lightsaber_url)
 
     try:
         running = True

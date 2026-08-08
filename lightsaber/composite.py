@@ -18,10 +18,12 @@ import time
 
 from .modulation import ModMatrix, LFO
 from .scenes import Scene
-from .canvases import CanvasManager, CanvasSpec, PolygonSpec
+from .canvases import (CanvasManager, CanvasSpec, PolygonSpec,
+                       DEFAULT_CLIP_POINTS, sanitize_clip_points)
 from .sequencer import Sequencer
-from .projects import ProjectManager, ProjectSpec
+from .projects import ProjectManager, ProjectSpec, OutputMonitorConfig
 from .perf import LoopStats
+from .effectors import EffectorSource, EffectorRoute, transform_corners
 
 
 # Same attr mapping as Engine._apply_param's "camera." branch (engine.py) —
@@ -105,14 +107,44 @@ class CompositeRenderer:
         # scaling colours server-side per point the way the old single-scene
         # loop did.
         self.visuals_disabled = False
+        # Per-output test pattern (Project tab > Output monitors) — a
+        # calibration aid, not show content: which projector is which, and
+        # (drawn through that output's own keystone) whether the correction
+        # is actually straightening the grid on the physical screen. Kept as
+        # engine-runtime state rather than on ProjectSpec/disk on purpose —
+        # it's a "right now, while I'm setting up" toggle, not something a
+        # show should remember and silently re-enable on reopen. Keyed by
+        # output index (0 = Output 1), same indexing as outputs.
+        self._test_pattern: dict[int, bool] = {}
         self.master_gain = 1.0
         self._gain_from = 1.0
         self._gain_to = 1.0
         self._gain_fade_dur = 0.0
         self._gain_fade_pos = 0.0
+        # Fires once, the tick a gain fade finishes — used by the sequencer's
+        # crossfade (see _swap_sequencer_canvas) to swap the canvas exactly
+        # when the fade-to-black bottoms out, then start the fade back in.
+        # Not a general-purpose queue: a fresh fade (disable_visuals,
+        # enable_visuals, or another crossfade) always overwrites/clears
+        # whatever the previous one had pending, same as it overwrites
+        # _gain_from/_gain_to/_gain_fade_dur/_gain_fade_pos.
+        self._gain_fade_on_complete = None
 
         self.perf = LoopStats(fps)
         self._diag_enabled = False
+
+        # Effector matrix clock (see effectors.py) — a canvas-wide t,
+        # independent of any one scene slot's own t0, shifted by dt during
+        # blackout/freeze exactly like every slot.t0 below, so LFOs stop
+        # advancing right along with everything else instead of jumping
+        # ahead when playback resumes.
+        self._effector_t0 = time.monotonic()
+        self._last_effector_values: dict = {}   # source id -> last sampled value, for UI meters
+        # Live mic analysis (see effectors.py's "audio" source type) — a
+        # browser (the control panel, not output windows) streams these up
+        # via set_audio_bands; NOT a function of t, just "whatever was last
+        # reported", same category as modulation.py's Value class.
+        self._audio_bands = {"low": 0.0, "mid": 0.0, "high": 0.0}
 
     # lifecycle ---------------------------------------------------------
     def start(self):
@@ -143,6 +175,7 @@ class CompositeRenderer:
             self._gain_to = 0.0
             self._gain_fade_dur = max(0.0, float(fade))
             self._gain_fade_pos = 0.0
+            self._gain_fade_on_complete = None   # supersedes any pending crossfade swap
         self._enqueue(apply)
 
     def enable_visuals(self, fade: float = 2.0):
@@ -152,6 +185,7 @@ class CompositeRenderer:
             self._gain_to = 1.0
             self._gain_fade_dur = max(0.0, float(fade))
             self._gain_fade_pos = 0.0
+            self._gain_fade_on_complete = None
         self._enqueue(apply)
 
     def set_diagnostics(self, value: bool):
@@ -213,11 +247,103 @@ class CompositeRenderer:
         self._enqueue(lambda: setattr(
             self.canvases, "current", CanvasSpec(name="untitled", polygons=[PolygonSpec()])))
 
-    def set_canvas_resolution(self, width: int, height: int):
+    def set_project_resolution(self, width: int, height: int):
+        # Lives on the project (see projects.py's ProjectSpec) — every
+        # canvas in this project's sequencer shares one output resolution,
+        # not a per-canvas setting. A no-op before any project is loaded
+        # (shouldn't happen in practice — run.py bootstraps a default
+        # project on first launch), rather than crashing the render thread.
         def apply():
-            self.canvases.current.width = max(1, min(16384, int(width)))
-            self.canvases.current.height = max(1, min(16384, int(height)))
+            if self.current_project is None:
+                return
+            self.current_project.width = max(1, min(16384, int(width)))
+            self.current_project.height = max(1, min(16384, int(height)))
         self._enqueue(apply)
+
+    def set_project_notes(self, notes: str):
+        def apply():
+            if self.current_project is None:
+                return
+            self.current_project.notes = str(notes)[:20000]
+        self._enqueue(apply)
+
+    def set_output_config(self, index: int, key: str, value):
+        # Per-output flip/keystone/viewport — see projects.py's
+        # OutputMonitorConfig for the full rationale (moved off browser
+        # localStorage, now lives on the project). Grows the list to fit
+        # `index` rather than bounds-checking it away, so a future output
+        # can set its config the moment it exists, no schema change needed
+        # here — though in practice set_output_count (below) is what
+        # actually changes "how many outputs" now.
+        def apply():
+            if self.current_project is None:
+                return
+            outs = self.current_project.outputs
+            while len(outs) <= index:
+                outs.append(OutputMonitorConfig())
+            cfg = outs[index]
+            if key == "flip_x":
+                cfg.flip_x = bool(value)
+            elif key == "flip_y":
+                cfg.flip_y = bool(value)
+            elif key == "keystone_h":
+                cfg.keystone_h = max(-0.5, min(0.5, float(value)))
+            elif key == "keystone_v":
+                cfg.keystone_v = max(-0.5, min(0.5, float(value)))
+            elif key == "viewport_x":
+                cfg.viewport_x = max(0.0, min(1.0, float(value)))
+            elif key == "viewport_y":
+                cfg.viewport_y = max(0.0, min(1.0, float(value)))
+            elif key == "viewport_w":
+                cfg.viewport_w = max(0.01, min(1.0, float(value)))
+            elif key == "viewport_h":
+                cfg.viewport_h = max(0.01, min(1.0, float(value)))
+            elif key == "duplicate_of":
+                if value is None:
+                    cfg.duplicate_of = None
+                else:
+                    v = int(value)
+                    cfg.duplicate_of = v if 0 <= v < len(outs) and v != index else None
+        self._enqueue(apply)
+
+    def set_output_count(self, count: int):
+        # "Number of outputs" (Project tab) — the ONE place that controls
+        # how many outputs this project drives; the header's Output N
+        # buttons and the Output Preview tab's tiles are both generated
+        # from len(outputs), so this is what actually grows/shrinks them.
+        # Shrinking drops the trailing configs outright (no undo here yet —
+        # matches every other edit-in-memory-until-Save field, a re-open
+        # without saving recovers them).
+        def apply():
+            if self.current_project is None:
+                return
+            n = max(1, min(8, int(count)))
+            outs = self.current_project.outputs
+            while len(outs) < n:
+                outs.append(OutputMonitorConfig())
+            del outs[n:]
+            # An output can't duplicate an index that no longer exists.
+            for cfg in outs:
+                if cfg.duplicate_of is not None and cfg.duplicate_of >= n:
+                    cfg.duplicate_of = None
+        self._enqueue(apply)
+
+    def set_viewports_enabled(self, value: bool):
+        def apply():
+            if self.current_project is None:
+                return
+            self.current_project.viewports_enabled = bool(value)
+        self._enqueue(apply)
+
+    def set_show_fps(self, value: bool):
+        def apply():
+            if self.current_project is None:
+                return
+            self.current_project.show_fps = bool(value)
+        self._enqueue(apply)
+
+    def set_test_pattern(self, index: int, value: bool):
+        self._enqueue(lambda: self._test_pattern.__setitem__(int(index), bool(value)))
 
     def load_canvas(self, name: str):
         def apply():
@@ -234,6 +360,16 @@ class CompositeRenderer:
     def add_polygon(self, scene: str | None = None):
         def apply():
             poly = PolygonSpec(scene=scene, label=scene or "")
+            # Default quad matches the PROJECT's own aspect ratio (1, not
+            # DEFAULT_CORNERS' hardcoded 16:9) — spans the same half-width
+            # (1.0 of the [-1,1] canvas) DEFAULT_CORNERS always did, just
+            # with a height that keeps it looking proportionate whatever
+            # resolution this project is set to (see set_project_resolution)
+            # instead of a fixed shape regardless of it.
+            if self.current_project is not None and self.current_project.height:
+                aspect = self.current_project.width / self.current_project.height
+                half_h = 0.5 / aspect
+                poly.corners = [[-0.5, half_h], [0.5, half_h], [0.5, -half_h], [-0.5, -half_h]]
             n = len(self.canvases.current.polygons)
             if n:
                 # stagger successive adds so they don't stack exactly on
@@ -275,9 +411,18 @@ class CompositeRenderer:
             if key == "scene":
                 poly.scene = value or None
             elif key == "source_type":
-                poly.source_type = value if value in ("scene", "media", "knockout") else "scene"
+                poly.source_type = value if value in (
+                    "scene", "media", "knockout", "webcam", "text") else "scene"
             elif key == "media":
                 poly.media = value or None
+            elif key == "webcam_device":
+                poly.webcam_device = value or None
+            elif key == "text_content":
+                poly.text_content = str(value or "")[:2000]
+            elif key == "text_color":
+                poly.text_color = str(value or "#ffffff")
+            elif key == "text_size":
+                poly.text_size = max(0.02, min(1.0, float(value)))
             elif key == "label":
                 poly.label = str(value or "")
             elif key == "opacity":
@@ -285,15 +430,70 @@ class CompositeRenderer:
             elif key == "time_offset":
                 poly.time_offset = float(value)
             elif key == "clip_shape":
-                poly.clip_shape = value if value in ("circle", "hexagon", "triangle", "square") else None
+                poly.clip_shape = value if value in (
+                    "circle", "hexagon", "triangle", "square", "custom") else None
+                # Seed a new custom mask with the quad's own outline so
+                # switching it on is a visual no-op the user then carves
+                # away from — an empty point list would otherwise read as
+                # "the shape just vanished".
+                if poly.clip_shape == "custom" and len(poly.clip_points) < 3:
+                    poly.clip_points = [list(p) for p in DEFAULT_CLIP_POINTS]
+            elif key == "clip_points":
+                poly.clip_points = sanitize_clip_points(value)
+            elif key == "clip_scale":
+                poly.clip_scale = max(0.1, min(3.0, float(value)))
             elif key == "z_index":
                 poly.z_index = max(1, min(10, int(value)))
             elif key == "fit":
                 poly.fit = value if value in ("stretch", "fit", "crop") else "stretch"
+            elif key == "transform_anchor":
+                from .effectors import ANCHOR_POINTS
+                poly.transform_anchor = value if value in ANCHOR_POINTS else poly.transform_anchor
             elif key in ("glow", "trail"):
                 poly.overrides[key] = max(0.0, float(value))
+            elif key in ("brightness", "contrast"):
+                # Applied client-side via ctx.filter around a layer's whole
+                # draw call (see paintCanvasEditor/paintComposite in the two
+                # HTML files) — 1.0 = neutral, same convention as CSS's own
+                # brightness()/contrast() filter functions. Unlike glow/trail
+                # (vector-only, a stroke shadow/window-persistence effect)
+                # this applies to any source_type, scene or raster alike.
+                poly.overrides[key] = max(0.0, min(3.0, float(value)))
+            elif key == "hue":
+                # Degrees, same convention/range as CSS's own hue-rotate() —
+                # 0 = neutral. Applies to any source_type, same as brightness/contrast.
+                poly.overrides[key] = max(-180.0, min(180.0, float(value)))
+            elif key == "saturation":
+                poly.overrides[key] = max(0.0, min(3.0, float(value)))
+            elif key == "colourize_amount":
+                # 0 = original colours, 1 = fully tinted toward colourize_hue.
+                # See paintCanvasEditor/paintComposite's ctx.filter comment for
+                # the sepia()+hue-rotate() approximation this drives — a true
+                # colour tint (collapse toward one hue), not a hue-rotate of
+                # existing colours the way `hue` above is.
+                poly.overrides[key] = max(0.0, min(1.0, float(value)))
+            elif key == "colourize_hue":
+                poly.overrides[key] = max(0.0, min(360.0, float(value)))
             elif key in ("mirror_x", "mirror_y", "disable_plane"):
                 poly.overrides[key] = bool(value)
+            elif key in ("mirror_x_point", "mirror_y_point"):
+                # 1.0 = off (shows the original, untouched) — see the fold
+                # maths in paintCanvasEditor/paintComposite (both HTML
+                # files): a point below 1 keeps content up to that fraction
+                # and mirrors it to fill the rest, clamping once the source
+                # region runs out rather than tiling/repeating.
+                poly.overrides[key] = max(0.0, min(1.0, float(value)))
+            elif key == "mirror_pre_distort":
+                poly.overrides[key] = bool(value)
+            elif key == "scale":
+                # Static authored scale (Transform drawer) — the BASE an
+                # effector "scale" route then multiplies, see
+                # _apply_effectors/_blackout_layer. 1.0 = original size.
+                poly.overrides[key] = max(0.05, min(5.0, float(value)))
+            elif key == "rotation":
+                # Degrees, static authored (Transform drawer) — the BASE an
+                # effector "rotation" route then adds to.
+                poly.overrides[key] = max(-180.0, min(180.0, float(value)))
             elif key.startswith("layer0."):
                 attr = key.split(".", 1)[1]
                 poly.overrides.setdefault("layer0", {})[attr] = float(value)
@@ -314,9 +514,185 @@ class CompositeRenderer:
     def _find_polygon(self, poly_id: str) -> PolygonSpec | None:
         return next((p for p in self.canvases.current.polygons if p.id == poly_id), None)
 
+    # effector matrix editing (queued) — see effectors.py. All mutate
+    # self.canvases.current.effectors in place, same discipline as polygon
+    # editing above: queued, applied at the top of _loop.
+    def set_tempo(self, bpm: float):
+        self._enqueue(lambda: setattr(
+            self.canvases.current.effectors, "tempo_bpm", max(1.0, min(400.0, float(bpm)))))
+
+    def set_audio_bands(self, low: float, mid: float, high: float):
+        # Not per-canvas (unlike sources/routes/tempo) — the mic feed is a
+        # global live signal from whichever browser tab is capturing it, same
+        # engine-wide scope as e.g. `active`/`frozen`, not creative config
+        # that travels with one canvas.
+        def apply():
+            low_c = max(0.0, min(1.0, float(low)))
+            mid_c = max(0.0, min(1.0, float(mid)))
+            high_c = max(0.0, min(1.0, float(high)))
+            # "master" (2) — the combined/overall level, derived here rather
+            # than sent separately over the wire: it's a pure function of the
+            # 3 bands the browser already sends, so there's nothing for the
+            # client to compute or transmit beyond what it already does.
+            self._audio_bands = {
+                "low": low_c, "mid": mid_c, "high": high_c,
+                "master": (low_c + mid_c + high_c) / 3.0,
+            }
+        self._enqueue(apply)
+
+    def effector_source_add(self):
+        self._enqueue(lambda: self.canvases.current.effectors.sources.append(EffectorSource()))
+
+    def effector_source_remove(self, source_id: str):
+        def apply():
+            fx = self.canvases.current.effectors
+            fx.sources = [s for s in fx.sources if s.id != source_id]
+            fx.routes = [r for r in fx.routes if r.source_id != source_id]
+        self._enqueue(apply)
+
+    def effector_source_set(self, source_id: str, key: str, value):
+        def apply():
+            from .effectors import LFO_SHAPES, SOURCE_TYPES, AUDIO_BANDS, _SYNC_BEATS
+            src = next((s for s in self.canvases.current.effectors.sources if s.id == source_id), None)
+            if src is None:
+                return
+            if key == "name":
+                src.name = str(value or "LFO")[:60]
+            elif key == "type":
+                src.type = value if value in SOURCE_TYPES else src.type
+            elif key == "shape":
+                src.shape = value if value in LFO_SHAPES else src.shape
+            elif key == "rate_hz":
+                src.rate_hz = max(0.001, min(50.0, float(value)))
+            elif key == "sync":
+                src.sync = value if (value in _SYNC_BEATS or value is None) else src.sync
+            elif key == "phase":
+                src.phase = float(value) % 1.0
+            elif key == "pulse_width":
+                src.pulse_width = max(0.01, min(0.99, float(value)))
+            elif key == "band":
+                src.band = value if value in AUDIO_BANDS else src.band
+        self._enqueue(apply)
+
+    def effector_route_add(self):
+        self._enqueue(lambda: self.canvases.current.effectors.routes.append(EffectorRoute()))
+
+    def effector_route_remove(self, route_id: str):
+        def apply():
+            fx = self.canvases.current.effectors
+            fx.routes = [r for r in fx.routes if r.id != route_id]
+        self._enqueue(apply)
+
+    def effector_route_set(self, route_id: str, key: str, value):
+        def apply():
+            route = next((r for r in self.canvases.current.effectors.routes if r.id == route_id), None)
+            if route is None:
+                return
+            if key == "source_id":
+                route.source_id = str(value or "")
+            elif key == "target_poly":
+                route.target_poly = str(value or "")
+            elif key == "target_param":
+                from .effectors import TARGET_PARAMS
+                route.target_param = value if value in TARGET_PARAMS else route.target_param
+            elif key == "depth":
+                # Wide range on purpose — depth multiplies a -1..1 source
+                # output, and target params have wildly different natural
+                # scales (opacity 0..1 vs. hue's -180..180), so it has to
+                # comfortably cover the largest of them.
+                route.depth = max(-360.0, min(360.0, float(value)))
+            elif key == "offset":
+                route.offset = max(-360.0, min(360.0, float(value)))
+            elif key == "curve":
+                from .effectors import CURVES
+                route.curve = value if value in CURVES else route.curve
+            elif key == "mode":
+                from .effectors import MODES
+                route.mode = value if value in MODES else route.mode
+        self._enqueue(apply)
+
+    @staticmethod
+    def _poly_layer_base(poly: PolygonSpec) -> dict:
+        """The layer-payload fields that come straight off the PolygonSpec,
+        common to all three call sites below (blackout / missing-scene /
+        rendered) — factored out so adding a new per-polygon field (as with
+        webcam/text/clip_scale) is one edit instead of three."""
+        return {
+            "id": poly.id, "corners": poly.corners, "opacity": poly.opacity,
+            "clip_shape": poly.clip_shape, "clip_scale": poly.clip_scale,
+            "clip_points": poly.clip_points,
+            "source_type": poly.source_type, "z_index": poly.z_index, "media": poly.media,
+            "webcam_device": poly.webcam_device, "text_content": poly.text_content,
+            "text_color": poly.text_color, "text_size": poly.text_size,
+            "fit": poly.fit,
+        }
+
+    def _update_effector_meters(self, t: float):
+        """Samples sources for the UI's live meters ONLY — no route
+        resolution, nothing written to any layer. Used while stopped (5): a
+        source's meter should still read live so you can preview/tune an
+        LFO before ever pressing Start, but the actual shape params must
+        NOT be modulated while stopped — see the blackout branch in _loop,
+        which deliberately calls this instead of _apply_effectors so
+        blacked-out layers keep the ORIGINAL, unmodulated corners/hue/etc
+        that _blackout_layer already built them with, rather than getting
+        overwritten with wherever an LFO happened to leave them."""
+        canvas = self.canvases.current
+        self._last_effector_values = canvas.effectors.source_values(t, self._audio_bands)
+
+    def _apply_effectors(self, layers: list, t: float):
+        """Post-processes already-built layer dicts in place (2/3) — cheaper
+        than threading effector resolution through every one of
+        _poly_layer_base's three call sites, and correct regardless of
+        which of them produced a given layer (scene slot, missing slot, or
+        blackout — see effectors.py's own docstring on why this covers
+        media/webcam/text too, not just scene shapes). A layer whose id has
+        no route targeting it just gets its own existing value back — a
+        no-op, not a special case."""
+        canvas = self.canvases.current
+        polys_by_id = {p.id: p for p in canvas.polygons}
+        base = {}
+        for p in canvas.polygons:
+            ov = p.overrides
+            base[(p.id, "hue")] = float(ov.get("hue", 0.0))
+            base[(p.id, "saturation")] = float(ov.get("saturation", 1.0))
+            base[(p.id, "brightness")] = float(ov.get("brightness", 1.0))
+            base[(p.id, "opacity")] = float(p.opacity)
+            # Geometry (2) — deltas around transform_anchor, neutral at
+            # (0, 0, 1, 0); see effectors.py's transform_corners.
+            base[(p.id, "position_x")] = 0.0
+            base[(p.id, "position_y")] = 0.0
+            # Static authored scale/rotation (Transform drawer) are now the
+            # BASE an effector route modulates around, not always-neutral —
+            # e.g. a "multiply" scale route multiplies THIS value, not a
+            # hardcoded 1.0. A route-free polygon just gets its own authored
+            # value back unchanged (see this method's own docstring), which
+            # is what makes a static (no effector) rotate/scale work at all:
+            # the gate below already fires on "differs from neutral", and an
+            # authored 15° rotation already does that with zero routes.
+            base[(p.id, "scale")] = float(ov.get("scale", 1.0))
+            base[(p.id, "rotation")] = float(ov.get("rotation", 0.0))
+        fx = canvas.effectors.resolve(t, base, self._audio_bands)
+        self._last_effector_values = canvas.effectors.source_values(t, self._audio_bands)
+        for layer in layers:
+            pid = layer["id"]
+            layer["hue"] = fx.get((pid, "hue"), layer.get("hue", 0.0))
+            layer["saturation"] = fx.get((pid, "saturation"), layer.get("saturation", 1.0))
+            layer["brightness"] = fx.get((pid, "brightness"), layer.get("brightness", 1.0))
+            layer["opacity"] = fx.get((pid, "opacity"), layer.get("opacity", 1.0))
+            dx = fx.get((pid, "position_x"), 0.0)
+            dy = fx.get((pid, "position_y"), 0.0)
+            scale = fx.get((pid, "scale"), 1.0)
+            rotation = fx.get((pid, "rotation"), 0.0)
+            if dx or dy or scale != 1.0 or rotation:
+                poly = polys_by_id.get(pid)
+                if poly is not None:
+                    layer["corners"] = transform_corners(
+                        poly.corners, poly.transform_anchor, dx, dy, scale, rotation)
+
     # sequencer editing/transport (queued) --------------------------------
-    def seq_add(self, canvas: str, duration: float = 8.0):
-        self._enqueue(lambda: self.sequencer.add_step(canvas, duration))
+    def seq_add(self, canvas: str, duration: float = 8.0, crossfade: float = 0.0):
+        self._enqueue(lambda: self.sequencer.add_step(canvas, duration, crossfade))
 
     def seq_remove(self, step_id: str):
         self._enqueue(lambda: self.sequencer.remove_step(step_id))
@@ -324,8 +700,10 @@ class CompositeRenderer:
     def seq_reorder(self, step_id: str, index: int):
         self._enqueue(lambda: self.sequencer.reorder_step(step_id, index))
 
-    def seq_set(self, step_id: str, canvas: str | None = None, duration: float | None = None):
-        self._enqueue(lambda: self.sequencer.set_step(step_id, canvas=canvas, duration=duration))
+    def seq_set(self, step_id: str, canvas: str | None = None, duration: float | None = None,
+                crossfade: float | None = None):
+        self._enqueue(lambda: self.sequencer.set_step(
+            step_id, canvas=canvas, duration=duration, crossfade=crossfade))
 
     def seq_set_loop(self, value: bool):
         self._enqueue(lambda: self.sequencer.set_loop(value))
@@ -339,14 +717,77 @@ class CompositeRenderer:
     def seq_stop(self):
         self._enqueue(self.sequencer.stop)
 
+    # Manual transport (next/prev/goto) goes through the same crossfade-
+    # aware swap as auto-advance (_swap_sequencer_canvas), not a bare
+    # sequencer.next()/prev() — that old version only ever moved the
+    # sequencer's own index/elapsed bookkeeping and never actually touched
+    # canvases.current, so the buttons updated the step label but the
+    # rendered/output canvas silently never changed until the NEXT natural
+    # duration timeout. A step's own crossfade value now governs how you
+    # arrive at it whether by timer or by clicking.
     def seq_next(self):
-        self._enqueue(self.sequencer.next)
+        def apply():
+            self.sequencer.next()
+            self._swap_sequencer_canvas()
+        self._enqueue(apply)
 
     def seq_prev(self):
-        self._enqueue(self.sequencer.prev)
+        def apply():
+            self.sequencer.prev()
+            self._swap_sequencer_canvas()
+        self._enqueue(apply)
 
     def seq_goto(self, index: int):
-        self._enqueue(lambda: self.sequencer.goto(index))
+        def apply():
+            self.sequencer.goto(index)
+            self._swap_sequencer_canvas()
+        self._enqueue(apply)
+
+    def _swap_sequencer_canvas(self):
+        step = self.sequencer.current_step()
+        if step is None or not step.canvas:
+            return
+        xfade = max(0.0, float(getattr(step, "crossfade", 0.0) or 0.0))
+        name = step.canvas
+        if xfade <= 0:
+            # Also snaps master_gain outright (not just clearing the
+            # completion hook) — a step whose OWN duration is shorter than
+            # the crossfade it interrupts would otherwise leave a stale fade
+            # still animating toward whatever gain the interrupted one
+            # wanted, a step behind this instant swap. Target is 0 rather
+            # than 1 if visuals are deliberately disabled — this instant
+            # swap must not un-dim a manual Disable Visuals.
+            target = 0.0 if self.visuals_disabled else 1.0
+            self._gain_fade_on_complete = None
+            self._gain_to = target
+            self._gain_fade_dur = 0.0
+            self._gain_fade_pos = 0.0
+            self.master_gain = target
+            try:
+                self.canvases.current = self.canvases.load_spec(name)
+            except Exception as e:
+                print(f"[lightsaber] sequencer: could not load canvas {name!r}: {e}")
+            return
+        # Dip through black rather than a true cross-dissolve (that would
+        # need rendering the outgoing AND incoming canvas simultaneously —
+        # a materially bigger change to the render loop): fade master_gain
+        # to 0 over half the crossfade, swap the (invisible) canvas, then
+        # fade back to 1 over the other half. Reuses the exact same fade
+        # machinery as Disable Visuals (see disable_visuals/enable_visuals).
+        def _swap_in(name=name, half=xfade / 2):
+            try:
+                self.canvases.current = self.canvases.load_spec(name)
+            except Exception as e:
+                print(f"[lightsaber] sequencer: could not load canvas {name!r}: {e}")
+            self._gain_from = 0.0
+            self._gain_to = 0.0 if self.visuals_disabled else 1.0
+            self._gain_fade_dur = half
+            self._gain_fade_pos = 0.0
+        self._gain_from = self.master_gain
+        self._gain_to = 0.0
+        self._gain_fade_dur = xfade / 2
+        self._gain_fade_pos = 0.0
+        self._gain_fade_on_complete = _swap_in
 
     # slot management -------------------------------------------------------
     def _rebuild_if_needed(self, now: float):
@@ -408,14 +849,47 @@ class CompositeRenderer:
                 # show's blackout. Sequencer does not advance either.
                 for slot in self._slots.values():
                     slot.t0 += dt
-                self._last_layers = [{
-                    "id": p.id, "corners": p.corners, "opacity": p.opacity,
-                    "missing": False, "is_3d": False,
-                    "glow": 0.0, "trail": 0.0, "mirror_x": False, "mirror_y": False,
-                    "clip_shape": p.clip_shape, "source_type": p.source_type, "z_index": p.z_index, "media": p.media,
-                    "fit": p.fit, "aspect": "1:1",
-                    "frame": [],
-                } for p in self.canvases.current.polygons]
+                self._effector_t0 += dt
+                def _blackout_layer(p):
+                    ov = p.overrides
+                    # Static authored scale/rotation (Transform drawer) are a
+                    # base-pose property, not a live effector animation — it
+                    # must keep showing while stopped, unlike the corner
+                    # modulation _apply_effectors does (which this blackout
+                    # branch deliberately skips so LIVE routes reset to the
+                    # unmodulated pose — see this function's own comment
+                    # further down). So it's applied here by hand instead.
+                    static_scale = float(ov.get("scale", 1.0))
+                    static_rotation = float(ov.get("rotation", 0.0))
+                    corners = p.corners
+                    if static_scale != 1.0 or static_rotation:
+                        corners = transform_corners(
+                            p.corners, p.transform_anchor, 0.0, 0.0, static_scale, static_rotation)
+                    return {
+                        **self._poly_layer_base(p),
+                        "corners": corners,
+                        "missing": False, "is_3d": False,
+                        "glow": float(ov.get("glow", 0.0)), "trail": float(ov.get("trail", 0.0)),
+                        "mirror_x": bool(ov.get("mirror_x", False)), "mirror_y": bool(ov.get("mirror_y", False)),
+                        "mirror_x_point": float(ov.get("mirror_x_point", 1.0)),
+                        "mirror_y_point": float(ov.get("mirror_y_point", 1.0)),
+                        "mirror_pre_distort": bool(ov.get("mirror_pre_distort", True)),
+                        "brightness": float(ov.get("brightness", 1.0)), "contrast": float(ov.get("contrast", 1.0)),
+                        "hue": float(ov.get("hue", 0.0)), "saturation": float(ov.get("saturation", 1.0)),
+                        "colourize_amount": float(ov.get("colourize_amount", 0.0)),
+                        "colourize_hue": float(ov.get("colourize_hue", 0.0)),
+                        "aspect": "1:1",
+                        "frame": [],
+                    }
+                self._last_layers = [_blackout_layer(p) for p in self.canvases.current.polygons]
+                # Meters only (5) — NOT the full _apply_effectors: while
+                # stopped, shapes must show their ORIGINAL, unmodulated
+                # corners/hue/etc (_blackout_layer already built them that
+                # way from poly.overrides/poly.corners directly), not
+                # wherever an LFO happened to leave them. Source meters
+                # still read live though — the UI's own debugging affordance
+                # (PROMPT-effectors.md), useful to preview/tune before Start.
+                self._update_effector_meters(now - self._effector_t0)
                 self.perf.tick()
                 sleep = period - (time.monotonic() - now)
                 if sleep > 0:
@@ -430,14 +904,9 @@ class CompositeRenderer:
                 # edited can't get swapped out from under you mid-edit.
                 for slot in self._slots.values():
                     slot.t0 += dt
+                self._effector_t0 += dt
             elif self.sequencer.tick(dt):
-                step = self.sequencer.current_step()
-                if step is not None and step.canvas:
-                    try:
-                        self.canvases.current = self.canvases.load_spec(step.canvas)
-                    except Exception as e:
-                        print(f"[lightsaber] sequencer: could not load canvas "
-                              f"{step.canvas!r}: {e}")
+                self._swap_sequencer_canvas()
 
             self._rebuild_if_needed(now)
 
@@ -452,6 +921,10 @@ class CompositeRenderer:
                 self._gain_fade_pos += dt
                 prog = min(1.0, self._gain_fade_pos / self._gain_fade_dur)
                 self.master_gain = self._gain_from + (self._gain_to - self._gain_from) * prog
+                if self._gain_fade_pos >= self._gain_fade_dur and self._gain_fade_on_complete:
+                    on_complete = self._gain_fade_on_complete
+                    self._gain_fade_on_complete = None
+                    on_complete()
             else:
                 self.master_gain = self._gain_to
 
@@ -459,12 +932,33 @@ class CompositeRenderer:
             for poly in self.canvases.current.polygons:
                 slot = self._slots.get(poly.id)
                 if slot is None:
+                    # No scene slot — either this polygon has no scene at
+                    # all (media/webcam/text/knockout, the normal case for
+                    # those source_types) or its assigned scene failed to
+                    # load ("missing" below). Either way, still read glow/
+                    # trail/mirror/brightness/contrast from its OWN
+                    # overrides rather than hardcoding neutral — those apply
+                    # regardless of source_type (see paintCanvasEditor/
+                    # paintComposite in the two HTML files), and this branch
+                    # is exactly the one media/webcam/text shapes always
+                    # take, so hardcoding here silently dropped their
+                    # brightness/contrast/mirror on the real output while
+                    # the editor (which reads overrides straight off the
+                    # polygon, not this broadcast layer) looked correct.
+                    ov = poly.overrides
                     layers.append({
-                        "id": poly.id, "corners": poly.corners, "opacity": poly.opacity,
+                        **self._poly_layer_base(poly),
                         "missing": bool(poly.scene), "is_3d": False,
-                        "glow": 0.0, "trail": 0.0, "mirror_x": False, "mirror_y": False,
-                        "clip_shape": poly.clip_shape, "source_type": poly.source_type, "z_index": poly.z_index, "media": poly.media,
-                        "fit": poly.fit, "aspect": "1:1",
+                        "glow": float(ov.get("glow", 0.0)), "trail": float(ov.get("trail", 0.0)),
+                        "mirror_x": bool(ov.get("mirror_x", False)), "mirror_y": bool(ov.get("mirror_y", False)),
+                        "mirror_x_point": float(ov.get("mirror_x_point", 1.0)),
+                        "mirror_y_point": float(ov.get("mirror_y_point", 1.0)),
+                        "mirror_pre_distort": bool(ov.get("mirror_pre_distort", True)),
+                        "brightness": float(ov.get("brightness", 1.0)), "contrast": float(ov.get("contrast", 1.0)),
+                        "hue": float(ov.get("hue", 0.0)), "saturation": float(ov.get("saturation", 1.0)),
+                        "colourize_amount": float(ov.get("colourize_amount", 0.0)),
+                        "colourize_hue": float(ov.get("colourize_hue", 0.0)),
+                        "aspect": "1:1",
                         "frame": [],
                     })
                     continue
@@ -474,15 +968,23 @@ class CompositeRenderer:
                 frame = slot.scene.render(t, dt, slot.matrix,
                                            disable_plane=bool(ov.get("disable_plane", False)))
                 layers.append({
-                    "id": poly.id, "corners": poly.corners, "opacity": poly.opacity,
+                    **self._poly_layer_base(poly),
                     "missing": False, "is_3d": slot.scene.is_3d,
                     "glow": float(ov.get("glow", 0.0)), "trail": float(ov.get("trail", 0.0)),
                     "mirror_x": bool(ov.get("mirror_x", False)),
                     "mirror_y": bool(ov.get("mirror_y", False)),
-                    "clip_shape": poly.clip_shape, "source_type": poly.source_type, "z_index": poly.z_index, "media": poly.media,
-                    "fit": poly.fit, "aspect": slot.scene.spec.aspect,
+                    "mirror_x_point": float(ov.get("mirror_x_point", 1.0)),
+                    "mirror_y_point": float(ov.get("mirror_y_point", 1.0)),
+                    "mirror_pre_distort": bool(ov.get("mirror_pre_distort", True)),
+                    "brightness": float(ov.get("brightness", 1.0)),
+                    "contrast": float(ov.get("contrast", 1.0)),
+                    "hue": float(ov.get("hue", 0.0)), "saturation": float(ov.get("saturation", 1.0)),
+                    "colourize_amount": float(ov.get("colourize_amount", 0.0)),
+                    "colourize_hue": float(ov.get("colourize_hue", 0.0)),
+                    "aspect": slot.scene.spec.aspect,
                     "frame": frame,
                 })
+            self._apply_effectors(layers, now - self._effector_t0)
             self._last_layers = layers
             self.perf.tick()   # cheap interval/fps tracking — always on, see LoopStats.tick
             if self._diag_enabled:
@@ -508,7 +1010,26 @@ class CompositeRenderer:
             "perf_diag": self.perf.summary(),
             "diagnostics_enabled": self._diag_enabled,
             "project": self.current_project.name if self.current_project else None,
+            "project_width": self.current_project.width if self.current_project else 1920,
+            "project_height": self.current_project.height if self.current_project else 1080,
+            "project_notes": self.current_project.notes if self.current_project else "",
+            "outputs": [o.to_dict() for o in self.current_project.outputs] if self.current_project
+                       else [OutputMonitorConfig().to_dict(), OutputMonitorConfig().to_dict()],
+            "viewports_enabled": self.current_project.viewports_enabled if self.current_project else False,
+            "show_fps": self.current_project.show_fps if self.current_project else False,
+            # Calibration-only, engine-runtime (see set_test_pattern above,
+            # not persisted) — a plain bool per output index, defaulting
+            # False for any index nothing's toggled yet.
+            "test_pattern": [self._test_pattern.get(i, False) for i in range(
+                len(self.current_project.outputs) if self.current_project else 2)],
             "project_library": self.projects.names(),
+            # Effector source meters (see effectors.py) — the UI's own live
+            # debugging affordance (PROMPT-effectors.md: "without it,
+            # diagnosing a silent route is guesswork"). The sources/routes/
+            # tempo themselves are already in state.canvas.effectors
+            # (CanvasSpec.to_dict), this is just each source's CURRENT
+            # sampled value, refreshed by the same tick that resolves routes.
+            "effector_values": {k: round(v, 3) for k, v in self._last_effector_values.items()},
         }
 
     def composite_preview(self, max_points: int = 4000, stroke_thin: int = 200):
@@ -534,13 +1055,8 @@ class CompositeRenderer:
                 sent += len(pts)
                 if sent > budget:
                     break
-            out.append({
-                "id": layer["id"], "corners": layer["corners"], "opacity": layer["opacity"],
-                "missing": layer["missing"], "is_3d": layer["is_3d"],
-                "glow": layer["glow"], "trail": layer["trail"],
-                "mirror_x": layer["mirror_x"], "mirror_y": layer["mirror_y"],
-                "clip_shape": layer["clip_shape"], "source_type": layer["source_type"], "z_index": layer["z_index"], "media": layer["media"],
-                "fit": layer["fit"], "aspect": layer["aspect"],
-                "strokes": strokes,
-            })
+            # Pass every layer field through as-is except the raw `frame`
+            # (replaced by the thinned `strokes` above) — avoids hand-listing
+            # the same field set a 4th time; see _poly_layer_base.
+            out.append({**{k: v for k, v in layer.items() if k != "frame"}, "strokes": strokes})
         return out

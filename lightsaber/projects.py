@@ -32,22 +32,128 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class OutputMonitorConfig:
+    """Physical-mount correction for one output window (Output 1/2/…) — flip
+    reverses the whole composited image, keystone compensates an angled
+    projector throw. Lives per-project now (moved off browser localStorage,
+    see ProjectSpec.outputs below): a rig's physical orientation belongs to
+    the show/venue it's for, not to whichever browser happened to have it
+    open — and localStorage never crossed browsers/machines in the first
+    place, only tabs of the same browser."""
+    flip_x: bool = False
+    flip_y: bool = False
+    keystone_h: float = 0.0
+    keystone_v: float = 0.0
+    # Viewport (a crop rect into the FULL composited canvas, normalized
+    # [0,1] fractions, top-left origin) — which region of the canvas this
+    # output actually shows. Only takes effect when ProjectSpec's
+    # viewports_enabled is True; otherwise every output always shows the
+    # full canvas (0,0,1,1) regardless of these — the original "every
+    # output is a duplicate feed" behaviour, and still the default even
+    # with viewports on (a fresh output starts full-frame, not a random
+    # crop). This is what makes a wide multi-projector canvas (see
+    # ARCHITECTURE.md's render-host topology — one wide framebuffer sliced
+    # across several physical outputs) representable: each output's
+    # viewport is its own slice.
+    viewport_x: float = 0.0
+    viewport_y: float = 0.0
+    viewport_w: float = 1.0
+    viewport_h: float = 1.0
+    # If set (another output's 0-based index), this output's CONTENT
+    # ignores its own viewport above and mirrors that other output's
+    # instead — the "Output 2 = duplicate of Output 1" simple/laptop case,
+    # without hand-copying four numbers. Flip/keystone/test-pattern stay
+    # independent regardless (a rear-mounted duplicate projector still
+    # needs its own flip) — this only ever affects which canvas region is
+    # shown, never the physical-orientation fields above.
+    duplicate_of: int | None = None
+
+    def to_dict(self) -> dict:
+        return {"flip_x": self.flip_x, "flip_y": self.flip_y,
+                "keystone_h": self.keystone_h, "keystone_v": self.keystone_v,
+                "viewport_x": self.viewport_x, "viewport_y": self.viewport_y,
+                "viewport_w": self.viewport_w, "viewport_h": self.viewport_h,
+                "duplicate_of": self.duplicate_of}
+
+    @staticmethod
+    def from_dict(d: dict) -> "OutputMonitorConfig":
+        return OutputMonitorConfig(
+            flip_x=bool(d.get("flip_x", False)),
+            flip_y=bool(d.get("flip_y", False)),
+            keystone_h=max(-0.5, min(0.5, float(d.get("keystone_h", 0.0)))),
+            keystone_v=max(-0.5, min(0.5, float(d.get("keystone_v", 0.0)))),
+            viewport_x=max(0.0, min(1.0, float(d.get("viewport_x", 0.0)))),
+            viewport_y=max(0.0, min(1.0, float(d.get("viewport_y", 0.0)))),
+            viewport_w=max(0.01, min(1.0, float(d.get("viewport_w", 1.0)))),
+            viewport_h=max(0.01, min(1.0, float(d.get("viewport_h", 1.0)))),
+            duplicate_of=(int(d["duplicate_of"]) if d.get("duplicate_of") is not None else None),
+        )
+
+
+@dataclass
 class ProjectSpec:
     name: str = "default"
     # Canvas library key last open in the editor when this project was
     # saved — restores your place on reopen. None = start on a fresh
     # untitled canvas.
     active_canvas: str | None = None
+    # Output resolution (e.g. a projector's native mode) — lives here, not
+    # on each CanvasSpec, because it's a property of the physical rig a
+    # project targets, not of any one canvas layout within it: every canvas
+    # in the sequencer composites onto the same screens in turn, so they
+    # must all share one resolution or the output window would resize its
+    # letterbox on every sequencer step. See composite.py's
+    # set_project_resolution / CompositeRenderer.current_project.
+    width: int = 1920
+    height: int = 1080
+    # Per-output-monitor flip/keystone/viewport (see OutputMonitorConfig
+    # above) — a plain list, index 0 = Output 1, index 1 = Output 2, and so
+    # on. Its LENGTH is the project's own "number of outputs" (Project tab)
+    # — the header's Output N buttons and the Output Preview tab's tiles are
+    # both generated from this same length, so changing it here is the one
+    # place that controls how many outputs this project drives, from a
+    # laptop's 1-2 up to a render host's 5 (see ARCHITECTURE.md) — see
+    # composite.py's set_output_count.
+    outputs: list = field(default_factory=lambda: [OutputMonitorConfig(), OutputMonitorConfig()])
+    # Master switch for viewports (OutputMonitorConfig.viewport_*/
+    # duplicate_of above) — off by default so every EXISTING project keeps
+    # today's exact behaviour (every output = the full canvas) even though
+    # it now has viewport fields sitting there unused. Flip it on to start
+    # treating each output as a slice of one wide canvas instead.
+    viewports_enabled: bool = False
+    # Small FPS readout drawn in the corner of each output window — a
+    # calibration/diagnostic aid (Project tab), not show content, so it
+    # lives right next to viewports_enabled rather than on
+    # OutputMonitorConfig: it's one on/off for every output, not per-output.
+    show_fps: bool = False
+    # Free-text notes (Project tab) — a show's own run sheet/reminders
+    # ("venue contact is X", "canvas 3 needs the fisheye lens"), not
+    # consumed by anything else in the engine. Same edit-in-memory,
+    # persist-on-explicit-Save discipline as everything else on this spec.
+    notes: str = ""
     schema: int = 1   # forward-compat marker for future project.json shapes
 
     def to_dict(self) -> dict:
-        return {"name": self.name, "active_canvas": self.active_canvas, "schema": self.schema}
+        return {"name": self.name, "active_canvas": self.active_canvas,
+                "width": self.width, "height": self.height,
+                "outputs": [o.to_dict() for o in self.outputs],
+                "viewports_enabled": self.viewports_enabled, "show_fps": self.show_fps,
+                "notes": self.notes, "schema": self.schema}
 
     @staticmethod
     def from_dict(d: dict) -> "ProjectSpec":
+        outputs = [OutputMonitorConfig.from_dict(o) for o in d.get("outputs", [])]
+        if not outputs:
+            outputs = [OutputMonitorConfig(), OutputMonitorConfig()]
         return ProjectSpec(
             name=d.get("name", "default"),
             active_canvas=d.get("active_canvas"),
+            width=int(d.get("width", 1920)),
+            height=int(d.get("height", 1080)),
+            outputs=outputs,
+            viewports_enabled=bool(d.get("viewports_enabled", False)),
+            show_fps=bool(d.get("show_fps", False)),
+            notes=str(d.get("notes", "")),
             schema=int(d.get("schema", 1)),
         )
 
