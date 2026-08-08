@@ -1,6 +1,6 @@
 # Lightsaber
 
-![version](https://img.shields.io/badge/version-0.31.0-33e0d0)
+![version](https://img.shields.io/badge/version-0.32.0-33e0d0)
 ![status](https://img.shields.io/badge/status-pre--release-orange)
 ![platform](https://img.shields.io/badge/platform-Ubuntu-informational)
 

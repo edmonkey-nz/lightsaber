@@ -7,6 +7,47 @@ and APIs between minor versions until a 1.0 release.
 ## [Unreleased]
 - Project scaffolding for VSCode / GitHub (this changelog, `.vscode/`, `LICENSE`, `pyproject.toml`)
 
+## [0.32.0]
+
+### Custom polygon masks, with Warp/Mask editing
+- **Custom polygon mask** — a new `custom` option on a shape's clip shape,
+  backed by `PolygonSpec.clip_points`: an editable N-point silhouette that a
+  media/scene/webcam/text shape's content is hard-clipped to, *in addition
+  to* its four corner pins. Points are stored in the quad's own UV space and
+  mapped through the same homography as the content, so distorting the
+  corner pins warps the mask and the content together as one object — the
+  same model as an After Effects mask (layer space) under a Corner Pin
+  effect. The preset clip shapes stay bounding-box based and unchanged: a
+  circle clip is still a circle however hard the quad is keystoned.
+- **Warp / Mask edit modes** — the two geometries both want click-and-drag
+  on the same pixels, so they're modal rather than simultaneously live, with
+  the inactive one's handles drawn demoted rather than hidden (the
+  object-mode/edit-mode split Blender, Illustrator and MadMapper all use).
+  Mask mode reuses the knockout point editor's gestures: drag a point,
+  double-click an edge to insert, double-click a point to remove, drag
+  inside to move the whole mask; `Esc` returns to Warp. Editor tool state
+  only — never persisted to the project.
+- Picking `custom` seeds the mask with the quad's own outline (a deliberate
+  visual no-op) and switches straight to Mask mode, so there is always
+  something visible to drag. "Reset to original polygon" follows the active
+  mode and relabels itself accordingly.
+- Internal: the identical three-line clip preamble repeated at all eight
+  content-draw call sites across `index.html`/`output.html` is now one
+  `polyClipPath`/`polyClipActive` pair, which also guards the degenerate
+  case that would otherwise clip a shape away to nothing.
+
+### Fixed
+- `--fps` had no observable effect: `server.py`'s `broadcaster()` pushed
+  state to every websocket client at a hardcoded ~20Hz regardless of the
+  setting, silently capping the frame rate every browser window actually
+  saw, even though the compositor's own render loop already respected
+  `--fps` correctly. Now paced from `engine.composite.fps` (~55 of a 60fps
+  target, measured).
+- Viewport-cropped outputs were stretched/distorted: `paintComposite`
+  letterboxed against the *full* canvas aspect rather than the cropped
+  slice's own, so e.g. a 2048×768 canvas split into two half-width outputs
+  fitted the whole wide aspect into each window before remapping within it.
+
 ## [0.31.0]
 
 ### Projects, pixel-accurate canvas resolution, shape masking
