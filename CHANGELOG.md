@@ -7,6 +7,38 @@ and APIs between minor versions until a 1.0 release.
 ## [Unreleased]
 - Project scaffolding for VSCode / GitHub (this changelog, `.vscode/`, `LICENSE`, `pyproject.toml`)
 
+## [0.33.1]
+
+### Fixed — video playback performance
+- **Output windows no longer decode and warp video they can't see.** With
+  viewports enabled, the crop is applied as a coordinate remap, so a shape
+  belonging to another projector still ran the whole decode-and-mesh-warp
+  path and was discarded only by the canvas edge. Each window now tests a
+  shape's corner quad against its own bounds first, and skips the media
+  element entirely — so the existing eviction sweep releases the decoder and
+  the file genuinely stops decoding in windows that don't show it.
+  Measured on a 4-output rig with 10 videos across the canvas: worst-case
+  frame **113.3ms → 23.8ms**, layers drawn per output 10 → 3.5.
+- **No more corrective seek on every loop of a full-length clip.** A clip
+  whose trim spans the whole file wraps by itself via `<video loop>`, so by
+  the time the server's playhead wraps the element is already in position;
+  seeking there stalled decode for 0.5–1.2s once per loop to correct
+  nothing. A target jump now only triggers a seek if the element didn't
+  already follow it, which leaves scrubs, trim changes and genuinely
+  trimmed loops working as before. The compositor publishes `media_span`
+  and `media_native_loop` for this.
+- Per-tick disk reads removed from the render path: `media_meta` is cached
+  on the file's mtime+size (49.4µs → 4.11µs) and `media_roots` caches the
+  parsed roots table (30.0µs → 0.14µs).
+
+### Docs
+- `ARCHITECTURE.md` is tracked in git again, and records the measured cost
+  model behind the render-host design: one decode per clip rather than one
+  per output is the core argument for the shared-FBO ordering; video bitrate
+  turns out to be irrelevant to throughput and decode is not the bottleneck;
+  and seeking is the expensive playhead correction, not the cheap one —
+  which bears on the planned libmpv integration.
+
 ## [0.33.0]
 
 ### Linked media — reference files instead of copying them

@@ -28,13 +28,30 @@ _PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                      "media_meta.json")
 
 
+# get() is called per media shape per render tick, so re-reading and
+# re-parsing the file every time is a needless syscall storm. Cached on the
+# file's mtime+size, so an external edit is still picked up.
+_cache: tuple | None = None
+
+
 def _load() -> dict:
+    global _cache
+    try:
+        st = os.stat(_PATH)
+        stamp = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        _cache = None
+        return {}
+    if _cache is not None and _cache[0] == stamp:
+        return _cache[1]
     try:
         with open(_PATH) as f:
             data = json.load(f)
-            return data if isinstance(data, dict) else {}
+            data = data if isinstance(data, dict) else {}
     except Exception:
-        return {}
+        data = {}
+    _cache = (stamp, data)
+    return data
 
 
 def _save(data: dict) -> None:
@@ -42,6 +59,8 @@ def _save(data: dict) -> None:
     with open(tmp, "w") as f:
         json.dump(data, f, indent=2, sort_keys=True)
     os.replace(tmp, _PATH)
+    global _cache
+    _cache = None
 
 
 def all_meta() -> dict:

@@ -49,10 +49,25 @@ def _safe_root_name(name: str) -> str:
     return "".join(c for c in str(name) if c.isalnum() or c in "-_").strip("-_")[:40]
 
 
+# resolve() runs per linked shape per render tick and calls roots(), which
+# would otherwise re-read and re-parse settings.json (plus a realpath per
+# root) every time. Roots change only through set_root/remove_root, both of
+# which clear this.
+_roots_cache: dict[str, str] | None = None
+
+
+def invalidate_roots_cache() -> None:
+    global _roots_cache
+    _roots_cache = None
+
+
 def roots() -> dict[str, str]:
     """{name: absolute path}. Anything unusable (missing key, non-absolute,
     no longer a directory) is dropped rather than raising — a root on an
     unplugged drive should degrade to "links look missing", not break the app."""
+    global _roots_cache
+    if _roots_cache is not None:
+        return _roots_cache
     raw = settings.get(_SETTINGS_KEY, {}) or {}
     out = {}
     if isinstance(raw, dict):
@@ -61,6 +76,7 @@ def roots() -> dict[str, str]:
             if not name or not isinstance(path, str) or not os.path.isabs(path):
                 continue
             out[name] = os.path.realpath(path)
+    _roots_cache = out
     return out
 
 
@@ -79,6 +95,7 @@ def set_root(name: str, path: str) -> tuple[bool, str]:
         data = {}
     data[name] = real
     settings.set(_SETTINGS_KEY, data)
+    invalidate_roots_cache()
     return True, name
 
 
@@ -88,6 +105,7 @@ def remove_root(name: str) -> bool:
         return False
     data.pop(name)
     settings.set(_SETTINGS_KEY, data)
+    invalidate_roots_cache()
     return True
 
 

@@ -163,6 +163,43 @@ function polygonBBoxPx(corners, mapWin){
   };
 }
 
+// Viewport culling. With viewports enabled each output shows only its own
+// slice of a wider canvas, but the crop is a coordinate remap inside mapWin
+// (see applyViewport) — so a shape belonging to a DIFFERENT projector still
+// ran the whole path here and was only thrown away by the canvas edge at
+// rasterization time. On a 4-output rig that meant every window decoded and
+// mesh-warped every video: 4x the decoders and 4x the triangle work for 1x
+// the picture. Measured: 4 outputs x 10 distorted 1080p layers ran at ~2fps
+// with everything drawn everywhere.
+//
+// The corner quad is a sound conservative bound for media/webcam: "stretch"
+// draws exactly the quad, "fit" draws inside it, and "crop" (which does
+// generate geometry beyond the corners) clips back to the quad, as do
+// polyClipActive and applyMirrorFoldPost. So if the quad's window-space
+// bbox misses the window, nothing this layer draws could have landed.
+//
+// Culling also stops getMediaEl being called, so evictUnusedMedia releases
+// the decoder a few seconds later and the video genuinely stops decoding in
+// windows that can't see it. It reloads on demand if the shape moves back
+// into this slice.
+const _CULL_MARGIN_PX = 2;
+function quadOffScreen(corners, mapWin, w, h){
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const c of corners){
+    const [X, Y] = mapWin(c[0], c[1]);
+    // A degenerate/inverted homography can divide through ~0 and produce
+    // non-finite corners; never cull on garbage, just draw and let the
+    // rasterizer sort it out.
+    if (!Number.isFinite(X) || !Number.isFinite(Y)) return false;
+    if (X < minX) minX = X;
+    if (X > maxX) maxX = X;
+    if (Y < minY) minY = Y;
+    if (Y > maxY) maxY = Y;
+  }
+  const m = _CULL_MARGIN_PX;
+  return maxX < -m || minX > w + m || maxY < -m || minY > h + m;
+}
+
 // Shape fit (1) — identical maths to index.html's canvas editor; see its
 // comment for the derivation. Only difference here is quadAspect uses this
 // window's own letterboxed mapWin instead of a plain square normToPx.
@@ -385,19 +422,102 @@ function mediaUrlFor(ref){
 // Correction is a nudge, not a per-frame seek: seeking a 30-minute file is
 // expensive, so the element plays normally and is only pulled back when it
 // has genuinely drifted (or when the trim loops, which reads as a big jump).
-const MEDIA_DRIFT_TOLERANCE = 0.25;   // seconds
+// Converging on the target is done by RATE, not by seeking. A seek on a
+// high-bitrate file takes ~0.5-1.2s to complete (measured on 25 Mbit/s
+// 1080p); the clock advances by that much while the decoder is stalled, so
+// the drift you just corrected reappears immediately and triggers another
+// seek. That feedback loop was doing ~20 seeks per 30s on a clip whose trim
+// spans the whole file and should never have seeked at all.
+//
+// So: nudge playbackRate to converge gently, and seek ONLY for a real
+// discontinuity — a loop wrap, a scrub, a mode change — with a cooldown
+// afterwards so the stall a seek itself causes can't retrigger one.
+const MEDIA_NUDGE_DEADBAND = 0.08;   // seconds — below this, leave it alone
+const MEDIA_SEEK_COOLDOWN = 1500;    // ms — ignore drift while a seek settles
+const MEDIA_TARGET_JUMP = 1.0;       // seconds — what counts as a discontinuity
+// How close the element has to be, after a target jump, to count as having
+// already followed it (a native <video loop> wrap). Comfortably larger than
+// one server tick plus one video frame, comfortably smaller than the resync
+// threshold, so a real desync still gets corrected.
+const MEDIA_WRAP_TOLERANCE = 0.35;   // seconds
+// Safety net only. Rate nudging holds sync to well under a frame when the
+// machine can decode in real time, so this should essentially never fire;
+// it exists so drift can't grow without bound if something goes wrong.
+// Deliberately infrequent: correcting drift by seeking more often than
+// this makes matters worse, not better, on any content heavy enough to
+// have drifted in the first place.
+const MEDIA_RESYNC_THRESHOLD = 1.5;  // seconds adrift before a corrective seek
+const MEDIA_RESYNC_INTERVAL = 20000; // ms — at most one such seek per clip per this
 function syncMediaTime(m, layer){
   if (!m || m.kind !== "video" || !m.ready || !layer) return;
   const target = layer.media_t;
   if (target == null) return;          // duration unknown — let it play
-  const el = m.el;
-  const rate = layer.media_rate || 1;
-  if (el.playbackRate !== rate) el.playbackRate = rate;
-  if (m.seeking) return;
-  if (Math.abs(el.currentTime - target) > MEDIA_DRIFT_TOLERANCE){
-    m.seeking = true;
-    try { el.currentTime = target; } catch (e) { m.seeking = false; }
+  const el = m.el, baseRate = layer.media_rate || 1;
+  const now = performance.now();
+  const prev = m.lastTarget;
+  m.lastTarget = target;
+  if (m.seeking || now < (m.seekUntil || 0)) return;
+
+  // THE discriminator: seek only when the TARGET moved discontinuously (a
+  // loop wrap, a scrub, a trim change) — never merely because the element
+  // has fallen behind.
+  //
+  // Those two look identical if you only measure drift, and conflating them
+  // is a death spiral: a seek on a high-bitrate file stalls decode for
+  // ~0.5-5s, the clock advances by that much meanwhile, and the resulting
+  // drift immediately triggers another seek. Measured at 20 seeks/30s on a
+  // clip whose trim spans the whole file and should never seek at all.
+  // If decode simply can't keep up, seeking is the one thing guaranteed to
+  // make it worse, so we ride it out on rate instead.
+  const targetJumped = prev == null || Math.abs(target - prev) > MEDIA_TARGET_JUMP;
+  let drift = el.currentTime - target;      // positive = running ahead
+  // Wrap-boundary fold. A natively-looping clip wraps on the element's own
+  // schedule, a frame or two either side of ours; in that window the raw
+  // difference reads as a whole span (~the entire clip) while both are in
+  // fact within a frame of each other. Fold it circularly so a wrap can't
+  // be mistaken for a catastrophic desync and trigger the safety net below.
+  // Only valid where the element really does wrap by itself.
+  const span = layer.media_span || 0;
+  if (layer.media_native_loop && span > 0){
+    if (drift > span / 2) drift -= span;
+    else if (drift < -span / 2) drift += span;
   }
+  const ad = Math.abs(drift);
+
+  // A rate-limited resync is the middle ground between the two failure
+  // modes. Correcting every small drift by seeking spirals (a seek stalls
+  // decode for 0.5-5s on a high-bitrate file, and the clock advances by that
+  // much meanwhile, recreating the drift). Never seeking is no better: the
+  // outputs simply drift apart — measured 2.3s between two windows, which
+  // would show as a visibly different frame either side of a projector seam.
+  // So: nudge continuously, and allow at most one corrective seek per clip
+  // per interval, which bounds both the stall rate and the error.
+  const canResync = now - (m.lastResync || 0) > MEDIA_RESYNC_INTERVAL;
+  // A target jump only warrants a seek if the element didn't already follow.
+  // <video loop> wraps the element by itself, so on a clip whose trim spans
+  // the whole file the element is ALREADY at the new target by the time we
+  // see the jump — seeking then stalls decode for 0.5-1.2s to correct
+  // nothing, once per loop, which is exactly the hitch you feel on a short
+  // looping clip. Checking where the element actually IS (rather than
+  // trusting media_native_loop on its own) keeps this honest for scrubs,
+  // trim changes and rate changes, which land here as a jump the element
+  // genuinely hasn't followed.
+  const needsSeek = targetJumped
+    ? ad > MEDIA_WRAP_TOLERANCE
+    : (ad > MEDIA_RESYNC_THRESHOLD && canResync);
+  if (needsSeek){
+    m.seeking = true;
+    m.seekUntil = now + MEDIA_SEEK_COOLDOWN;
+    if (!targetJumped) m.lastResync = now;
+    if (el.playbackRate !== baseRate) el.playbackRate = baseRate;
+    try { el.currentTime = target; } catch (e) { m.seeking = false; }
+    return;
+  }
+  // Otherwise converge by rate alone, capped so it stays visually invisible.
+  const adj = ad > MEDIA_NUDGE_DEADBAND
+    ? Math.max(-0.12, Math.min(0.12, -drift * 0.25)) : 0;
+  const rate = baseRate * (1 + adj);
+  if (Math.abs(el.playbackRate - rate) > 0.005) el.playbackRate = rate;
 }
 // Duration is measured here (the server never opens the file) and reported
 // once per asset, so the trim UI has a timeline to draw without re-probing.
@@ -445,14 +565,14 @@ function getMediaEl(ref, layer){
     el.loop = true; el.muted = true; el.playsInline = true; el.preload = "auto";
     el.src = url;
     el.addEventListener("loadedmetadata", () => reportMediaDuration(ref.key, el));
-    el.addEventListener("seeked", () => { m.seeking = false; });
+    el.addEventListener("seeked", () => { m.seeking = false; m.seekUntil = performance.now() + 250; });
     el.addEventListener("loadeddata", () => { m.ready = true; });
   } else {
     el = new Image();
     el.addEventListener("load", () => { m.ready = true; });
     el.src = url;
   }
-  m = {el, kind, ready: false, seeking: false, assetKey: ref.key, lastUsed: _mediaFrame};
+  m = {el, kind, ready: false, seeking: false, seekUntil: 0, lastTarget: null, lastResync: 0, assetKey: ref.key, lastUsed: _mediaFrame};
   _mediaEls.set(cacheKey, m);
   return m;
 }
@@ -931,6 +1051,11 @@ function paintComposite(layers, resW, resH, masterGain, active, testPattern, sho
         drawKnockoutFill(tctx, layer, mapWin, opacity);
         return;
       }
+      // Viewport culling (see quadOffScreen) — only the decoder-backed layer
+      // types, where skipping is worth real hardware. Vector layers can draw
+      // a glow well outside their quad, so their bbox isn't a safe bound.
+      if ((layer.source_type === "media" || layer.source_type === "webcam")
+          && quadOffScreen(layer.corners, mapWin, w, h)) return;
       // Filters (5/2) — see index.html's paintCanvasEditor for the full
       // rationale; layer.brightness/contrast/hue/saturation/colourize_* come
       // straight off the broadcast (composite.py's per-poly overrides), not

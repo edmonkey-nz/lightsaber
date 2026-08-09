@@ -694,9 +694,19 @@ class CompositeRenderer:
         one authoritative time per layer means every client converges on the
         same frame, and scrubbing the sequencer is reproducible.
 
-        Returns {"t": seconds|None, "visible": bool}. t=None means "duration
-        unknown, just let it play" — the honest answer before any client has
-        reported how long the file is.
+        Returns {"t": seconds|None, "visible": bool, "span": seconds|None,
+        "native_loop": bool}. t=None means "duration unknown, just let it
+        play" — the honest answer before any client has reported how long the
+        file is.
+
+        `span` and `native_loop` exist for the client's seek logic, not for
+        drawing. A clip whose trim covers the whole file wraps by itself via
+        <video loop>, so when our target wraps the element is ALREADY there
+        and a corrective seek would stall decode (0.5-1.2s on high-bitrate
+        media) to fix nothing. `span` additionally lets the client fold the
+        drift circularly across a wrap boundary, where element and server can
+        briefly sit a whole span apart while both are effectively in the same
+        place.
         """
         key = media_ref_key(poly)
         meta = media_meta.get(key) if key else {}
@@ -706,27 +716,43 @@ class CompositeRenderer:
         if out_s is None:
             out_s = duration
         if out_s is None or duration is None:
-            return {"t": None, "visible": True}
+            return {"t": None, "visible": True, "span": None, "native_loop": False}
         in_s = max(0.0, min(float(in_s), duration))
         out_s = max(in_s, min(float(out_s), duration))
         span = out_s - in_s
         if span <= 0.001:
-            return {"t": in_s, "visible": True}
+            return {"t": in_s, "visible": True, "span": 0.0, "native_loop": False}
+        # Native only when the element's own wrap point coincides with ours,
+        # i.e. the trim covers the whole file. Rate and offset don't need
+        # checking: the client sets playbackRate to media_rate and keeps the
+        # element on target, so an element sitting at `target` reaches
+        # duration exactly when target reaches span. The client still
+        # verifies the element actually landed before trusting this.
+        native = (
+            poly.media_mode == "loop"
+            and in_s <= 0.001
+            and out_s >= duration - 0.001
+        )
         local = t * poly.media_rate + poly.media_offset
         if poly.media_mode == "loop":
             local = local % span
-            return {"t": in_s + local, "visible": True}
+            return {"t": in_s + local, "visible": True, "span": span,
+                    "native_loop": native}
         # once / once_hold: clamp at the out point; "once" then stops drawing
         # while "once_hold" keeps showing that last frame.
         if local >= span:
-            return {"t": out_s, "visible": poly.media_mode == "once_hold"}
-        return {"t": in_s + local, "visible": True}
+            return {"t": out_s, "visible": poly.media_mode == "once_hold",
+                    "span": span, "native_loop": False}
+        return {"t": in_s + local, "visible": True, "span": span,
+                "native_loop": False}
 
     def _media_playback_payload(self, poly: PolygonSpec) -> dict:
         if poly.source_type != "media":
-            return {"media_t": None, "media_visible": True}
+            return {"media_t": None, "media_visible": True,
+                    "media_span": None, "media_native_loop": False}
         pb = self._media_playback(poly, self._media_now)
-        return {"media_t": pb["t"], "media_visible": pb["visible"]}
+        return {"media_t": pb["t"], "media_visible": pb["visible"],
+                "media_span": pb["span"], "media_native_loop": pb["native_loop"]}
 
     def _poly_layer_base(self, poly: PolygonSpec) -> dict:
         """The layer-payload fields that come straight off the PolygonSpec,

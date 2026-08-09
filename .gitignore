@@ -29,7 +29,7 @@ projects/
 # checkout still writes there via run.py's one-time migration path.
 canvases/*.json
 sequence.json
-ARCHITECTURE.md
+
 
 # OS / editor cruft
 .DS_Store
