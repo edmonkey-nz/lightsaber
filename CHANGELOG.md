@@ -1,11 +1,99 @@
 # Changelog
 
-All notable changes to PromptWaver are logged here. This project is **pre-1.0
+All notable changes to Lightsaber are logged here. This project is **pre-1.0
 and under active development** — expect breaking changes to scene JSON shape
 and APIs between minor versions until a 1.0 release.
 
 ## [Unreleased]
 - Project scaffolding for VSCode / GitHub (this changelog, `.vscode/`, `LICENSE`, `pyproject.toml`)
+
+## [0.33.0]
+
+### Linked media — reference files instead of copying them
+- **Media roots** (`media_roots.py`) — folders you register as places linked
+  media may come from. A shape can now point at a file *where it already
+  lives* (`PolygonSpec.media_link`) instead of uploading a copy into the
+  app's `media/`, so a multi-gigabyte video costs no extra disk. Register
+  with `--media-root NAME=PATH` (persists) or from Settings.
+- **This is an allowlist, not a convenience.** The server binds
+  `--host 0.0.0.0` by default, so a route serving arbitrary absolute paths
+  would be a remote file read for anyone on the same network. Every path
+  goes through one `resolve()` boundary: containment is checked after
+  `realpath()` (so neither `../` nor a symlink planted inside a root
+  escapes), and only media file extensions are served. Verified over HTTP —
+  traversal, encoded traversal, symlink escape, unregistered root and
+  non-media files all 404; browse escapes 400.
+- **Links store `root-name::relative/path`, not an absolute path.** The UI
+  shows the full resolved path, but a project moved to another machine (the
+  render host, whose media is on its own disk) resolves as long as a root of
+  the same name exists there — nothing to relink by hand.
+- A link whose file is missing is **kept**, not dropped: an unplugged drive
+  mid-set must not have any unrelated edit silently destroy the link. Those
+  surface as an amber "file not found — Replace… to relink" instead.
+- Linking is now the primary action in Input > video/image files; the
+  upload-a-copy flow is still there, demoted.
+
+### Video playback, per instance
+- **Playhead is derived from the canvas clock, not the `<video>` element.**
+  `composite.py` computes each media shape's position and publishes it per
+  layer; every client converges on that value rather than free-running.
+  Generated scenes were already pure functions of `t` — video now is too.
+  Two independent output windows measured **1–5 ms apart**, so a clip
+  spanning two projectors through a viewport crop holds together. Freeze and
+  Stop halt video with everything else, for free.
+- **Per-instance trim and mode** — `media_in`/`media_out`/`media_mode`/
+  `media_rate`/`media_offset` on PolygonSpec. The same file can appear
+  several times on a canvas, and across canvases, each with its own trim and
+  playhead. in/out default to `null` = inherit the asset's own default trim
+  (`media_meta.py`), so re-trimming a file moves every shape that hasn't
+  overridden it. `offset` phases one instance against another.
+- Modes are loop / once / once-and-hold. **No ping-pong**: browsers have no
+  reverse playback, and faking it with a backward seek per frame stutters
+  badly on exactly the long files this is for.
+- The `<video>` cache is keyed by asset **plus playback config**, so shapes
+  trimmed identically share one decoder and stay frame-identical, while
+  differing trims get their own playhead — bounding decoder count to
+  distinct configurations rather than shape count. Orphaned elements (every
+  trim edit mints a new key) are evicted after ~3s unused; without that,
+  nudging an in-point a few times left several videos decoding forever.
+- Trim UI is built for long files: typed `HH:MM:SS.mmm` fields are the real
+  control (a 30-minute clip is ~6s per pixel in a 300px bar), with
+  set-from-playhead, ±1s nudges, and a region/playhead bar for orientation.
+
+### Media tab
+- A new top-level tab between Canvas and Sequencer: every file the project
+  can draw from, linked and uploaded together, with duration, size, usage
+  count and a missing flag. The inventory is the union of the upload folder,
+  every `media_link` across the project's canvases, and anything with stored
+  metadata — so a link whose last shape was just deleted still appears
+  rather than having its trim silently orphaned.
+- **Two-tier trim timeline** — a whole-file overview (where am I in 30
+  minutes) plus a zoomed band around the playhead (2s–10min) for placing an
+  edge precisely. Drag a region edge to move it, click elsewhere to seek.
+  The preview player is deliberately not tied to the engine clock: scrubbing
+  here must not move what the projectors are showing.
+- **Used by** lists every shape across the project's saved canvases, click
+  to open that canvas. **Relink** repoints every shape using an asset at a
+  different file — rewriting saved canvases on disk, since a relink that
+  fixed 1 of 12 shapes would be worse than none — and carries the trim over.
+  It refuses a target outside any media root.
+
+### Editing and UI
+- **Per-project frame rate** (Project > Performance) — paces the render loop
+  *and* the state broadcaster together, applied live. `--fps` is now just
+  the startup default a loaded project overrides.
+- **Shape lock** (`PolygonSpec.locked`) — a locked shape can't be selected
+  or dragged on the canvas, so finished mapping can't be nudged out of
+  alignment mid-set. Clicks pass through to shapes underneath; it stays
+  reachable from the Shapes list (which is how you unlock it), and effectors
+  still animate it. Dashed outline, padlock in the list.
+- **Sticky unsaved-changes bar**, bottom-right — names what's unsaved and
+  offers the relevant Save, visible from every tab. The inline indicator was
+  invisible precisely when you'd most likely lose work.
+- Project tab split into collapsible sections (Output size / Performance /
+  Output monitors / Notes); collapsing the Input column now collapses its
+  accordions too; whole shape-list rows are clickable; "+ Add shape" moved
+  below the list it adds to; tool buttons are icon-only.
 
 ## [0.32.0]
 

@@ -126,6 +126,17 @@ class ProjectSpec:
     # lives right next to viewports_enabled rather than on
     # OutputMonitorConfig: it's one on/off for every output, not per-output.
     show_fps: bool = False
+    # Render/broadcast rate for this project, in frames per second. Lives on
+    # the project because it's a property of the rig+content the project
+    # targets (a heavy 8-shape video canvas on a laptop wants a different
+    # number than a light vector scene on the render host), not of the
+    # process — `run.py --fps` is now just the startup default that a loaded
+    # project immediately overrides. This paces BOTH the compositor's render
+    # loop and server.py's state broadcaster; they must stay tied together,
+    # since a broadcaster running slower than the render loop silently caps
+    # what every output window actually sees regardless of how fast frames
+    # are produced (which is exactly the bug that made --fps look inert).
+    fps: int = 20
     # Free-text notes (Project tab) — a show's own run sheet/reminders
     # ("venue contact is X", "canvas 3 needs the fisheye lens"), not
     # consumed by anything else in the engine. Same edit-in-memory,
@@ -138,7 +149,7 @@ class ProjectSpec:
                 "width": self.width, "height": self.height,
                 "outputs": [o.to_dict() for o in self.outputs],
                 "viewports_enabled": self.viewports_enabled, "show_fps": self.show_fps,
-                "notes": self.notes, "schema": self.schema}
+                "fps": self.fps, "notes": self.notes, "schema": self.schema}
 
     @staticmethod
     def from_dict(d: dict) -> "ProjectSpec":
@@ -153,6 +164,7 @@ class ProjectSpec:
             outputs=outputs,
             viewports_enabled=bool(d.get("viewports_enabled", False)),
             show_fps=bool(d.get("show_fps", False)),
+            fps=max(1, min(120, int(d.get("fps", 20)))),
             notes=str(d.get("notes", "")),
             schema=int(d.get("schema", 1)),
         )

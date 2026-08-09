@@ -80,6 +80,32 @@ class PolygonSpec:
     # z_index below.
     source_type: str = "scene"
     media: str | None = None   # filename under media_dir, meaningful iff source_type=="media"
+    # Linked media (see media_roots.py) — "<root-name>::<relative/path.ext>",
+    # referencing a file where it already lives instead of copying a
+    # multi-gigabyte video into the app's own media/ folder. Takes precedence
+    # over `media` above when both are set; the two are kept as separate
+    # fields (rather than one overloaded string) so existing projects need no
+    # migration and "which kind of source is this" is never a guess.
+    media_link: str | None = None
+    # Per-INSTANCE video playback (item 15). Two shapes can show the same
+    # file with different trims and modes, so these live on the polygon, not
+    # on the asset. in/out are None = "inherit this file's default trim"
+    # (see media_meta.py) rather than 0/end, so re-trimming the asset moves
+    # every instance that hasn't overridden it.
+    #   mode: "loop" | "once" | "once_hold"
+    #     once      — play the trimmed region, then show nothing
+    #     once_hold — play it, then hold the last frame
+    #   (no ping-pong: browsers have no reverse playback, and faking it with
+    #    a backward seek per frame stutters badly on exactly the long files
+    #    this feature exists for.)
+    #   offset — start phase within the trimmed region, so two instances of
+    #     one clip can run deliberately out of step (the video counterpart of
+    #     time_offset above, which does the same job for generated scenes).
+    media_in: float | None = None
+    media_out: float | None = None
+    media_mode: str = "loop"
+    media_rate: float = 1.0
+    media_offset: float = 0.0
     webcam_device: str | None = None   # MediaDeviceInfo.deviceId, meaningful iff source_type=="webcam";
                                         # None = browser's default camera
     text_content: str = ""     # meaningful iff source_type=="text"
@@ -135,6 +161,14 @@ class PolygonSpec:
     # paintCanvasEditor/paintComposite). Applies equally to a future
     # media-sourced polygon's own native aspect.
     fit: str = "stretch"   # "stretch" | "fit" | "crop"
+    # Edit lock — a pure EDITOR guard, not a render property: a locked shape
+    # renders exactly as before, it just can't be selected, dragged, corner-
+    # pinned, mask-edited or body-moved on the canvas, so a finished piece of
+    # mapping can't be nudged out of alignment by a stray click mid-set. Its
+    # settings stay fully editable from Shape settings (that's how you unlock
+    # it again), and effectors still animate it — locking is about the mouse,
+    # not about freezing the shape.
+    locked: bool = False
     # Where position/scale/rotation effector routes pivot from (see
     # effectors.py's transform_corners/ANCHOR_FRACTIONS) — one of the 3x3
     # grid positions, a fraction of this polygon's own bounding box.
@@ -153,6 +187,13 @@ class PolygonSpec:
             scene=d.get("scene"),
             source_type=d.get("source_type", "scene"),
             media=d.get("media"),
+            media_link=d.get("media_link"),
+            media_in=(float(d["media_in"]) if d.get("media_in") is not None else None),
+            media_out=(float(d["media_out"]) if d.get("media_out") is not None else None),
+            media_mode=(d.get("media_mode") if d.get("media_mode") in
+                        ("loop", "once", "once_hold") else "loop"),
+            media_rate=max(0.05, min(8.0, float(d.get("media_rate", 1.0)))),
+            media_offset=float(d.get("media_offset", 0.0)),
             webcam_device=d.get("webcam_device"),
             text_content=d.get("text_content", ""),
             text_color=d.get("text_color", "#ffffff"),
@@ -163,6 +204,7 @@ class PolygonSpec:
             clip_shape=d.get("clip_shape"),
             clip_points=sanitize_clip_points(d.get("clip_points")),
             clip_scale=float(d.get("clip_scale", 1.0)),
+            locked=bool(d.get("locked", False)),
             z_index=max(1, min(10, int(d.get("z_index", 5)))),
             fit=d.get("fit", "stretch"),
             transform_anchor=d.get("transform_anchor")

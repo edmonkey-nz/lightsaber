@@ -15,6 +15,9 @@ env/
 
 # Lightsaber local/runtime state — never commit secrets or machine-specific data
 settings.json
+# Per-asset media durations + default trims, keyed to THIS machine's media
+# roots (see media_meta.py) — local runtime state, not project content.
+media_meta.json
 scenes/generated/*.json
 media/*
 # Each project's canvases/sequence — run.py bootstraps an empty "default"

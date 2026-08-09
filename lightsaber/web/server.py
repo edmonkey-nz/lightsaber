@@ -39,6 +39,7 @@ thumbnails; 404 if that canvas was never saved since this feature shipped.
     {"type":"project_set_output_count", "count":2}   # resizes the outputs list — see set_output_count
     {"type":"project_set_viewports_enabled", "value":true}
     {"type":"project_set_show_fps", "value":true}
+    {"type":"project_set_fps", "value":60}
     {"type":"set_test_pattern", "index":0, "value":true}
         # Calibration aid, NOT persisted (engine-runtime only — see
         # composite.py's set_test_pattern): shows a keystone-aware alignment
@@ -72,10 +73,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import urllib.parse
 
 from aiohttp import web, WSMsgType
 
 from .. import settings
+from .. import media_roots
+from .. import media_meta
 
 _STATIC = os.path.join(os.path.dirname(__file__), "static")
 
@@ -284,8 +288,193 @@ def make_app(engine, media_dir: str) -> web.Application:
         engine.canvases.save_thumbnail(request.match_info["name"], data)
         return web.json_response({"ok": True})
 
+    # Linked media (see media_roots.py) — files referenced where they live
+    # instead of copied into media_dir. EVERY path here goes through
+    # media_roots.resolve(), which is the allowlist/containment boundary;
+    # this server listens on 0.0.0.0 by default, so a route that served
+    # arbitrary absolute paths would be a remote file read for anyone on the
+    # same network. Nothing outside a configured root is reachable.
+    async def media_link_file(request):
+        link = f"{request.match_info['root']}::{request.match_info['tail']}"
+        path = media_roots.resolve(link)
+        if not path or not os.path.isfile(path):
+            return web.Response(status=404)
+        # FileResponse handles Range requests, which is what makes seeking
+        # (and a browser's own video buffering) work on a large file.
+        return web.FileResponse(path)
+
+    async def media_roots_list(request):
+        return web.json_response({"roots": [
+            {"name": n, "path": p} for n, p in sorted(media_roots.roots().items())]})
+
+    async def media_roots_add(request):
+        body = await request.json()
+        ok, msg = media_roots.set_root(body.get("name", ""), body.get("path", ""))
+        return web.json_response({"ok": ok, "error": None if ok else msg},
+                                 status=200 if ok else 400)
+
+    async def media_roots_remove(request):
+        ok = media_roots.remove_root(request.match_info["name"])
+        return web.json_response({"ok": ok}, status=200 if ok else 404)
+
+    async def media_browse(request):
+        result = media_roots.browse(request.query.get("root", ""),
+                                    request.query.get("path", ""))
+        return web.json_response(result,
+                                 status=400 if result.get("error") else 200)
+
     app.router.add_get("/", index)
     app.router.add_get("/output", output_page)
+    # Unified asset inventory for the Media tab — the app's own uploaded
+    # library AND every linked file this install knows about, in one list.
+    #
+    # "Knows about" is deliberately the union of three sources rather than a
+    # directory scan: linked files live wherever the user keeps them, so the
+    # only records of them are the shapes that reference one and any trim
+    # already stored against one. A link whose last shape was just deleted
+    # still appears (via media_meta) so its trim isn't silently orphaned.
+    async def media_assets(request):
+        assets = {}
+
+        def entry(key, kind, name):
+            if key not in assets:
+                meta = media_meta.get(key)
+                assets[key] = {"key": key, "kind": kind, "name": name,
+                               "duration": meta["duration"], "in": meta["in"],
+                               "out": meta["out"], "used_by": []}
+            return assets[key]
+
+        for fname in sorted(os.listdir(media_dir)):
+            path = os.path.join(media_dir, fname)
+            if not os.path.isfile(path):
+                continue
+            e = entry("lib:" + fname, "lib", fname)
+            e.update(url=f"/media-files/{fname}", path=path,
+                     size=os.path.getsize(path), exists=True)
+
+        # Usage across THIS project's whole canvas library, not just the open
+        # canvas — "where is this clip used" is only useful if it covers the
+        # canvases you're not currently looking at.
+        canvases = engine.canvases
+        for cname in canvases.names():
+            try:
+                spec = canvases.load_spec(cname)
+            except Exception:
+                continue
+            for i, poly in enumerate(spec.polygons):
+                if poly.source_type != "media":
+                    continue
+                if poly.media_link:
+                    key, kind, name = ("link:" + poly.media_link, "link",
+                                       poly.media_link.split("::")[-1].split("/")[-1])
+                elif poly.media:
+                    key, kind, name = "lib:" + poly.media, "lib", poly.media
+                else:
+                    continue
+                e = entry(key, kind, name)
+                e["used_by"].append({"canvas": cname,
+                                     "shape": poly.label or f"shape {i + 1}"})
+
+        for key in media_meta.all_meta():
+            if key.startswith("link:"):
+                entry(key, "link", key.split("::")[-1].split("/")[-1])
+            elif key.startswith("lib:"):
+                entry(key, "lib", key[4:])
+
+        # Resolve every linked asset now: a root may have been removed or a
+        # drive unplugged since the link was stored.
+        for key, e in assets.items():
+            if e["kind"] != "link":
+                continue
+            link = key[5:]
+            path = media_roots.resolve(link)
+            exists = bool(path) and os.path.isfile(path)
+            e["link"] = link
+            e["path"] = path
+            e["exists"] = exists
+            e["size"] = os.path.getsize(path) if (exists and path) else None
+            root, _, rel = link.partition("::")
+            tail = "/".join(urllib.parse.quote(seg) for seg in rel.split("/"))
+            e["url"] = f"/media-link/{urllib.parse.quote(root)}/{tail}"
+
+        for e in assets.values():
+            e.setdefault("exists", False)
+            e.setdefault("size", None)
+            e.setdefault("path", None)
+            e.setdefault("url", None)
+
+        return web.json_response({"assets": sorted(
+            assets.values(), key=lambda a: (not a["exists"], a["name"].lower()))})
+
+    # Relink: point every shape that uses one asset at a different file.
+    # This is the "the drive got remounted somewhere else" repair, so it
+    # deliberately rewrites SAVED canvases on disk rather than only the one
+    # currently open — a relink that fixed 1 of 12 shapes would be worse than
+    # none. The open canvas is patched in memory too, so the editor doesn't
+    # keep showing the stale link until reload. The UI confirms first.
+    async def media_relink(request):
+        body = await request.json()
+        from_key = str(body.get("from_key") or "")
+        to_link = str(body.get("to_link") or "")
+        if not media_roots.resolve(to_link):
+            return web.json_response({"ok": False, "error": "target isn't inside a media root"},
+                                     status=400)
+
+        def repoint(poly) -> bool:
+            key = ("link:" + poly.media_link) if poly.media_link else (
+                "lib:" + poly.media if poly.media else None)
+            if key != from_key:
+                return False
+            poly.media_link = to_link
+            poly.media = None
+            return True
+
+        canvases, changed, touched = engine.canvases, 0, []
+        for cname in canvases.names():
+            try:
+                spec = canvases.load_spec(cname)
+            except Exception:
+                continue
+            hits = sum(1 for p in spec.polygons if repoint(p))
+            if hits:
+                canvases.save(cname, spec)
+                changed += hits
+                touched.append(cname)
+        # ...and the in-memory copy, which the disk pass above didn't touch.
+        live = sum(1 for p in canvases.current.polygons if repoint(p))
+        # Carry the trim over so a relinked file keeps the in/out you set.
+        meta = media_meta.get(from_key)
+        if meta["in"] or meta["out"] is not None:
+            media_meta.set_trim("link:" + to_link, meta["in"], meta["out"])
+        return web.json_response({"ok": True, "shapes": changed + live,
+                                  "canvases": touched})
+
+    # Asset-level media metadata (duration + default trim). Duration is
+    # measured by whichever client first loads the file — the server never
+    # opens it, so there's no ffprobe dependency.
+    async def media_meta_list(request):
+        return web.json_response({"meta": media_meta.all_meta()})
+
+    async def media_meta_duration(request):
+        body = await request.json()
+        media_meta.set_duration(body.get("key", ""), body.get("duration"))
+        return web.json_response({"ok": True})
+
+    async def media_meta_trim(request):
+        body = await request.json()
+        entry = media_meta.set_trim(body.get("key", ""), body.get("in"), body.get("out"))
+        return web.json_response({"ok": True, "meta": entry})
+
+    app.router.add_get("/media/assets", media_assets)
+    app.router.add_post("/media/relink", media_relink)
+    app.router.add_get("/media/meta", media_meta_list)
+    app.router.add_post("/media/meta/duration", media_meta_duration)
+    app.router.add_post("/media/meta/trim", media_meta_trim)
+    app.router.add_get("/media/roots", media_roots_list)
+    app.router.add_post("/media/roots", media_roots_add)
+    app.router.add_delete("/media/roots/{name}", media_roots_remove)
+    app.router.add_get("/media/browse", media_browse)
+    app.router.add_get("/media-link/{root}/{tail:.*}", media_link_file)
     app.router.add_get("/ws", ws_handler)
     app.router.add_get("/media/list", media_list)
     app.router.add_post("/media/upload", media_upload)
@@ -369,6 +558,8 @@ async def _handle(engine, m: dict):
         engine.composite.set_viewports_enabled(bool(m.get("value")))
     elif t == "project_set_show_fps":
         engine.composite.set_show_fps(bool(m.get("value")))
+    elif t == "project_set_fps":
+        engine.composite.set_project_fps(m.get("value", 20))
     elif t == "set_test_pattern":
         engine.composite.set_test_pattern(m["index"], bool(m.get("value")))
     elif t == "poly_add":

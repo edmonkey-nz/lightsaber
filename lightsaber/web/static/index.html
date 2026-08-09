@@ -327,6 +327,41 @@
              box-shadow:0 0 8px var(--amber);animation:dirty-pulse 1.4s ease-in-out infinite}
   @keyframes dirty-pulse{0%,100%{opacity:.35}50%{opacity:1}}
 
+  /* Unsaved-changes bar (12) — the inline .dirty-indicator above only shows
+     next to the relevant Save button, which means it's invisible whenever
+     you're on another tab (editing a canvas while the Project tab holds the
+     unsaved change, say) — precisely when you're most likely to lose work.
+     This is the always-visible version: fixed to the bottom-right corner,
+     above everything, naming WHAT is unsaved and offering the Save right
+     there so acting on it never costs a tab switch. Slides out entirely
+     when everything is clean, so a saved session has no persistent chrome. */
+  #save-bar{position:fixed;right:16px;bottom:16px;z-index:120;display:none;
+            align-items:center;gap:10px;padding:8px 12px;border-radius:10px;
+            background:rgba(24,27,34,.96);border:1px solid var(--amber);
+            box-shadow:0 6px 22px rgba(0,0,0,.5);font-size:12px;
+            backdrop-filter:blur(4px)}
+  #save-bar.show{display:flex}
+  #save-bar .dirty-dot{flex:0 0 auto}
+  #save-bar-text{color:var(--amber);white-space:nowrap}
+  #save-bar button{font-size:12px;padding:4px 10px}
+  /* Focused editing hides the panels the bar's buttons act on, so hide the
+     bar with them rather than leave dead controls floating over the canvas. */
+  body.editor-focused #save-bar{display:none}
+
+  .media-tab-split{display:grid;grid-template-columns:minmax(220px,320px) 1fr;gap:16px;align-items:start}
+  @media (max-width:1100px){ .media-tab-split{grid-template-columns:1fr} }
+  #media-detail{min-width:0}
+  .media-bar{position:relative;height:26px;border:1px solid rgba(255,255,255,.14);border-radius:4px;
+             background:var(--panel2,#1b1e26);margin:4px 0;cursor:pointer;overflow:hidden;user-select:none}
+  .media-bar-region{position:absolute;top:0;bottom:0;background:rgba(51,224,208,.22);
+                    border-left:2px solid var(--cyan);border-right:2px solid var(--cyan)}
+  .media-bar-head{position:absolute;top:0;bottom:0;width:2px;background:var(--amber);pointer-events:none}
+  /* the slice of the whole file the zoomed bar below is showing */
+  .media-bar-win{position:absolute;top:0;bottom:0;border:1px solid rgba(242,166,35,.7);
+                 background:rgba(242,166,35,.08);pointer-events:none}
+  #media-asset-list .item{flex-direction:column;align-items:stretch;gap:2px}
+  #media-asset-list .item .missing{color:var(--amber)}
+  #media-asset-list .item .sub{font-size:10px;color:var(--dim)}
   .global-buttons{display:flex;gap:8px;align-items:center;padding:4px 0 8px}
 
   .xfade-indicator{display:flex;flex-direction:column;gap:6px;padding:8px 10px;
@@ -396,6 +431,7 @@
     <div class="tab-bar">
       <button class="tab-btn" id="tab-btn-project" data-tab="tab-project">Project</button>
       <button class="tab-btn amber" id="tab-btn-canvas" data-tab="tab-canvas">Canvas</button>
+      <button class="tab-btn" id="tab-btn-media" data-tab="tab-media">Media</button>
       <button class="tab-btn" id="tab-btn-sequencer" data-tab="tab-sequencer">Sequencer</button>
       <button class="tab-btn" id="tab-btn-output-preview" data-tab="tab-output-preview">Output Preview</button>
     </div>
@@ -412,34 +448,130 @@
         <span class="dirty-indicator" id="project-dirty-indicator"><span class="dirty-dot"></span>changes not saved</span>
       </div>
       <div class="hint">a project owns its own canvases and sequence — scenes and uploaded media stay shared across every project</div>
-      <div class="field"><label>output size</label>
-        <input type="number" id="project-width" min="1" step="1" style="max-width:90px"> ×
-        <input type="number" id="project-height" min="1" step="1" style="max-width:90px"> px</div>
-      <div class="hint">every canvas in this project's sequencer shares this resolution — it's the physical rig's own output, not a per-canvas setting. The output previews, test patterns and a new shape's default size all follow it too.</div>
-      <div class="field" style="align-items:flex-start"><label style="padding-top:6px">notes</label>
-        <textarea id="project-notes" rows="5" placeholder="run sheet, venue contact, reminders…"
-          style="flex:1;resize:vertical;font:inherit;background:var(--panel2,#1b1e26);color:inherit;
-                 border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:6px"></textarea></div>
-      <div class="hint">free text, just for you — nothing else in the app reads it. Saves with the project, same as output size (💾 above).</div>
+
+      <!-- Project tab (11): one accordion per concern instead of two long
+           stacked walls of fields, same <details> pattern the Input column
+           already uses. Output/Performance/Monitors/Notes are edited at
+           different times (load-in vs. tuning vs. during a set), so they
+           collapse independently. -->
+      <details class="accordion" id="acc-project-output" open>
+        <summary>Output size</summary>
+        <div class="accordion-body">
+          <div class="field"><label>size</label>
+            <input type="number" id="project-width" min="1" step="1" style="max-width:90px"> ×
+            <input type="number" id="project-height" min="1" step="1" style="max-width:90px"> px</div>
+          <div class="hint">every canvas in this project's sequencer shares this resolution — it's the physical rig's own output, not a per-canvas setting. The output previews, test patterns and a new shape's default size all follow it too.</div>
+        </div>
+      </details>
+
+      <details class="accordion" id="acc-project-perf">
+        <summary>Performance</summary>
+        <div class="accordion-body">
+          <div class="field"><label>frame rate</label>
+            <input type="number" id="project-fps" min="1" max="120" step="1" style="max-width:70px"> fps</div>
+          <div class="hint">how fast this project renders AND pushes frames to every output window — the two are deliberately tied, since a slower push silently caps what the outputs actually show no matter how fast frames are made. Applies live; <code>--fps</code> on the command line is now just the startup default. Higher costs more CPU: try 30-60 for a light vector canvas, lower it if a heavy video canvas starts stuttering.</div>
+        </div>
+      </details>
+
+      <details class="accordion" id="acc-project-monitors">
+        <summary>Output monitors</summary>
+        <div class="accordion-body">
+          <div class="hint">each output window (header buttons, and the Output Preview tab) shows this project's composite feed with its own physical-orientation correction. Lives on THIS project, so it travels with the project across browsers/machines instead of being stuck in one browser's storage.</div>
+          <div class="field"><label>outputs</label>
+            <input type="number" id="output-count" min="1" max="8" step="1" style="max-width:70px"></div>
+          <div class="hint">how many output windows this project drives — a laptop is usually 1-2, a render host (see ARCHITECTURE.md) up to 5. Changes the header's Output N buttons and the Output Preview tab to match.</div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px">
+            <input type="checkbox" id="viewports-enabled"> display viewports</label>
+          <div class="hint">off (default): every output shows the full canvas, unconditionally — a duplicate feed, same as always. On: each output shows only its own "content" crop below instead — for one wide canvas sliced across several projectors, not the same image repeated on each.</div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px">
+            <input type="checkbox" id="show-fps"> show output FPS</label>
+          <div class="hint">a small counter in the corner of every output window — the actual end-to-end delivery rate reaching that window, not a claimed/target rate.</div>
+          <div id="output-monitors-list" style="display:flex;flex-direction:column;gap:10px;margin-top:6px"></div>
+          <div class="hint">changes here apply live to any open output window, but only persist once you hit 💾 Save above — except "test pattern", a live-only calibration aid that never saves and resets when the engine restarts.</div>
+        </div>
+      </details>
+
+      <details class="accordion" id="acc-project-notes">
+        <summary>Notes</summary>
+        <div class="accordion-body">
+          <textarea id="project-notes" rows="6" placeholder="run sheet, venue contact, reminders…"
+            style="width:100%;resize:vertical;font:inherit;background:var(--panel2,#1b1e26);color:inherit;
+                   border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:6px"></textarea>
+          <div class="hint">free text, just for you — nothing else in the app reads it. Saves with the project, same as output size (💾 above).</div>
+        </div>
+      </details>
+    </div>
     </div>
 
-    <div class="group" id="g-output-monitors" style="width:100%">
-      <h2>Output monitors</h2>
-      <div class="hint">each output window (header buttons, and the Output Preview tab) shows this project's composite feed with its own physical-orientation correction. Lives on THIS project, so it travels with the project across browsers/machines instead of being stuck in one browser's storage.</div>
-      <div class="field"><label>outputs</label>
-        <input type="number" id="output-count" min="1" max="8" step="1" style="max-width:70px"></div>
-      <div class="hint">how many output windows this project drives — a laptop is usually 1-2, a render host (see ARCHITECTURE.md) up to 5. Changes the header's Output N buttons and the Output Preview tab to match.</div>
-      <label style="display:flex;align-items:center;gap:6px;font-size:13px">
-        <input type="checkbox" id="viewports-enabled"> display viewports</label>
-      <div class="hint">off (default): every output shows the full canvas, unconditionally — a duplicate feed, same as always. On: each output shows only its own "content" crop below instead — for one wide canvas sliced across several projectors, not the same image repeated on each.</div>
-      <label style="display:flex;align-items:center;gap:6px;font-size:13px">
-        <input type="checkbox" id="show-fps"> show output FPS</label>
-      <div class="hint">a small counter in the corner of every output window — the actual end-to-end delivery rate reaching that window, not a claimed/target rate.</div>
-      <div id="output-monitors-list" style="display:flex;flex-direction:column;gap:10px;margin-top:6px"></div>
-      <div class="hint">changes here apply live to any open output window, but only persist once you hit 💾 Save above — except "test pattern", a live-only calibration aid that never saves and resets when the engine restarts.</div>
-    </div>
-    </div>
 
+    <div id="tab-media" class="tab-panel" style="display:none">
+    <div class="group" style="width:100%">
+      <h2>Media</h2>
+      <div class="row">
+        <button class="go" id="media-tab-link">🔗 Link a file…</button>
+        <button id="media-tab-upload">⬆ Upload a copy…</button>
+        <button id="media-tab-refresh" title="Rescan">⟲</button>
+        <span class="hint" id="media-tab-summary" style="margin-left:auto"></span>
+      </div>
+      <div class="hint">every file this project can draw from — linked files (🔗, referenced where they live) and uploaded copies (📁, inside the app). Trimming here sets the file's DEFAULT in/out; every shape that hasn't overridden it follows.</div>
+      <div class="media-tab-split">
+        <div class="lib" id="media-asset-list" style="grid-template-columns:1fr;align-content:start;max-height:70vh;overflow:auto"></div>
+        <div id="media-detail">
+          <div class="hint" id="media-detail-empty">select a file on the left</div>
+          <div id="media-detail-body" style="display:none">
+            <h2 id="media-detail-name" style="margin-bottom:4px"></h2>
+            <div class="hint" id="media-detail-path" style="word-break:break-all"></div>
+            <video id="media-preview" playsinline muted
+                   style="width:100%;max-height:44vh;background:#000;border:1px solid var(--line);border-radius:6px"></video>
+            <div class="row" style="align-items:center;gap:6px;margin-top:6px">
+              <button id="media-preview-play">▶</button>
+              <button id="media-preview-in" title="Jump to the in point">⇤</button>
+              <button id="media-preview-out" title="Jump to the out point">⇥</button>
+              <span class="hint" id="media-preview-time" style="margin-left:auto"></span>
+            </div>
+
+            <div class="hint" style="margin-top:8px">whole file — drag the shaded region's edges, or use the fields below</div>
+            <div id="media-bar-overview" class="media-bar">
+              <div class="media-bar-region" id="media-ov-region"></div>
+              <div class="media-bar-head" id="media-ov-head"></div>
+              <div class="media-bar-win" id="media-ov-win"></div>
+            </div>
+
+            <div class="hint" id="media-zoom-label">zoomed around the playhead — for frame-accurate trims on a long file</div>
+            <div id="media-bar-zoom" class="media-bar">
+              <div class="media-bar-region" id="media-zoom-region"></div>
+              <div class="media-bar-head" id="media-zoom-head"></div>
+            </div>
+            <div class="row" style="gap:6px;align-items:center">
+              <span class="hint">zoom</span>
+              <input type="range" id="media-zoom-span" min="2" max="600" step="1" value="20" style="flex:1">
+              <span class="val" id="v-mediazoom">±10s</span>
+            </div>
+
+            <div class="field"><label>in</label>
+              <input type="text" id="media-in" style="flex:1;min-width:0;font-size:11px">
+              <button id="media-in-set" title="Set in to the preview playhead">⇤ set</button></div>
+            <div class="field"><label>out</label>
+              <input type="text" id="media-out" style="flex:1;min-width:0;font-size:11px" placeholder="end">
+              <button id="media-out-set" title="Set out to the preview playhead">set ⇥</button></div>
+            <div class="row" style="gap:6px">
+              <button class="go" id="media-trim-save" style="flex:1">Save as this file's default trim</button>
+              <button id="media-trim-clear" title="Clear the default trim (back to the whole file)">⟲</button>
+            </div>
+            <div class="hint" id="media-trim-status"></div>
+
+            <h2 style="margin-top:12px">Used by</h2>
+            <div class="lib" id="media-usedby" style="grid-template-columns:1fr"></div>
+            <div class="row" style="gap:6px;margin-top:8px">
+              <button id="media-add-to-canvas" style="flex:1">+ Add to current canvas</button>
+              <button id="media-relink" title="Point this link at a different file">🔗 Relink</button>
+              <button id="media-delete" title="Delete the uploaded copy">✕</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div>
     <div id="tab-canvas" class="tab-panel">
     <div class="canvas-3col">
 
@@ -474,11 +606,19 @@
           <details class="accordion" id="acc-input-media">
             <summary>video / image files</summary>
             <div class="accordion-body">
-              <div class="row">
-                <input type="file" id="media-file-input" multiple accept="image/*,video/*" style="flex:1;min-width:0">
-                <button id="media-upload-btn">Upload</button>
-              </div>
-              <div class="lib" id="media-list"></div>
+              <button class="go" id="media-link-btn" style="width:100%">🔗 Link a file…</button>
+              <div class="hint">references the file where it already lives — nothing is copied, so a 4GB video costs no extra disk. Needs a media root (Settings &gt; Media roots); the picker can add one.</div>
+              <details class="accordion" id="acc-input-upload">
+                <summary>copy into the app instead</summary>
+                <div class="accordion-body">
+                  <div class="row">
+                    <input type="file" id="media-file-input" multiple accept="image/*,video/*" style="flex:1;min-width:0">
+                    <button id="media-upload-btn">Upload</button>
+                  </div>
+                  <div class="hint">duplicates the file into the app's own media/ folder — fine for small logos and stings, wasteful for big video</div>
+                  <div class="lib" id="media-list"></div>
+                </div>
+              </details>
             </div>
           </details>
         </div>
@@ -506,8 +646,8 @@
             <span class="dirty-indicator" id="canvas-dirty-indicator"><span class="dirty-dot"></span>changes not saved</span>
           </div>
           <div class="row" style="flex:0 0 auto;align-items:center">
-            <button id="tool-select" class="amber" title="Select tool — drag shapes/corners">⇖ Select</button>
-            <button id="tool-hand" title="Hand tool — drag to pan">✋ Hand</button>
+            <button id="tool-select" class="amber" title="Select tool — drag shapes/corners">⇖</button>
+            <button id="tool-hand" title="Hand tool — drag to pan">✋</button>
             <button id="editor-reset-view" title="Reset zoom/pan">⟲</button>
             <button id="canvas-freeze-btn" title="Freeze shape playback — content stays visible, just stops animating">❄</button>
             <button id="editor-fullscreen" title="Focused editing (fullscreen)">⛶</button>
@@ -521,12 +661,12 @@
 
       <div class="canvas-col-shapes">
       <div class="group" id="g-shapes">
-        <div class="row">
-          <button id="poly-add-btn" style="width:100%">+ Add shape</button>
-        </div>
         <h2>Shapes</h2>
         <div class="lib" id="shape-list"></div>
-        <div class="hint">click a shape to select it on the canvas</div>
+        <div class="row" style="margin-top:8px">
+          <button id="poly-add-btn" style="width:100%">+ Add shape</button>
+        </div>
+        <div class="hint">click a shape to select it on the canvas · 🔒 marks a locked shape (Shape settings &gt; lock)</div>
       </div>
       </div>
 
@@ -535,6 +675,9 @@
         <h2>Shape settings</h2>
         <div class="field"><label>name</label>
           <input type="text" id="poly-label" placeholder="e.g. Left panel"></div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px">
+          <input type="checkbox" id="poly-locked"> 🔒 lock on canvas</label>
+        <div class="hint">stops this shape being selected or dragged on the canvas, so finished mapping can't be nudged out of alignment mid-set. Everything here stays editable (that's how you unlock it), and effectors still animate it — the lock is only about the mouse.</div>
         <div class="field"><label>fill type</label>
           <select id="poly-source-type">
             <option value="scene">Scene</option>
@@ -545,9 +688,60 @@
           </select></div>
         <div class="field" id="poly-scene-field"><label>scene</label>
           <select id="poly-scene"></select></div>
+        <div class="field" id="poly-media-source-field" style="display:none"><label>source</label>
+          <button id="poly-media-src-link" class="amber" title="Reference a file where it already lives — nothing is copied">🔗 Linked file</button>
+          <button id="poly-media-src-lib" title="Use a file copied into the app's own media library">📁 Library</button></div>
         <div class="field" id="poly-media-field" style="display:none"><label>media</label>
           <select id="poly-media"></select></div>
+        <div id="poly-media-link-field" style="display:none">
+          <div class="field"><label>path</label>
+            <input type="text" id="poly-media-link-path" readonly
+                   style="flex:1;min-width:0;font-size:11px" placeholder="no file linked yet"></div>
+          <div class="row" style="gap:6px">
+            <button id="poly-media-link-browse" style="flex:1">🔗 Replace…</button>
+            <button id="poly-media-link-copy" title="Copy the full path">⧉</button>
+            <button id="poly-media-link-clear" title="Unlink this file">✕</button>
+          </div>
+          <div class="hint" id="poly-media-link-status"></div>
+        </div>
         <div class="hint" id="poly-media-hint" style="display:none">images and videos loop automatically — drag corners same as a scene shape</div>
+        <div id="poly-playback-field" style="display:none">
+          <div class="field"><label>playback</label>
+            <select id="poly-media-mode" style="flex:1">
+              <option value="loop">Loop</option>
+              <option value="once">Once, then hide</option>
+              <option value="once_hold">Once, hold last frame</option>
+            </select></div>
+          <div class="field"><label>in</label>
+            <input type="text" id="poly-media-in" placeholder="0:00.000" style="flex:1;min-width:0;font-size:11px">
+            <button id="poly-media-in-set" title="Set the in point to where this shape is playing right now">⇤</button>
+            <button id="poly-media-in-less" title="Back 1 second">−</button>
+            <button id="poly-media-in-more" title="Forward 1 second">+</button></div>
+          <div class="field"><label>out</label>
+            <input type="text" id="poly-media-out" placeholder="end" style="flex:1;min-width:0;font-size:11px">
+            <button id="poly-media-out-set" title="Set the out point to where this shape is playing right now">⇥</button>
+            <button id="poly-media-out-less" title="Back 1 second">−</button>
+            <button id="poly-media-out-more" title="Forward 1 second">+</button></div>
+          <div id="poly-media-scrub" title="Trimmed region within the whole file — click to set the in point"
+               style="position:relative;height:16px;border:1px solid rgba(255,255,255,.14);border-radius:3px;
+                      background:var(--panel2,#1b1e26);margin:2px 0;cursor:pointer;overflow:hidden">
+            <div id="poly-media-scrub-region" style="position:absolute;top:0;bottom:0;background:rgba(51,224,208,.25)"></div>
+            <div id="poly-media-scrub-head" style="position:absolute;top:0;bottom:0;width:2px;background:var(--cyan)"></div>
+          </div>
+          <div class="hint" id="poly-media-times"></div>
+          <div class="field"><label>speed</label>
+            <input type="range" id="poly-media-rate" min="0.05" max="4" step="0.05" value="1">
+            <span class="val" id="v-polymediarate">1.00</span></div>
+          <div class="field"><label>offset</label>
+            <input type="range" id="poly-media-offset" min="0" max="1" step="0.01" value="0">
+            <span class="val" id="v-polymediaoffset">0.00</span></div>
+          <div class="hint">offset shifts this instance's start point within the trimmed region — two shapes on the same clip can run deliberately out of step</div>
+          <div class="row" style="gap:6px">
+            <button id="poly-media-save-default" style="flex:1" title="Store this in/out as the file's own default, for every shape that hasn't set its own">Set as file default</button>
+            <button id="poly-media-reset-trim" title="Go back to inheriting the file's default trim">⟲</button>
+          </div>
+          <div class="hint" id="poly-media-inherit"></div>
+        </div>
         <div class="field" id="poly-webcam-field" style="display:none"><label>camera</label>
           <select id="poly-webcam-device"></select></div>
         <div class="hint" id="poly-webcam-hint" style="display:none">a live feed from the browser's default camera until a device is picked (open Input &gt; Webcam and hit refresh if the list is empty) — the camera stays on for as long as a shape uses it</div>
@@ -892,6 +1086,12 @@
       </label>
       <div class="hint">turns off the render-loop timing instrumentation live, no relaunch needed — for isolating whether the instrumentation itself costs anything.</div>
     </div>
+    <div class="field" style="flex-direction:column;align-items:stretch;gap:6px">
+      <label class="flabel">Media roots</label>
+      <div class="lib" id="media-roots-list" style="grid-template-columns:1fr"></div>
+      <button id="settings-addroot">✚ Add media root</button>
+      <div class="hint">folders that linked media may be referenced from. This server listens on all interfaces by default, so ONLY files under a registered root are ever served — keep them as narrow as you can. The root's <i>name</i> is what projects store, so the same project resolves on another machine that defines a root of the same name.</div>
+    </div>
   </div>
 </div>
 
@@ -908,6 +1108,44 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="modal-medialink">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-head">
+      <h2>Link media file</h2>
+      <button class="modal-close" id="medialink-close">&times;</button>
+    </div>
+    <div class="hint">references the file where it already lives — nothing is copied into the app. Only folders registered as media roots can be browsed or served; add one below if the list is empty.</div>
+    <div class="field"><label>root</label>
+      <select id="medialink-root" style="flex:1"></select>
+      <button id="medialink-addroot" title="Register another folder as a media root">✚ root</button></div>
+    <div id="medialink-crumbs" class="hint" style="word-break:break-all"></div>
+    <div id="medialink-listing" class="lib" style="grid-template-columns:1fr;max-height:300px;overflow:auto"></div>
+    <div class="hint" id="medialink-status"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-addroot">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Add media root</h2>
+      <button class="modal-close" id="addroot-close">&times;</button>
+    </div>
+    <label class="flabel" for="addroot-name">name</label>
+    <input type="text" id="addroot-name" placeholder="e.g. videos">
+    <label class="flabel" for="addroot-path">absolute path</label>
+    <input type="text" id="addroot-path" placeholder="/home/you/Videos">
+    <button class="go" id="addroot-confirm">Add root</button>
+    <div class="hint">the name is what gets stored in your projects (<code>videos::gig2/clip.mp4</code>), so the same project works on another machine that defines a root of the same name. This server listens on all interfaces by default — only files under a registered root are ever served, so keep roots as narrow as you can.</div>
+    <div class="hint" id="addroot-status"></div>
+  </div>
+</div>
+
+<div id="save-bar">
+  <span class="dirty-dot"></span>
+  <span id="save-bar-text">unsaved changes</span>
+  <button id="save-bar-canvas" title="Save the current canvas">💾 Canvas</button>
+  <button id="save-bar-project" title="Save the current project">💾 Project</button>
+</div>
 <script>
 const ws = new WebSocket(`ws://${location.host}/ws`);
 const $ = id => document.getElementById(id);
@@ -1408,25 +1646,110 @@ function drawZBadge(ctx, poly, rect){
 // freezing their own clock — so nothing actually plays until you hit Start,
 // and freeze pauses it again without unloading anything.
 const _mediaEls = new Map();   // filename -> {el, kind, ready, frameCanvas?, frameCtx?}
-const _MEDIA_VIDEO_EXT = new Set(["mp4","mov","webm","m4v"]);
-function getMediaEl(name){
-  let m = _mediaEls.get(name);
-  if (m) return m;
-  const ext = (name.split(".").pop() || "").toLowerCase();
+const _MEDIA_VIDEO_EXT = new Set(["mp4","mov","webm","m4v","mkv","avi","ogv"]);
+// Media source descriptors — a shape's content is either a file uploaded
+// into the app's own media/ library (poly.media, a bare filename) or a LINK
+// to a file where it already lives (poly.media_link, "<root>::<rel/path>" —
+// see media_roots.py). Both collapse to one cache key + one URL here so the
+// rest of the draw path never has to care which kind it is. A link wins when
+// both are set, matching the compositor's own precedence.
+function mediaRefFor(p){
+  if (p.media_link) return {key: "link:" + p.media_link, link: p.media_link,
+                            name: p.media_link.split("::").pop().split("/").pop()};
+  if (p.media) return {key: "lib:" + p.media, name: p.media};
+  return null;
+}
+function mediaUrlFor(ref){
+  if (ref.link){
+    const [root, rel] = [ref.link.slice(0, ref.link.indexOf("::")),
+                         ref.link.slice(ref.link.indexOf("::") + 2)];
+    // Per-segment encoding: the route's tail is a path, so "/" must survive
+    // while spaces/#/? in a folder or file name must not.
+    const tail = rel.split("/").map(encodeURIComponent).join("/");
+    return `/media-link/${encodeURIComponent(root)}/${tail}`;
+  }
+  return `/media-files/${encodeURIComponent(ref.name)}`;
+}
+
+// Server-driven playhead (item 15) — composite.py computes where each media
+// shape should be (layer.media_t) from the canvas clock, and every client
+// converges on it rather than letting its own <video> free-run. Without
+// this, the editor and each output window drift apart within seconds, so a
+// clip spanning two projectors through a viewport crop would show a
+// different frame on each screen.
+//
+// Correction is a nudge, not a per-frame seek: seeking a 30-minute file is
+// expensive, so the element plays normally and is only pulled back when it
+// has genuinely drifted (or when the trim loops, which reads as a big jump).
+const MEDIA_DRIFT_TOLERANCE = 0.25;   // seconds
+function syncMediaTime(m, layer){
+  if (!m || m.kind !== "video" || !m.ready || !layer) return;
+  const target = layer.media_t;
+  if (target == null) return;          // duration unknown — let it play
+  const el = m.el;
+  const rate = layer.media_rate || 1;
+  if (el.playbackRate !== rate) el.playbackRate = rate;
+  if (m.seeking) return;
+  if (Math.abs(el.currentTime - target) > MEDIA_DRIFT_TOLERANCE){
+    m.seeking = true;
+    try { el.currentTime = target; } catch (e) { m.seeking = false; }
+  }
+}
+// Duration is measured here (the server never opens the file) and reported
+// once per asset, so the trim UI has a timeline to draw without re-probing.
+const _durationReported = new Set();
+function reportMediaDuration(assetKey, el){
+  const d = el.duration;
+  if (!(d > 0) || d === Infinity || _durationReported.has(assetKey)) return;
+  _durationReported.add(assetKey);
+  fetch("/media/meta/duration", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({key: assetKey, duration: d})}).catch(() => {});
+}
+
+// Cache eviction (item 15) — the cache key includes the playback config, so
+// every trim edit mints a NEW entry and orphans the old one. Without a sweep
+// those orphans keep decoding forever (nudging an in-point a few times would
+// leave several 4K decoders running), and a stale element can even be found
+// ahead of the live one when debugging. Anything not drawn for a few seconds
+// is released; it reloads on demand if it comes back.
+let _mediaFrame = 0;
+const _MEDIA_EVICT_AFTER = 60;   // ticks (~3s at 20fps)
+function evictUnusedMedia(){
+  for (const [key, m] of _mediaEls){
+    if (_mediaFrame - (m.lastUsed || 0) <= _MEDIA_EVICT_AFTER) continue;
+    try {
+      if (m.kind === "video"){ m.el.pause(); m.el.removeAttribute("src"); m.el.load(); }
+    } catch (e) {}
+    _mediaEls.delete(key);
+  }
+}
+function getMediaEl(ref, layer){
+  // Keyed by asset AND playback config: two shapes trimmed/moded identically
+  // share one decoder and stay frame-identical (what happened before this
+  // existed), while shapes with different in/out get their own playhead.
+  // That bounds decoder count to distinct CONFIGURATIONS, not shape count.
+  const cfg = (layer && layer.media_cfg) || "";
+  const cacheKey = ref.key + "|" + cfg;
+  let m = _mediaEls.get(cacheKey);
+  if (m){ m.lastUsed = _mediaFrame; return m; }
+  const ext = (ref.name.split(".").pop() || "").toLowerCase();
   const kind = _MEDIA_VIDEO_EXT.has(ext) ? "video" : "image";
+  const url = mediaUrlFor(ref);
   let el;
   if (kind === "video"){
     el = document.createElement("video");
     el.loop = true; el.muted = true; el.playsInline = true; el.preload = "auto";
-    el.src = `/media-files/${encodeURIComponent(name)}`;
+    el.src = url;
+    el.addEventListener("loadedmetadata", () => reportMediaDuration(ref.key, el));
+    el.addEventListener("seeked", () => { m.seeking = false; });
     el.addEventListener("loadeddata", () => { m.ready = true; });
   } else {
     el = new Image();
     el.addEventListener("load", () => { m.ready = true; });
-    el.src = `/media-files/${encodeURIComponent(name)}`;
+    el.src = url;
   }
-  m = {el, kind, ready: false};
-  _mediaEls.set(name, m);
+  m = {el, kind, ready: false, seeking: false, assetKey: ref.key, lastUsed: _mediaFrame};
+  _mediaEls.set(cacheKey, m);
   return m;
 }
 function mediaAspect(m){
@@ -1439,6 +1762,7 @@ function mediaAspect(m){
 // Guarded by .paused so idempotent repeated calls (every ~20Hz state tick)
 // don't spam play()/pause() on an already-correct element.
 function updateMediaPlayback(){
+  _mediaFrame++; evictUnusedMedia();
   // Webcam shapes aren't in this loop (6) — unlike output.html, the editor
   // keeps every shape's preview live regardless of active/frozen (an
   // editing aid, not "the show"), so there's nothing to pause/resume here.
@@ -1630,9 +1954,15 @@ function drawMediaWarped(ctx, rect, H, corners, img, iw, ih, opacity, fitMode, c
 }
 // Dispatches a media-fill-type polygon's draw, mirroring the scene
 // dispatch's clip/crop handling in paintCanvasEditor below.
-function drawPolyMedia(ctx, poly, corners, rect, opacity){
-  if (!poly.media) return;
-  const m = getMediaEl(poly.media);
+function drawPolyMedia(ctx, poly, corners, rect, opacity, layer){
+  const ref = mediaRefFor(poly);
+  if (!ref) return;
+  // Fetch the element BEFORE the visibility test so a finished "once" clip
+  // stays warm (and out of the eviction sweep) instead of being torn down
+  // and reloaded every time the canvas comes back around.
+  const m = getMediaEl(ref, layer);
+  syncMediaTime(m, layer);
+  if (layer && layer.media_visible === false) return;
   if (!m.ready) return;
   const img = getMediaFrame(m);
   const H = homography(corners);
@@ -1971,7 +2301,7 @@ function paintCanvasEditor(){
       // Not colorimetrically exact, but a legitimate/cheap creative tint.
       sctx.filter = buildCssFilter(layer || poly.overrides || {});
       if (isMedia){
-        drawPolyMedia(sctx, poly, liveCorners, rect, liveOpacity);
+        drawPolyMedia(sctx, poly, liveCorners, rect, liveOpacity, layer);
       } else if (isWebcam){
         drawPolyWebcam(sctx, poly, liveCorners, rect, liveOpacity);
       } else if (isText){
@@ -2022,8 +2352,12 @@ function paintCanvasEditor(){
     cvCtx.shadowBlur = 0; cvCtx.globalAlpha = 1;
     cvCtx.strokeStyle = poly.id === selectedPolyId ? COLOR_CYAN
       : isKnockout ? "rgba(255,120,120,.5)"
-      : (isMedia ? !poly.media : isText ? !poly.text_content : layer && layer.missing) ? COLOR_AMBER : "rgba(255,255,255,.25)";
+      : (isMedia ? !mediaRefFor(poly) || (poly.media_link && layer && layer.media_link_ok === false)
+         : isText ? !poly.text_content : layer && layer.missing) ? COLOR_AMBER : "rgba(255,255,255,.25)";
     cvCtx.lineWidth = poly.id === selectedPolyId ? 2 : 1;
+    // Locked shapes (9) draw dashed — a passive "this one won't respond to
+    // dragging" cue that costs no extra chrome on the canvas.
+    if (isLocked(poly)) cvCtx.setLineDash([6,4]);
     cvCtx.beginPath();
     poly.corners.forEach((c,i) => { const [px,py]=normToPx(c[0],c[1],rect); i?cvCtx.lineTo(px,py):cvCtx.moveTo(px,py); });
     cvCtx.closePath(); cvCtx.stroke();
@@ -2042,7 +2376,7 @@ function paintCanvasEditor(){
       cvCtx.stroke();
       cvCtx.restore();
     }
-    if (selected){
+    if (selected && !isLocked(poly)){
       // Corner pins: full-size dots in Warp mode, small hollow rings in
       // Mask mode (still visible, but clearly not what you're dragging).
       poly.corners.forEach(c => {
@@ -2243,6 +2577,11 @@ document.addEventListener("fullscreenchange", () => {
 // CSS alone (see body.col1-collapsed .toprow) — nothing to resize here.
 function setCol1Collapsed(on){
   document.body.classList.toggle("col1-collapsed", on);
+  // Collapsing the column collapses everything inside it (8) — otherwise
+  // re-expanding dumps you back into whatever stack of open accordions you
+  // left behind, which is usually the reason the column got collapsed. The
+  // rail icons below deliberately re-open just the one you clicked.
+  if (on) document.querySelectorAll("#g-input details.accordion").forEach(d => d.open = false);
   try { localStorage.setItem("pw_col1_collapsed", on ? "1" : "0"); } catch (e) {}
 }
 $("stage-collapse-btn").onclick = () => setCol1Collapsed(true);
@@ -2267,6 +2606,9 @@ function setActiveTab(tabId){
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("amber", b.dataset.tab === tabId));
   try { localStorage.setItem("pw_active_tab", tabId); } catch (e) {}
   if (tabId === "tab-canvas") requestAnimationFrame(resizeEditorCanvas);
+  // The inventory depends on canvases and roots that may have changed since
+  // it was last built, so rebuild on entry rather than caching it forever.
+  if (tabId === "tab-media") loadAssets(true);
 }
 document.querySelectorAll(".tab-btn").forEach(b => b.onclick = () => setActiveTab(b.dataset.tab));
 setActiveTab(localStorage.getItem("pw_active_tab") || "tab-canvas");
@@ -2353,6 +2695,7 @@ $("poly-mode-mask").onclick = () => setEditMode("mask");
 // really invalidates it — selecting a different shape — and everything else
 // just asks maskModeActive, which degrades to Warp behaviour on its own
 // whenever the shape has no custom mask to edit.
+function isLocked(poly){ return !!(poly && poly.locked); }
 function maskModeActive(poly){
   return _editMode === "mask" && !!poly && hasCustomMask(poly);
 }
@@ -2378,7 +2721,12 @@ cvEdit.addEventListener("mousedown", e => {
   if (!_canvasDoc) return;
   const [px,py] = cvEditPoint(e);
   const rect = getEditorRect();
-  const selPoly = polyById(selectedPolyId);
+  // Edit lock (9) — a locked shape is inert to the mouse: no corner drag, no
+  // mask edit, no body move, and it's skipped by the click-through hit-test
+  // below, so clicking one selects whatever unlocked shape sits underneath
+  // rather than grabbing the locked one. It stays selectable from the Shapes
+  // list, which is how you reach its settings to unlock it again.
+  const selPoly = isLocked(polyById(selectedPolyId)) ? null : polyById(selectedPolyId);
   // Mask mode is fully modal (8): every gesture targets the mask, and the
   // corner pins are inert until you switch back to Warp. Clicking outside
   // the shape entirely still deselects, which is also what drops you back
@@ -2400,6 +2748,7 @@ cvEdit.addEventListener("mousedown", e => {
   // on top.
   const zOrdered = [...(_canvasDoc.polygons)].sort((a, b) => (a.z_index ?? 5) - (b.z_index ?? 5));
   for (const poly of zOrdered){
+    if (isLocked(poly)) continue;
     if (pointInPoly(px, py, poly, rect)){
       selectedPolyId = poly.id;
       _drag = {type:"body", polyId:poly.id, start:[px,py], origCorners: poly.corners.map(c=>[...c])};
@@ -2491,7 +2840,7 @@ window.addEventListener("mouseup", () => {
 // an existing point to remove it (never below a triangle).
 cvEdit.addEventListener("dblclick", e => {
   const poly = polyById(selectedPolyId);
-  if (!poly) return;
+  if (!poly || isLocked(poly)) return;
   // Mask mode (8): the same add/remove gesture, against clip_points.
   if (maskModeActive(poly)){
     const [mx,my] = cvEditPoint(e);
@@ -2547,7 +2896,7 @@ cvEdit.addEventListener("dblclick", e => {
 cvEdit.addEventListener("mousemove", e => {
   if (_drag || _spaceDown || _tool === "hand") return;
   const poly = polyById(selectedPolyId);
-  if (!poly){ cvEdit.style.cursor = ""; return; }
+  if (!poly || isLocked(poly)){ cvEdit.style.cursor = ""; return; }
   const [px,py] = cvEditPoint(e);
   const rect = getEditorRect();
   if (maskModeActive(poly)){
@@ -2572,13 +2921,44 @@ function renderPolyInspector(){
   if (!poly){ box.style.display = "none"; return; }
   box.style.display = "flex";
   if (document.activeElement !== $("poly-label")) $("poly-label").value = poly.label || "";
+  if (document.activeElement !== $("poly-locked")) $("poly-locked").checked = !!poly.locked;
   const fillType = poly.source_type || "scene";
   const isMedia = fillType === "media", isKnockout = fillType === "knockout";
   const isWebcam = fillType === "webcam", isText = fillType === "text";
   if (document.activeElement !== $("poly-source-type")) $("poly-source-type").value = fillType;
   $("poly-scene-field").style.display = (!isMedia && !isKnockout && !isWebcam && !isText) ? "flex" : "none";
-  $("poly-media-field").style.display = isMedia ? "flex" : "none";
+  // Media source (linked vs library). Linking is the default for a media
+  // shape with neither set yet — big video shouldn't be copied by accident.
+  const usingLink = isMedia && (!!poly.media_link || !poly.media);
+  $("poly-media-source-field").style.display = isMedia ? "flex" : "none";
+  $("poly-media-src-link").classList.toggle("amber", usingLink);
+  $("poly-media-src-lib").classList.toggle("amber", isMedia && !usingLink);
+  $("poly-media-field").style.display = (isMedia && !usingLink) ? "flex" : "none";
+  $("poly-media-link-field").style.display = (isMedia && usingLink) ? "block" : "none";
+  if (isMedia && usingLink){
+    const layer = _lastComposite.find(l => l.id === poly.id) || {};
+    const abs = layer.media_link_path || "";
+    const el = $("poly-media-link-path");
+    if (document.activeElement !== el) el.value = abs;
+    el.title = abs || "";
+    const st = $("poly-media-link-status");
+    if (!poly.media_link){
+      st.textContent = "nothing linked yet — Replace… picks a file from a media root";
+      st.style.color = "";
+    } else if (layer.media_link_ok === false){
+      st.textContent = "⚠ file not found — the drive may be unplugged, or it moved. Replace… to relink.";
+      st.style.color = "var(--amber)";
+    } else {
+      st.textContent = "✓ found · stored as " + poly.media_link;
+      st.style.color = "";
+    }
+  }
   $("poly-media-hint").style.display = isMedia ? "block" : "none";
+  // Playback controls are video-only — an image has no playhead to trim.
+  const ref = isMedia ? mediaRefFor(poly) : null;
+  const isVideo = !!ref && _MEDIA_VIDEO_EXT.has((ref.name.split(".").pop()||"").toLowerCase());
+  $("poly-playback-field").style.display = isVideo ? "block" : "none";
+  if (isVideo) renderPlaybackUI(poly);
   $("poly-webcam-field").style.display = isWebcam ? "flex" : "none";
   $("poly-webcam-hint").style.display = isWebcam ? "block" : "none";
   $("poly-text-field").style.display = isText ? "flex" : "none";
@@ -2644,7 +3024,10 @@ $("poly-anchor-grid").querySelectorAll("button").forEach(btn => {
 function renderShapeList(){
   const box = $("shape-list");
   const polys = (_canvasDoc && _canvasDoc.polygons) || [];
-  const sig = polys.map(p => p.id + ":" + (p.label || "") + ":" + (p.scene || "")).join(",");
+  // locked is part of the signature (9) so toggling the lock repaints the
+  // padlock straight away rather than waiting for an unrelated list change.
+  const sig = polys.map(p => p.id + ":" + (p.label || "") + ":" + (p.scene || "") +
+                             ":" + (p.locked ? "L" : "")).join(",");
   if (box.dataset.sig !== sig){
     box.dataset.sig = sig;
     box.innerHTML = "";
@@ -2652,8 +3035,16 @@ function renderShapeList(){
       const el = document.createElement("div");
       el.className = "item";
       el.dataset.id = poly.id;
-      el.innerHTML = `<span>${poly.label || poly.scene || ("shape " + (i+1))}</span><span class="x" title="Delete shape">✕</span>`;
-      el.querySelector("span:first-child").onclick = () => {
+      const name = poly.label || poly.scene || ("shape " + (i+1));
+      el.innerHTML = `<span>${poly.locked ? "🔒 " : ""}${name}</span><span class="x" title="Delete shape">✕</span>`;
+      if (poly.locked) el.title = "Locked — can't be selected or dragged on the canvas";
+      // Whole row is the click target (10), not just the text span — the
+      // row is button-shaped and padded, so clicking its padding used to do
+      // nothing. The ✕ stops propagation so it still deletes rather than
+      // selecting. A locked shape can still be selected FROM HERE on
+      // purpose: the list is how you reach its settings to unlock it, and
+      // the lock is only meant to stop stray canvas drags.
+      el.onclick = () => {
         selectedPolyId = poly.id;
         renderPolyInspector(); updatePolyControlsGate(); paintCanvasEditor();
       };
@@ -2670,6 +3061,17 @@ function renderShapeList(){
 }
 $("poly-label").onchange = () => selectedPolyId &&
   send({type:"poly_set", id:selectedPolyId, key:"label", value:$("poly-label").value});
+$("poly-locked").onchange = () => {
+  if (!selectedPolyId) return;
+  const locked = $("poly-locked").checked;
+  const poly = polyById(selectedPolyId);
+  // Optimistic local write, same reason as the custom-mask one: the canvas
+  // repaints (and the hit-test starts honouring the lock) before the state
+  // broadcast echoes it back.
+  if (poly) poly.locked = locked;
+  send({type:"poly_set", id:selectedPolyId, key:"locked", value:locked});
+  renderShapeList(); paintCanvasEditor();
+};
 $("poly-source-type").onchange = () => selectedPolyId &&
   send({type:"poly_set", id:selectedPolyId, key:"source_type", value:$("poly-source-type").value});
 $("poly-scene").onchange = () => selectedPolyId &&
@@ -2887,6 +3289,19 @@ function applyProjectNotes(s){
 }
 $("project-notes").addEventListener("change", () => send({type:"project_set_notes", notes:$("project-notes").value}));
 
+// Project frame rate (7) — same read-guarded/commit-on-change shape as the
+// two above. The value shown is the LIVE loop rate (state.project_fps reads
+// composite.fps, not the saved spec), so this field always reflects what's
+// actually running rather than what was last written to disk.
+function applyProjectFps(s){
+  if (document.activeElement !== $("project-fps")) $("project-fps").value = s.project_fps || 20;
+}
+$("project-fps").addEventListener("change", () => {
+  const v = Math.max(1, Math.min(120, parseInt($("project-fps").value, 10) || 20));
+  $("project-fps").value = v;
+  send({type:"project_set_fps", value:v});
+});
+
 // Output monitors — moved off browser localStorage onto the PROJECT (see
 // projects.py's OutputMonitorConfig): a rig's physical orientation belongs
 // to the show it's for, not to whichever browser had it open. Rows are now
@@ -3073,6 +3488,7 @@ function projectDirtySig(s){
   return JSON.stringify({
     w: s.project_width, h: s.project_height, notes: s.project_notes,
     outputs: s.outputs, viewports_enabled: s.viewports_enabled,
+    show_fps: s.show_fps, fps: s.project_fps,
   });
 }
 function markCanvasClean(){ _canvasCleanSig = JSON.stringify(_canvasDoc); }
@@ -3087,14 +3503,36 @@ function updateDirtyIndicators(s){
   const pSig = projectDirtySig(s);
   if (_projectCleanSig === null || _lastProjectName !== s.project) _projectCleanSig = pSig;
   _lastProjectName = s.project;
-  $("project-dirty-indicator").classList.toggle("show", pSig !== _projectCleanSig);
+  const projectDirty = pSig !== _projectCleanSig;
+  $("project-dirty-indicator").classList.toggle("show", projectDirty);
+
+  // Sticky save bar (12) — the same two dirty flags, surfaced somewhere
+  // that's visible from every tab, naming what's actually unsaved rather
+  // than just "changes not saved". Only the relevant Save buttons show.
+  updateSaveBar(canvasSig !== _canvasCleanSig, projectDirty);
 }
+function updateSaveBar(canvasDirty, projectDirty){
+  const bar = $("save-bar");
+  bar.classList.toggle("show", canvasDirty || projectDirty);
+  if (!canvasDirty && !projectDirty) return;
+  const what = canvasDirty && projectDirty ? "Canvas and project"
+             : canvasDirty ? "Canvas" : "Project";
+  $("save-bar-text").textContent = what + " not saved";
+  $("save-bar-canvas").style.display = canvasDirty ? "" : "none";
+  $("save-bar-project").style.display = projectDirty ? "" : "none";
+}
+// Delegate to the real Save buttons rather than duplicating their logic —
+// they own the name-modal fallback for an untitled canvas and the optimistic
+// markClean, and both must keep behaving identically from either entry point.
+$("save-bar-canvas").onclick = () => $("canvas-save").click();
+$("save-bar-project").onclick = () => $("project-save").click();
 
 function syncCanvasDoc(s){
   const prevIds = _canvasDoc ? new Set(_canvasDoc.polygons.map(p=>p.id)) : new Set();
   _canvasDoc = s.canvas;
   applyProjectResolution(s);
   applyProjectNotes(s);
+  applyProjectFps(s);
   applyOutputConfigs(s);
   updateDirtyIndicators(s);
   if (_pendingSelectNewPoly){
@@ -3885,11 +4323,589 @@ function openModal(id){ $(id).classList.add("open"); }
 function closeModal(id){ $(id).classList.remove("open"); }
 $("gen-open").onclick = () => openModal("modal-generate");
 $("gen-close").onclick = () => closeModal("modal-generate");
-$("settings-open").onclick = () => openModal("modal-settings");
+$("settings-open").onclick = () => { openModal("modal-settings"); renderMediaRootsList(); };
 $("settings-close").onclick = () => closeModal("modal-settings");
 $("diag-enabled-toggle").onchange = () => {
   send({type: "set_diagnostics", value: $("diag-enabled-toggle").checked});
 };
+
+// ---- Media tab ---------------------------------------------------------
+// The asset-level view: every file the project can draw from, its default
+// trim, and where it's used. The trim set HERE is the file's default, which
+// every shape that hasn't overridden it inherits (see media_meta.py) — the
+// point being that you find your 30 seconds inside a 30-minute recording
+// once, not once per shape.
+//
+// The preview player is a plain <video> the user scrubs directly: it's an
+// editing surface, deliberately NOT tied to the engine clock the way output
+// playback is (composite.py's _media_playback). Scrubbing here must not move
+// what the projectors are showing.
+let _assets = [];            // from /media/assets
+let _assetSel = null;        // selected asset key
+let _zoomSpan = 20;          // seconds visible in the zoomed bar
+let _trimDrag = null;        // "in" | "out" while dragging a bar edge
+
+async function loadAssets(keepSelection){
+  try { _assets = (await (await fetch("/media/assets")).json()).assets || []; }
+  catch (e) { _assets = []; }
+  if (!keepSelection || !_assets.some(a => a.key === _assetSel))
+    _assetSel = _assets.length ? _assets[0].key : null;
+  renderAssetList();
+  renderAssetDetail();
+}
+function selectedAsset(){ return _assets.find(a => a.key === _assetSel) || null; }
+function isVideoName(name){
+  return _MEDIA_VIDEO_EXT.has((String(name).split(".").pop() || "").toLowerCase());
+}
+function renderAssetList(){
+  const box = $("media-asset-list");
+  box.innerHTML = "";
+  const missing = _assets.filter(a => !a.exists).length;
+  $("media-tab-summary").textContent =
+    `${_assets.length} file${_assets.length === 1 ? "" : "s"}` + (missing ? ` · ${missing} missing` : "");
+  _assets.forEach(a => {
+    const el = document.createElement("div");
+    el.className = "item" + (a.key === _assetSel ? " active" : "");
+    const icon = a.kind === "link" ? "🔗" : "📁";
+    const bits = [];
+    if (!a.exists) bits.push('<span class="missing">⚠ missing</span>');
+    if (a.duration) bits.push(fmtTime(a.duration));
+    if (a.size) bits.push(fmtSize(a.size));
+    if (a.used_by.length) bits.push(`used ${a.used_by.length}×`);
+    el.innerHTML = `<span>${icon} ${a.name}</span><span class="sub">${bits.join(" · ")}</span>`;
+    el.title = a.path || a.name;
+    el.onclick = () => { _assetSel = a.key; renderAssetList(); renderAssetDetail(); };
+    box.appendChild(el);
+  });
+  if (!_assets.length)
+    box.innerHTML = '<div class="hint">nothing yet — link a file or upload a copy</div>';
+}
+function renderAssetDetail(){
+  const a = selectedAsset();
+  $("media-detail-empty").style.display = a ? "none" : "block";
+  $("media-detail-body").style.display = a ? "block" : "none";
+  if (!a) return;
+  $("media-detail-name").textContent = (a.kind === "link" ? "🔗 " : "📁 ") + a.name;
+  $("media-detail-path").textContent = a.exists
+    ? (a.path || "") : "⚠ not found: " + (a.path || a.link || a.name);
+  const vid = $("media-preview");
+  if (vid.dataset.key !== a.key){
+    vid.dataset.key = a.key;
+    vid.src = a.exists && a.url ? a.url : "";
+    vid.load?.();
+  }
+  const isVid = isVideoName(a.name);
+  ["media-bar-overview","media-bar-zoom","media-zoom-label","media-preview-play",
+   "media-preview-in","media-preview-out"].forEach(id => {
+    $(id).style.display = isVid ? "" : "none";
+  });
+  $("media-delete").style.display = a.kind === "lib" ? "" : "none";
+  $("media-relink").style.display = a.kind === "link" ? "" : "none";
+  if (document.activeElement !== $("media-in")) $("media-in").value = fmtTime(a.in || 0, true);
+  if (document.activeElement !== $("media-out"))
+    $("media-out").value = a.out == null ? "" : fmtTime(a.out, true);
+  $("media-trim-status").textContent = a.duration
+    ? `file ${fmtTime(a.duration)} · trimmed ${fmtTime((a.out ?? a.duration) - (a.in || 0))}`
+    : "duration unknown until the file loads";
+  renderTrimBars();
+  const ub = $("media-usedby");
+  ub.innerHTML = "";
+  if (!a.used_by.length){
+    ub.innerHTML = '<div class="hint">not used by any canvas in this project</div>';
+  } else {
+    a.used_by.forEach(u => {
+      const el = document.createElement("div");
+      el.className = "item";
+      el.innerHTML = `<span>${u.shape}</span><span class="sub">${u.canvas}</span>`;
+      el.title = `Open canvas "${u.canvas}"`;
+      el.onclick = () => { send({type:"canvas_load", name:u.canvas}); setActiveTab("tab-canvas"); };
+      ub.appendChild(el);
+    });
+  }
+}
+// Two-tier timeline: the overview spans the WHOLE file (orientation — where
+// in 30 minutes am I), the zoomed bar spans a few seconds around the
+// playhead (precision — a 30-min clip is ~6s per pixel in the overview, far
+// too coarse to place an edge on).
+function trimWindow(a){
+  const head = $("media-preview").currentTime || 0;
+  const half = _zoomSpan / 2;
+  let lo = Math.max(0, head - half);
+  let hi = Math.min(a.duration || 0, lo + _zoomSpan);
+  lo = Math.max(0, hi - _zoomSpan);
+  return {lo, hi};
+}
+function renderTrimBars(){
+  const a = selectedAsset();
+  if (!a || !a.duration) return;
+  const inS = a.in || 0, outS = a.out ?? a.duration, dur = a.duration;
+  const head = $("media-preview").currentTime || 0;
+  const pct = v => (100 * v / dur) + "%";
+  $("media-ov-region").style.left = pct(inS);
+  $("media-ov-region").style.width = pct(Math.max(0, outS - inS));
+  $("media-ov-head").style.left = pct(head);
+  const {lo, hi} = trimWindow(a);
+  $("media-ov-win").style.left = pct(lo);
+  $("media-ov-win").style.width = pct(hi - lo);
+  const zpct = v => (100 * (v - lo) / Math.max(0.001, hi - lo)) + "%";
+  const zr = $("media-zoom-region");
+  zr.style.left = zpct(Math.max(lo, inS));
+  zr.style.width = (100 * (Math.min(hi, outS) - Math.max(lo, inS)) / Math.max(0.001, hi - lo)) + "%";
+  $("media-zoom-head").style.left = zpct(head);
+  $("media-preview-time").textContent = `${fmtTime(head, true)} / ${fmtTime(dur)}`;
+  $("v-mediazoom").textContent = "±" + fmtTime(_zoomSpan / 2);
+}
+// A click on either bar seeks; dragging near an edge of the shaded region
+// moves that edge instead. Same gesture on both bars, different scale.
+function barTime(e, bar, a){
+  const r = bar.getBoundingClientRect();
+  const f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+  if (bar.id === "media-bar-overview") return f * a.duration;
+  const {lo, hi} = trimWindow(a);
+  return lo + f * (hi - lo);
+}
+function wireTrimBar(barId){
+  const bar = $(barId);
+  bar.addEventListener("mousedown", e => {
+    const a = selectedAsset();
+    if (!a || !a.duration) return;
+    const t = barTime(e, bar, a);
+    const inS = a.in || 0, outS = a.out ?? a.duration;
+    const scale = barId === "media-bar-overview" ? a.duration : _zoomSpan;
+    const near = scale * 0.02;   // ~2% of what's on screen
+    if (Math.abs(t - inS) < near) _trimDrag = "in";
+    else if (Math.abs(t - outS) < near) _trimDrag = "out";
+    else { $("media-preview").currentTime = t; renderTrimBars(); return; }
+    _trimDrag = {edge: _trimDrag, bar};
+    e.preventDefault();
+  });
+}
+window.addEventListener("mousemove", e => {
+  if (!_trimDrag) return;
+  const a = selectedAsset();
+  if (!a || !a.duration) return;
+  const t = barTime(e, _trimDrag.bar, a);
+  if (_trimDrag.edge === "in") a.in = Math.max(0, Math.min(t, (a.out ?? a.duration) - 0.05));
+  else a.out = Math.min(a.duration, Math.max(t, (a.in || 0) + 0.05));
+  renderAssetDetail();
+});
+window.addEventListener("mouseup", () => { _trimDrag = null; });
+wireTrimBar("media-bar-overview");
+wireTrimBar("media-bar-zoom");
+
+$("media-zoom-span").oninput = () => { _zoomSpan = +$("media-zoom-span").value; renderTrimBars(); };
+$("media-preview").addEventListener("timeupdate", renderTrimBars);
+$("media-preview").addEventListener("loadedmetadata", () => {
+  const a = selectedAsset();
+  if (a && !a.duration){
+    a.duration = $("media-preview").duration;
+    reportMediaDuration(a.key, $("media-preview"));
+    renderAssetDetail();
+  }
+});
+$("media-preview-play").onclick = () => {
+  const v = $("media-preview");
+  if (v.paused){ v.play().catch(()=>{}); $("media-preview-play").textContent = "⏸"; }
+  else { v.pause(); $("media-preview-play").textContent = "▶"; }
+};
+$("media-preview-in").onclick = () => {
+  const a = selectedAsset(); if (a) $("media-preview").currentTime = a.in || 0;
+};
+$("media-preview-out").onclick = () => {
+  const a = selectedAsset(); if (a) $("media-preview").currentTime = a.out ?? (a.duration || 0);
+};
+$("media-in-set").onclick = () => {
+  const a = selectedAsset(); if (!a) return;
+  a.in = $("media-preview").currentTime; renderAssetDetail();
+};
+$("media-out-set").onclick = () => {
+  const a = selectedAsset(); if (!a) return;
+  a.out = $("media-preview").currentTime; renderAssetDetail();
+};
+$("media-in").onchange = () => {
+  const a = selectedAsset(); if (!a) return;
+  a.in = parseTime($("media-in").value) ?? 0; renderAssetDetail();
+};
+$("media-out").onchange = () => {
+  const a = selectedAsset(); if (!a) return;
+  a.out = parseTime($("media-out").value); renderAssetDetail();
+};
+// Edits above are local until saved — trimming is fiddly, and every keystroke
+// shouldn't move shapes that inherit this default out from under you.
+$("media-trim-save").onclick = async () => {
+  const a = selectedAsset(); if (!a) return;
+  await fetch("/media/meta/trim", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({key: a.key, in: a.in || 0, out: a.out})}).catch(()=>{});
+  await loadMediaMeta();
+  await loadAssets(true);
+  renderPolyInspector();
+};
+$("media-trim-clear").onclick = async () => {
+  const a = selectedAsset(); if (!a) return;
+  await fetch("/media/meta/trim", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({key: a.key, in: 0, out: null})}).catch(()=>{});
+  await loadMediaMeta();
+  await loadAssets(true);
+  renderPolyInspector();
+};
+$("media-add-to-canvas").onclick = () => {
+  const a = selectedAsset(); if (!a) return;
+  _pendingSelectNewPoly = true;
+  _pendingNewPolyDefaults = a.kind === "link"
+    ? {source_type:"media", media_link:a.link}
+    : {source_type:"media", media:a.name};
+  send({type:"poly_add"});
+  setActiveTab("tab-canvas");
+};
+$("media-relink").onclick = () => { _mlRelinkAsset = selectedAsset(); openMediaLinkPicker(null); };
+$("media-delete").onclick = async () => {
+  const a = selectedAsset();
+  if (!a || a.kind !== "lib") return;
+  const warn = a.used_by.length
+    ? `\n\nIt's used by ${a.used_by.length} shape(s) — those will go blank.` : "";
+  if (!confirm(`Delete the uploaded copy "${a.name}"?${warn}`)) return;
+  await fetch("/media/" + encodeURIComponent(a.name), {method:"DELETE"}).catch(()=>{});
+  await loadAssets(false);
+};
+$("media-tab-refresh").onclick = () => loadAssets(true);
+$("media-tab-link").onclick = () => openMediaLinkPicker(null);
+$("media-tab-upload").onclick = () => {
+  setActiveTab("tab-canvas");
+  const acc = $("acc-input-media"), up = $("acc-input-upload");
+  if (acc) acc.open = true;
+  if (up) up.open = true;
+  $("media-file-input")?.focus();
+};
+
+// ---- Video playback: trim + mode, per instance (item 15) ---------------
+// Times are typed, not dragged. A 30-minute clip in a 300px bar is ~6
+// seconds per pixel, so handle-dragging can't hit a frame — the numeric
+// fields are the real control, the bar is orientation, and "⇤/⇥ set from
+// playhead" is how you actually capture a moment you just watched go past.
+let _mediaMeta = {};   // asset key -> {duration, in, out}
+async function loadMediaMeta(){
+  try { _mediaMeta = (await (await fetch("/media/meta")).json()).meta || {}; }
+  catch (e) { _mediaMeta = {}; }
+}
+loadMediaMeta();
+function mediaAssetKey(poly){
+  if (poly.media_link) return "link:" + poly.media_link;
+  if (poly.media) return "lib:" + poly.media;
+  return null;
+}
+// "1:02:03.500" / "2:03.5" / "123" (bare seconds) -> seconds. Accepts what
+// people actually type rather than demanding one rigid format.
+function parseTime(str){
+  const t = String(str || "").trim();
+  if (!t) return null;
+  const parts = t.split(":").map(x => parseFloat(x));
+  if (parts.some(isNaN)) return null;
+  return parts.reduce((acc, v) => acc * 60 + v, 0);
+}
+function fmtTime(sec, ms){
+  if (sec == null || isNaN(sec)) return "";
+  const sign = sec < 0 ? "-" : ""; sec = Math.abs(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const ss = (ms ? s.toFixed(3) : String(Math.floor(s))).padStart(ms ? 6 : 2, "0");
+  return sign + (h ? `${h}:${String(m).padStart(2,"0")}` : `${m}`) + ":" + ss;
+}
+// Effective trim: instance override if set, else the asset's default, else
+// the whole file — the same precedence composite.py's _media_playback uses.
+function effectiveTrim(poly){
+  const meta = _mediaMeta[mediaAssetKey(poly)] || {};
+  const dur = meta.duration ?? null;
+  const inS = poly.media_in != null ? poly.media_in : (meta.in ?? 0);
+  let outS = poly.media_out != null ? poly.media_out : (meta.out ?? null);
+  if (outS == null) outS = dur;
+  return {inS, outS, dur, inherited: poly.media_in == null && poly.media_out == null};
+}
+function renderPlaybackUI(poly){
+  const layer = _lastComposite.find(l => l.id === poly.id) || {};
+  const {inS, outS, dur, inherited} = effectiveTrim(poly);
+  if (document.activeElement !== $("poly-media-in")) $("poly-media-in").value = fmtTime(inS, true);
+  if (document.activeElement !== $("poly-media-out")) $("poly-media-out").value = outS == null ? "" : fmtTime(outS, true);
+  if (document.activeElement !== $("poly-media-mode")) $("poly-media-mode").value = poly.media_mode || "loop";
+  if (document.activeElement !== $("poly-media-rate")){
+    $("poly-media-rate").value = poly.media_rate ?? 1;
+    $("v-polymediarate").textContent = (poly.media_rate ?? 1).toFixed(2);
+  }
+  if (document.activeElement !== $("poly-media-offset")){
+    $("poly-media-offset").value = poly.media_offset ?? 0;
+    $("v-polymediaoffset").textContent = (poly.media_offset ?? 0).toFixed(2);
+  }
+  const span = (outS != null && inS != null) ? outS - inS : null;
+  $("poly-media-times").textContent = dur == null
+    ? "duration unknown yet — it's read when the file first loads"
+    : `file ${fmtTime(dur)} · trimmed ${span != null ? fmtTime(span) : "—"}`
+      + (layer.media_t != null ? ` · now ${fmtTime(layer.media_t)}` : "");
+  $("poly-media-inherit").textContent = inherited
+    ? "using this file's default trim — editing in/out here overrides it for this shape only"
+    : "this shape has its own trim";
+  // Bar: the trimmed region and the live playhead, both as fractions of the
+  // WHOLE file, so you can see where in a long recording you actually are.
+  const region = $("poly-media-scrub-region"), head = $("poly-media-scrub-head");
+  if (dur && dur > 0){
+    region.style.left = (100 * (inS / dur)) + "%";
+    region.style.width = (100 * Math.max(0, ((outS ?? dur) - inS) / dur)) + "%";
+    head.style.display = layer.media_t != null ? "" : "none";
+    if (layer.media_t != null) head.style.left = (100 * (layer.media_t / dur)) + "%";
+  } else {
+    region.style.width = "0%"; head.style.display = "none";
+  }
+}
+function sendTrim(key, value){
+  if (!selectedPolyId) return;
+  const poly = polyById(selectedPolyId);
+  if (poly) poly[key] = value;              // optimistic, same as elsewhere
+  send({type:"poly_set", id:selectedPolyId, key, value});
+  renderPolyInspector();
+}
+function nudgeTrim(key, delta){
+  const poly = polyById(selectedPolyId);
+  if (!poly) return;
+  const {inS, outS} = effectiveTrim(poly);
+  const cur = key === "media_in" ? inS : outS;
+  if (cur == null) return;
+  sendTrim(key, Math.max(0, cur + delta));
+}
+$("poly-media-mode").onchange = () => selectedPolyId &&
+  send({type:"poly_set", id:selectedPolyId, key:"media_mode", value:$("poly-media-mode").value});
+$("poly-media-in").onchange = () => sendTrim("media_in", parseTime($("poly-media-in").value));
+$("poly-media-out").onchange = () => sendTrim("media_out", parseTime($("poly-media-out").value));
+$("poly-media-in-less").onclick = () => nudgeTrim("media_in", -1);
+$("poly-media-in-more").onclick = () => nudgeTrim("media_in", 1);
+$("poly-media-out-less").onclick = () => nudgeTrim("media_out", -1);
+$("poly-media-out-more").onclick = () => nudgeTrim("media_out", 1);
+// Set-from-playhead: the practical way to trim a long file — watch it, then
+// grab the moment that just went past.
+$("poly-media-in-set").onclick = () => {
+  const l = _lastComposite.find(x => x.id === selectedPolyId);
+  if (l && l.media_t != null) sendTrim("media_in", l.media_t);
+};
+$("poly-media-out-set").onclick = () => {
+  const l = _lastComposite.find(x => x.id === selectedPolyId);
+  if (l && l.media_t != null) sendTrim("media_out", l.media_t);
+};
+$("poly-media-rate").oninput = () => {
+  $("v-polymediarate").textContent = (+$("poly-media-rate").value).toFixed(2);
+  if (selectedPolyId) send({type:"poly_set", id:selectedPolyId, key:"media_rate", value:+$("poly-media-rate").value});
+};
+$("poly-media-offset").oninput = () => {
+  $("v-polymediaoffset").textContent = (+$("poly-media-offset").value).toFixed(2);
+  if (selectedPolyId) send({type:"poly_set", id:selectedPolyId, key:"media_offset", value:+$("poly-media-offset").value});
+};
+$("poly-media-scrub").onclick = e => {
+  const poly = polyById(selectedPolyId);
+  if (!poly) return;
+  const {dur} = effectiveTrim(poly);
+  if (!dur) return;
+  const r = e.currentTarget.getBoundingClientRect();
+  sendTrim("media_in", Math.max(0, Math.min(dur, dur * (e.clientX - r.left) / r.width)));
+};
+$("poly-media-reset-trim").onclick = () => {
+  sendTrim("media_in", null);
+  sendTrim("media_out", null);
+};
+$("poly-media-save-default").onclick = async () => {
+  const poly = polyById(selectedPolyId);
+  if (!poly) return;
+  const key = mediaAssetKey(poly);
+  if (!key) return;
+  const {inS, outS} = effectiveTrim(poly);
+  await fetch("/media/meta/trim", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({key, in: inS, out: outS})}).catch(() => {});
+  await loadMediaMeta();
+  // Drop this shape's own override so it visibly follows the new default —
+  // otherwise "set as default" would appear to do nothing here.
+  sendTrim("media_in", null);
+  sendTrim("media_out", null);
+};
+
+// ---- Linked media (see media_roots.py) --------------------------------
+// Browsing happens SERVER-side: a browser's own file input never reveals a
+// real path (it hands back "C:\fakepath\..."), so an OS dialog can't tell us
+// where a file lives. The server lists the folders you've registered as
+// media roots instead, and every path it returns or serves is checked for
+// containment inside one of them.
+let _mlRoot = null, _mlPath = "", _mlTarget = null;   // _mlTarget: poly id being (re)linked
+let _mlRelinkAsset = null;   // set by the Media tab's Relink: repoint every shape using this asset
+
+async function mlLoadRoots(){
+  const sel = $("medialink-root");
+  let roots = [];
+  try { roots = (await (await fetch("/media/roots")).json()).roots || []; }
+  catch (e) { $("medialink-status").textContent = "couldn't load roots: " + e.message; }
+  sel.innerHTML = "";
+  roots.forEach(r => {
+    const o = document.createElement("option");
+    o.value = r.name; o.textContent = `${r.name} — ${r.path}`;
+    sel.appendChild(o);
+  });
+  if (!roots.length){
+    $("medialink-listing").innerHTML = "";
+    $("medialink-crumbs").textContent = "";
+    $("medialink-status").textContent = "no media roots yet — add one to browse your video folder";
+    _mlRoot = null;
+    return;
+  }
+  if (!_mlRoot || !roots.some(r => r.name === _mlRoot)) { _mlRoot = roots[0].name; _mlPath = ""; }
+  sel.value = _mlRoot;
+  mlBrowse(_mlRoot, _mlPath);
+}
+
+async function mlBrowse(root, path){
+  const box = $("medialink-listing");
+  let data;
+  try {
+    data = await (await fetch(`/media/browse?root=${encodeURIComponent(root)}&path=${encodeURIComponent(path || "")}`)).json();
+  } catch (e) { $("medialink-status").textContent = "browse failed: " + e.message; return; }
+  if (data.error){ $("medialink-status").textContent = data.error; return; }
+  _mlRoot = data.root; _mlPath = data.path;
+  $("medialink-status").textContent = "";
+  $("medialink-crumbs").textContent = data.abs;
+  box.innerHTML = "";
+  const row = (label, title, onclick) => {
+    const el = document.createElement("div");
+    el.className = "item";
+    el.innerHTML = `<span>${label}</span>`;
+    if (title) el.title = title;
+    el.onclick = onclick;
+    box.appendChild(el);
+  };
+  if (_mlPath) row("📁 ..", "up one folder",
+                   () => mlBrowse(_mlRoot, _mlPath.split("/").slice(0, -1).join("/")));
+  data.dirs.forEach(d => row(`📁 ${d.name}`, null,
+    () => mlBrowse(_mlRoot, _mlPath ? `${_mlPath}/${d.name}` : d.name)));
+  data.files.forEach(f => row(`🎬 ${f.name}  <span class="dim">${fmtSize(f.size)}</span>`, null,
+    () => mlPick(_mlPath ? `${_mlPath}/${f.name}` : f.name)));
+  if (!data.dirs.length && !data.files.length)
+    $("medialink-status").textContent = "nothing playable in this folder";
+}
+function fmtSize(n){
+  if (n >= 1e9) return (n/1e9).toFixed(1) + " GB";
+  if (n >= 1e6) return (n/1e6).toFixed(0) + " MB";
+  return (n/1e3).toFixed(0) + " KB";
+}
+async function mlPick(rel){
+  const link = `${_mlRoot}::${rel}`;
+  if (_mlRelinkAsset){
+    const a = _mlRelinkAsset;
+    _mlRelinkAsset = null;
+    closeModal("modal-medialink");
+    const n = a.used_by.length;
+    if (!confirm(`Repoint "${a.name}" to:\n${link}\n\n`
+        + `This rewrites ${n} shape(s) across the saved canvases that use it, immediately.`)) return;
+    const r = await (await fetch("/media/relink", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({from_key: a.key, to_link: link})})).json();
+    if (!r.ok) alert("Relink failed: " + (r.error || "unknown"));
+    await loadMediaMeta(); await loadAssets(false);
+    return;
+  }
+  if (_mlTarget){
+    // Optimistic local write so the inspector/canvas update on the next
+    // repaint rather than a broadcast later — same pattern as the custom
+    // mask and shape lock.
+    const poly = polyById(_mlTarget);
+    if (poly){ poly.media_link = link; poly.source_type = "media"; }
+    send({type:"poly_set", id:_mlTarget, key:"source_type", value:"media"});
+    send({type:"poly_set", id:_mlTarget, key:"media_link", value:link});
+  } else {
+    // No target = "Link file…" from the Input panel: make a new shape for it.
+    _pendingSelectNewPoly = true;
+    _pendingNewPolyDefaults = {source_type:"media", media_link:link};
+    send({type:"poly_add"});
+  }
+  closeModal("modal-medialink");
+  renderPolyInspector(); paintCanvasEditor();
+}
+function openMediaLinkPicker(polyId){
+  _mlTarget = polyId || null;
+  $("modal-medialink").classList.add("open");
+  mlLoadRoots();
+}
+$("media-link-btn").onclick = () => openMediaLinkPicker(null);
+$("settings-addroot").onclick = () => {
+  $("addroot-status").textContent = "";
+  $("modal-addroot").classList.add("open");
+};
+$("medialink-close").onclick = () => { _mlRelinkAsset = null; closeModal("modal-medialink"); };
+$("medialink-root").onchange = () => { _mlPath = ""; mlBrowse($("medialink-root").value, ""); };
+$("medialink-addroot").onclick = () => {
+  $("addroot-status").textContent = "";
+  $("modal-addroot").classList.add("open");
+};
+$("addroot-close").onclick = () => closeModal("modal-addroot");
+$("addroot-confirm").onclick = async () => {
+  const name = $("addroot-name").value.trim(), path = $("addroot-path").value.trim();
+  try {
+    const r = await (await fetch("/media/roots", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({name, path})})).json();
+    if (!r.ok){ $("addroot-status").textContent = r.error || "rejected"; return; }
+  } catch (e) { $("addroot-status").textContent = e.message; return; }
+  $("addroot-name").value = ""; $("addroot-path").value = "";
+  closeModal("modal-addroot");
+  _mlRoot = name; _mlPath = "";
+  mlLoadRoots(); renderMediaRootsList();
+};
+
+// Shape settings > media source. The two sources are mutually exclusive per
+// shape; switching just clears the other one, so there's never an ambiguous
+// "which is it actually showing" state.
+function setMediaSourceMode(mode){
+  const poly = polyById(selectedPolyId);
+  if (!poly) return;
+  if (mode === "link"){
+    poly.media = null;
+    send({type:"poly_set", id:selectedPolyId, key:"media", value:null});
+    if (!poly.media_link) openMediaLinkPicker(selectedPolyId);
+  } else {
+    poly.media_link = null;
+    send({type:"poly_set", id:selectedPolyId, key:"media_link", value:null});
+  }
+  renderPolyInspector(); paintCanvasEditor();
+}
+$("poly-media-src-link").onclick = () => setMediaSourceMode("link");
+$("poly-media-src-lib").onclick = () => setMediaSourceMode("lib");
+$("poly-media-link-browse").onclick = () => selectedPolyId && openMediaLinkPicker(selectedPolyId);
+$("poly-media-link-clear").onclick = () => {
+  if (!selectedPolyId) return;
+  const poly = polyById(selectedPolyId);
+  if (poly) poly.media_link = null;
+  send({type:"poly_set", id:selectedPolyId, key:"media_link", value:null});
+  renderPolyInspector(); paintCanvasEditor();
+};
+$("poly-media-link-copy").onclick = () => {
+  const v = $("poly-media-link-path").value;
+  if (v) navigator.clipboard?.writeText(v);
+};
+
+// Settings > media roots — the same list the picker uses, manageable without
+// opening the picker first.
+async function renderMediaRootsList(){
+  const box = $("media-roots-list");
+  if (!box) return;
+  let roots = [];
+  try { roots = (await (await fetch("/media/roots")).json()).roots || []; } catch (e) { return; }
+  box.innerHTML = "";
+  if (!roots.length){
+    box.innerHTML = '<div class="hint">none yet — linked media needs at least one</div>';
+    return;
+  }
+  roots.forEach(r => {
+    const el = document.createElement("div");
+    el.className = "item";
+    el.innerHTML = `<span title="${r.path}"><b>${r.name}</b> — ${r.path}</span><span class="x" title="Remove this root">✕</span>`;
+    el.querySelector(".x").onclick = async () => {
+      if (!confirm(`Remove media root "${r.name}"?\n\nShapes linking into it will show as missing until it's added back.`)) return;
+      await fetch("/media/roots/" + encodeURIComponent(r.name), {method:"DELETE"});
+      renderMediaRootsList();
+    };
+    box.appendChild(el);
+  });
+}
 
 $("saveas-close").onclick = () => closeModal("modal-saveas");
 document.querySelectorAll(".modal-backdrop").forEach(el => {

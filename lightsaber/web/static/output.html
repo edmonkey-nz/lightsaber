@@ -350,25 +350,110 @@ function drawKnockoutFill(ctx, layer, mapWin, opacity){
 // rather than showing a static preview frame (that's an editing aid, this
 // is the real output).
 const _mediaEls = new Map();
-const _MEDIA_VIDEO_EXT = new Set(["mp4","mov","webm","m4v"]);
-function getMediaEl(name){
-  let m = _mediaEls.get(name);
-  if (m) return m;
-  const ext = (name.split(".").pop() || "").toLowerCase();
+const _MEDIA_VIDEO_EXT = new Set(["mp4","mov","webm","m4v","mkv","avi","ogv"]);
+// Media source descriptors — a shape's content is either a file uploaded
+// into the app's own media/ library (poly.media, a bare filename) or a LINK
+// to a file where it already lives (poly.media_link, "<root>::<rel/path>" —
+// see media_roots.py). Both collapse to one cache key + one URL here so the
+// rest of the draw path never has to care which kind it is. A link wins when
+// both are set, matching the compositor's own precedence.
+function mediaRefFor(p){
+  if (p.media_link) return {key: "link:" + p.media_link, link: p.media_link,
+                            name: p.media_link.split("::").pop().split("/").pop()};
+  if (p.media) return {key: "lib:" + p.media, name: p.media};
+  return null;
+}
+function mediaUrlFor(ref){
+  if (ref.link){
+    const [root, rel] = [ref.link.slice(0, ref.link.indexOf("::")),
+                         ref.link.slice(ref.link.indexOf("::") + 2)];
+    // Per-segment encoding: the route's tail is a path, so "/" must survive
+    // while spaces/#/? in a folder or file name must not.
+    const tail = rel.split("/").map(encodeURIComponent).join("/");
+    return `/media-link/${encodeURIComponent(root)}/${tail}`;
+  }
+  return `/media-files/${encodeURIComponent(ref.name)}`;
+}
+
+// Server-driven playhead (item 15) — composite.py computes where each media
+// shape should be (layer.media_t) from the canvas clock, and every client
+// converges on it rather than letting its own <video> free-run. Without
+// this, the editor and each output window drift apart within seconds, so a
+// clip spanning two projectors through a viewport crop would show a
+// different frame on each screen.
+//
+// Correction is a nudge, not a per-frame seek: seeking a 30-minute file is
+// expensive, so the element plays normally and is only pulled back when it
+// has genuinely drifted (or when the trim loops, which reads as a big jump).
+const MEDIA_DRIFT_TOLERANCE = 0.25;   // seconds
+function syncMediaTime(m, layer){
+  if (!m || m.kind !== "video" || !m.ready || !layer) return;
+  const target = layer.media_t;
+  if (target == null) return;          // duration unknown — let it play
+  const el = m.el;
+  const rate = layer.media_rate || 1;
+  if (el.playbackRate !== rate) el.playbackRate = rate;
+  if (m.seeking) return;
+  if (Math.abs(el.currentTime - target) > MEDIA_DRIFT_TOLERANCE){
+    m.seeking = true;
+    try { el.currentTime = target; } catch (e) { m.seeking = false; }
+  }
+}
+// Duration is measured here (the server never opens the file) and reported
+// once per asset, so the trim UI has a timeline to draw without re-probing.
+const _durationReported = new Set();
+function reportMediaDuration(assetKey, el){
+  const d = el.duration;
+  if (!(d > 0) || d === Infinity || _durationReported.has(assetKey)) return;
+  _durationReported.add(assetKey);
+  fetch("/media/meta/duration", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({key: assetKey, duration: d})}).catch(() => {});
+}
+
+// Cache eviction (item 15) — the cache key includes the playback config, so
+// every trim edit mints a NEW entry and orphans the old one. Without a sweep
+// those orphans keep decoding forever (nudging an in-point a few times would
+// leave several 4K decoders running), and a stale element can even be found
+// ahead of the live one when debugging. Anything not drawn for a few seconds
+// is released; it reloads on demand if it comes back.
+let _mediaFrame = 0;
+const _MEDIA_EVICT_AFTER = 60;   // ticks (~3s at 20fps)
+function evictUnusedMedia(){
+  for (const [key, m] of _mediaEls){
+    if (_mediaFrame - (m.lastUsed || 0) <= _MEDIA_EVICT_AFTER) continue;
+    try {
+      if (m.kind === "video"){ m.el.pause(); m.el.removeAttribute("src"); m.el.load(); }
+    } catch (e) {}
+    _mediaEls.delete(key);
+  }
+}
+function getMediaEl(ref, layer){
+  // Keyed by asset AND playback config: two shapes trimmed/moded identically
+  // share one decoder and stay frame-identical (what happened before this
+  // existed), while shapes with different in/out get their own playhead.
+  // That bounds decoder count to distinct CONFIGURATIONS, not shape count.
+  const cfg = (layer && layer.media_cfg) || "";
+  const cacheKey = ref.key + "|" + cfg;
+  let m = _mediaEls.get(cacheKey);
+  if (m){ m.lastUsed = _mediaFrame; return m; }
+  const ext = (ref.name.split(".").pop() || "").toLowerCase();
   const kind = _MEDIA_VIDEO_EXT.has(ext) ? "video" : "image";
+  const url = mediaUrlFor(ref);
   let el;
   if (kind === "video"){
     el = document.createElement("video");
     el.loop = true; el.muted = true; el.playsInline = true; el.preload = "auto";
-    el.src = `/media-files/${encodeURIComponent(name)}`;
+    el.src = url;
+    el.addEventListener("loadedmetadata", () => reportMediaDuration(ref.key, el));
+    el.addEventListener("seeked", () => { m.seeking = false; });
     el.addEventListener("loadeddata", () => { m.ready = true; });
   } else {
     el = new Image();
     el.addEventListener("load", () => { m.ready = true; });
-    el.src = `/media-files/${encodeURIComponent(name)}`;
+    el.src = url;
   }
-  m = {el, kind, ready: false};
-  _mediaEls.set(name, m);
+  m = {el, kind, ready: false, seeking: false, assetKey: ref.key, lastUsed: _mediaFrame};
+  _mediaEls.set(cacheKey, m);
   return m;
 }
 function mediaAspect(m){
@@ -377,6 +462,7 @@ function mediaAspect(m){
   return (w && h) ? w / h : 1;
 }
 function updateMediaPlayback(active, frozen){
+  _mediaFrame++; evictUnusedMedia();
   const shouldPlay = !!(active && !frozen);
   for (const m of _mediaEls.values()){
     if (m.kind !== "video") continue;
@@ -529,8 +615,15 @@ function drawMediaWarped(ctx, mapWin, H, corners, img, iw, ih, opacity, fitMode,
   ctx.restore();
 }
 function drawLayerMedia(ctx, layer, mapWin, opacity){
-  if (!layer.media) return;
-  const m = getMediaEl(layer.media);
+  const ref = mediaRefFor(layer);
+  if (!ref) return;
+  // "once" mode past its out point draws nothing at all (once_hold instead
+  // reports visible=true and holds the final frame).
+  // Element first, so a finished "once" clip stays warm rather than being
+  // evicted and reloaded when the canvas comes back around.
+  const m = getMediaEl(ref, layer);
+  syncMediaTime(m, layer);
+  if (layer.media_visible === false) return;
   if (!m.ready) return;
   const img = getMediaFrame(m);
   const H = homography(layer.corners);

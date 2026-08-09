@@ -20,10 +20,27 @@ from .modulation import ModMatrix, LFO
 from .scenes import Scene
 from .canvases import (CanvasManager, CanvasSpec, PolygonSpec,
                        DEFAULT_CLIP_POINTS, sanitize_clip_points)
+from .media_roots import resolve as media_link_path, link_exists
+from . import media_meta
 from .sequencer import Sequencer
 from .projects import ProjectManager, ProjectSpec, OutputMonitorConfig
 from .perf import LoopStats
 from .effectors import EffectorSource, EffectorRoute, transform_corners
+
+
+def media_ref_key(poly: PolygonSpec) -> str | None:
+    """The same asset key the browser uses (see index.html's mediaRefFor), so
+    library metadata is looked up identically on both sides."""
+    if poly.media_link:
+        return "link:" + poly.media_link
+    if poly.media:
+        return "lib:" + poly.media
+    return None
+
+
+def media_cfg_sig(poly: PolygonSpec) -> str:
+    return (f"{poly.media_in}/{poly.media_out}/{poly.media_mode}"
+            f"/{poly.media_rate}/{poly.media_offset}")
 
 
 # Same attr mapping as Engine._apply_param's "camera." branch (engine.py) —
@@ -139,6 +156,18 @@ class CompositeRenderer:
         # advancing right along with everything else instead of jumping
         # ahead when playback resumes.
         self._effector_t0 = time.monotonic()
+        # Media playback clock (item 15) — canvas-wide, and reset when the
+        # canvas CHANGES (not on every slot rebuild, which also fires for an
+        # unrelated shape being added: that would restart every "once" video
+        # mid-show). Freeze/blackout shift it by dt exactly like the effector
+        # clock and every slot.t0, so video stops and resumes with everything
+        # else instead of running on underneath.
+        self._media_t0 = time.monotonic()
+        self._media_canvas = None
+        # Elapsed canvas time as of the current tick — set once at the top of
+        # _loop so every layer built during that tick agrees, rather than
+        # each one re-reading the clock a few microseconds apart.
+        self._media_now = 0.0
         self._last_effector_values: dict = {}   # source id -> last sampled value, for UI meters
         # Live mic analysis (see effectors.py's "audio" source type) — a
         # browser (the control panel, not output windows) streams these up
@@ -208,6 +237,10 @@ class CompositeRenderer:
         self._slots = {}
         self._canvas_sig = None
         self.current_project = spec
+        # Opening a project adopts its own frame rate (ProjectSpec.fps) —
+        # otherwise the number shown in the Project tab would disagree with
+        # what the loop is actually running at until you touched the field.
+        self.fps = max(1, min(120, int(spec.fps)))
 
     def set_project(self, name: str):
         self._enqueue(lambda: self._do_set_project(name))
@@ -342,6 +375,18 @@ class CompositeRenderer:
             self.current_project.show_fps = bool(value)
         self._enqueue(apply)
 
+    def set_project_fps(self, value: int):
+        """Per-project render/broadcast rate (see ProjectSpec.fps). Writes
+        BOTH the spec (so Save persists it) and self.fps (so it takes effect
+        on the very next tick, without a restart) — server.py's broadcaster
+        reads self.fps every iteration for exactly this reason."""
+        def apply():
+            fps = max(1, min(120, int(value)))
+            self.fps = fps
+            if self.current_project is not None:
+                self.current_project.fps = fps
+        self._enqueue(apply)
+
     def set_test_pattern(self, index: int, value: bool):
         self._enqueue(lambda: self._test_pattern.__setitem__(int(index), bool(value)))
 
@@ -415,6 +460,16 @@ class CompositeRenderer:
                     "scene", "media", "knockout", "webcam", "text") else "scene"
             elif key == "media":
                 poly.media = value or None
+            elif key == "media_link":
+                # Validated on the way in for SHAPE (does it name a real
+                # root, stay inside it, and point at a media extension) but
+                # deliberately NOT for existence: a link whose file is
+                # currently missing — external drive unplugged mid-set — must
+                # survive, or any unrelated edit would silently destroy it.
+                # Missing files surface as media_link_ok=False and an amber
+                # "file not found" in the inspector instead.
+                from .media_roots import resolve as _resolve_link
+                poly.media_link = value if (value and _resolve_link(value)) else None
             elif key == "webcam_device":
                 poly.webcam_device = value or None
             elif key == "text_content":
@@ -427,6 +482,17 @@ class CompositeRenderer:
                 poly.label = str(value or "")
             elif key == "opacity":
                 poly.opacity = max(0.0, min(1.0, float(value)))
+            elif key in ("media_in", "media_out"):
+                # None is meaningful here (= inherit the asset's own default
+                # trim), so an empty value clears the override rather than
+                # being coerced to 0.
+                setattr(poly, key, None if value is None else max(0.0, float(value)))
+            elif key == "media_mode":
+                poly.media_mode = value if value in ("loop", "once", "once_hold") else "loop"
+            elif key == "media_rate":
+                poly.media_rate = max(0.05, min(8.0, float(value)))
+            elif key == "media_offset":
+                poly.media_offset = max(0.0, float(value))
             elif key == "time_offset":
                 poly.time_offset = float(value)
             elif key == "clip_shape":
@@ -438,6 +504,8 @@ class CompositeRenderer:
                 # "the shape just vanished".
                 if poly.clip_shape == "custom" and len(poly.clip_points) < 3:
                     poly.clip_points = [list(p) for p in DEFAULT_CLIP_POINTS]
+            elif key == "locked":
+                poly.locked = bool(value)
             elif key == "clip_points":
                 poly.clip_points = sanitize_clip_points(value)
             elif key == "clip_scale":
@@ -611,8 +679,56 @@ class CompositeRenderer:
                 route.mode = value if value in MODES else route.mode
         self._enqueue(apply)
 
-    @staticmethod
-    def _poly_layer_base(poly: PolygonSpec) -> dict:
+    def _media_playback(self, poly: PolygonSpec, t: float) -> dict:
+        """Where a media shape's playhead should be right now, computed HERE
+        rather than in the browser.
+
+        The compositor already owns time — generated scenes are pure
+        functions of t (that's what time_offset is for), and video is now the
+        same: position is derived from the canvas clock, not from letting
+        each <video> free-run. That matters for more than tidiness. Every
+        output window is a separate page with its own <video> elements; left
+        to themselves they drift apart within seconds, so one clip spanning
+        two projectors through a viewport crop (see projects.py's
+        OutputMonitorConfig) would show a different frame on each. Publishing
+        one authoritative time per layer means every client converges on the
+        same frame, and scrubbing the sequencer is reproducible.
+
+        Returns {"t": seconds|None, "visible": bool}. t=None means "duration
+        unknown, just let it play" — the honest answer before any client has
+        reported how long the file is.
+        """
+        key = media_ref_key(poly)
+        meta = media_meta.get(key) if key else {}
+        duration = meta.get("duration")
+        in_s = poly.media_in if poly.media_in is not None else meta.get("in", 0.0) or 0.0
+        out_s = poly.media_out if poly.media_out is not None else meta.get("out")
+        if out_s is None:
+            out_s = duration
+        if out_s is None or duration is None:
+            return {"t": None, "visible": True}
+        in_s = max(0.0, min(float(in_s), duration))
+        out_s = max(in_s, min(float(out_s), duration))
+        span = out_s - in_s
+        if span <= 0.001:
+            return {"t": in_s, "visible": True}
+        local = t * poly.media_rate + poly.media_offset
+        if poly.media_mode == "loop":
+            local = local % span
+            return {"t": in_s + local, "visible": True}
+        # once / once_hold: clamp at the out point; "once" then stops drawing
+        # while "once_hold" keeps showing that last frame.
+        if local >= span:
+            return {"t": out_s, "visible": poly.media_mode == "once_hold"}
+        return {"t": in_s + local, "visible": True}
+
+    def _media_playback_payload(self, poly: PolygonSpec) -> dict:
+        if poly.source_type != "media":
+            return {"media_t": None, "media_visible": True}
+        pb = self._media_playback(poly, self._media_now)
+        return {"media_t": pb["t"], "media_visible": pb["visible"]}
+
+    def _poly_layer_base(self, poly: PolygonSpec) -> dict:
         """The layer-payload fields that come straight off the PolygonSpec,
         common to all three call sites below (blackout / missing-scene /
         rendered) — factored out so adding a new per-polygon field (as with
@@ -623,8 +739,20 @@ class CompositeRenderer:
             "clip_points": poly.clip_points,
             "source_type": poly.source_type, "z_index": poly.z_index, "media": poly.media,
             "webcam_device": poly.webcam_device, "text_content": poly.text_content,
+            "media_link": poly.media_link,
+            "media_mode": poly.media_mode, "media_rate": poly.media_rate,
+            # Playback config signature: the CLIENT keys its <video> cache on
+            # this, so two shapes with identical playback share one decoder
+            # (and stay frame-identical), while differing ones get their own.
+            "media_cfg": media_cfg_sig(poly),
+            **self._media_playback_payload(poly),
+            # Resolved server-side (cached, see media_roots._EXISTS_TTL) so
+            # the inspector can show the real path plus a found/missing
+            # state without the browser needing filesystem access.
+            "media_link_path": media_link_path(poly.media_link),
+            "media_link_ok": bool(poly.media_link) and link_exists(poly.media_link),
             "text_color": poly.text_color, "text_size": poly.text_size,
-            "fit": poly.fit,
+            "fit": poly.fit, "locked": poly.locked,
         }
 
     def _update_effector_meters(self, t: float):
@@ -792,6 +920,9 @@ class CompositeRenderer:
     # slot management -------------------------------------------------------
     def _rebuild_if_needed(self, now: float):
         canvas = self.canvases.current
+        if canvas.name != self._media_canvas:
+            self._media_canvas = canvas.name
+            self._media_t0 = now
         sig = (canvas.name, tuple((p.id, p.scene) for p in canvas.polygons))
         if sig == self._canvas_sig:
             return
@@ -850,6 +981,7 @@ class CompositeRenderer:
                 for slot in self._slots.values():
                     slot.t0 += dt
                 self._effector_t0 += dt
+                self._media_t0 += dt
                 def _blackout_layer(p):
                     ov = p.overrides
                     # Static authored scale/rotation (Transform drawer) are a
@@ -905,10 +1037,13 @@ class CompositeRenderer:
                 for slot in self._slots.values():
                     slot.t0 += dt
                 self._effector_t0 += dt
+                self._media_t0 += dt
             elif self.sequencer.tick(dt):
                 self._swap_sequencer_canvas()
 
             self._rebuild_if_needed(now)
+            # One clock reading per tick, so every layer built below agrees.
+            self._media_now = now - self._media_t0
 
             if self._diag_enabled:
                 t_render0 = time.monotonic()
@@ -1017,6 +1152,10 @@ class CompositeRenderer:
                        else [OutputMonitorConfig().to_dict(), OutputMonitorConfig().to_dict()],
             "viewports_enabled": self.current_project.viewports_enabled if self.current_project else False,
             "show_fps": self.current_project.show_fps if self.current_project else False,
+            # The live loop rate, not the saved one — they only differ in the
+            # window between changing the field and hitting Save, which is
+            # exactly when the UI should show what's actually running.
+            "project_fps": self.fps,
             # Calibration-only, engine-runtime (see set_test_pattern above,
             # not persisted) — a plain bool per output index, defaulting
             # False for any index nothing's toggled yet.

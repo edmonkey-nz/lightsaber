@@ -1,6 +1,6 @@
 # Lightsaber
 
-![version](https://img.shields.io/badge/version-0.32.0-33e0d0)
+![version](https://img.shields.io/badge/version-0.33.0-33e0d0)
 ![status](https://img.shields.io/badge/status-pre--release-orange)
 ![platform](https://img.shields.io/badge/platform-Ubuntu-informational)
 
@@ -48,6 +48,10 @@ python run.py --web
 
 # use Claude as the scene director
 ANTHROPIC_API_KEY=sk-... python run.py --web
+
+# register a folder that linked media may be referenced from (repeatable,
+# and persistent — a one-off per folder, also editable in Settings)
+python run.py --web --media-root videos=/home/you/Videos
 ```
 
 Open <http://localhost:8080>. You'll land in a default project with an empty
@@ -225,6 +229,34 @@ to reorder, set each step's duration, ▶/⏸ transport, loop toggle. This is
 the actual monitor/projector output: Output windows render whatever canvas
 is currently playing (or the one open in the editor, if the sequencer isn't
 running).
+
+## Media
+
+The **Media** tab is every file the project can draw from. Two kinds:
+
+- **Linked** (🔗) — referenced where the file already lives. Nothing is
+  copied, so a multi-gigabyte video costs no extra disk. This is the default.
+- **Uploaded** (📁) — a copy inside the app's own `media/`. Fine for small
+  logos and stings.
+
+Linked files must sit under a registered **media root**. That's a security
+boundary, not just bookkeeping: the server binds `0.0.0.0` by default, so
+only files underneath a root you registered are ever served — keep roots as
+narrow as you can. Links are stored as `root-name::relative/path`, so a
+project opened on another machine resolves as long as a root of the same
+name exists there.
+
+**Trimming.** Set a file's default in/out in the Media tab — useful when a
+30-minute recording is only interesting for 30 seconds of it. Every shape
+using that file inherits the default; any shape can override it with its own
+in/out, playback mode (loop / once / once-and-hold), speed and start offset.
+The same clip can appear several times on a canvas, each with its own trim
+and playhead.
+
+Video position is derived from the canvas clock rather than left to each
+`<video>` element, so every output window shows the same frame — which is
+what lets one clip span two projectors through a viewport crop. Freeze and
+Stop halt video along with everything else.
 
 ## Projects
 

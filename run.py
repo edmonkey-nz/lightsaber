@@ -31,12 +31,36 @@ def parse_args():
     ap.add_argument("--web", action="store_true", help="serve the browser control surface")
     ap.add_argument("--web-port", type=int, default=8080)
     ap.add_argument("--host", default="0.0.0.0")
-    ap.add_argument("--fps", type=int, default=20, help="compositor render rate")
+    ap.add_argument("--fps", type=int, default=20,
+                    help="compositor render rate at startup; a project's own saved "
+                         "fps (Project > Performance) overrides this once opened")
+    ap.add_argument("--media-root", action="append", default=[], metavar="NAME=PATH",
+                    help="register a folder that linked media may be referenced from, "
+                         "e.g. --media-root videos=/home/me/Videos. Repeatable. Only "
+                         "files under a registered root are ever served (this server "
+                         "listens on all interfaces by default). Persists to "
+                         "settings.json, so this is a one-off per folder.")
     ap.add_argument("--diag", action="store_true",
                     help="enable perf diagnostics instrumentation at startup (off by "
                          "default; also toggleable live in Settings)")
     ap.add_argument("--model", default=None, help="override director model id")
     return ap.parse_args()
+
+
+def _register_media_roots(specs) -> None:
+    """--media-root NAME=PATH, repeatable. Registering is persistent, so this
+    is a convenience for the first run/scripted setup — the same roots are
+    editable live from Settings > Media roots."""
+    from lightsaber import media_roots
+    for spec in specs:
+        name, sep, path = spec.partition("=")
+        if not sep:
+            print(f"[lightsaber] --media-root needs NAME=PATH, got: {spec!r}")
+            continue
+        ok, msg = media_roots.set_root(name.strip(), os.path.abspath(
+            os.path.expanduser(path.strip())))
+        print(f"[lightsaber] media root {name.strip()!r}: "
+              + ("registered" if ok else f"rejected — {msg}"))
 
 
 def _resolve_startup_project(projects) -> str:
@@ -69,6 +93,7 @@ def _resolve_startup_project(projects) -> str:
 
 def main():
     args = parse_args()
+    _register_media_roots(args.media_root)
     engine = Engine(
         library_dir=os.path.join(HERE, "scenes"),
         cache_dir=os.path.join(HERE, "scenes", "generated"),
