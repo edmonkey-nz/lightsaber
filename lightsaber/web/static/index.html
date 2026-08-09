@@ -84,20 +84,28 @@
   .canvas-3col{display:flex;gap:14px;min-width:0;align-items:flex-start;flex-wrap:wrap}
   .canvas-3col .stage{border-right:1px solid var(--line);padding-right:18px}
   .canvas-col-main{flex:1;min-width:280px}
-  .canvas-col-shapes{flex:0 0 200px;min-width:0}
+  /* Shapes list narrowed by 30% (23) — 200px was sized for full scene
+     names, but the list is one line per shape and the width was coming
+     straight out of the canvas's own share of the row. */
+  .canvas-col-shapes{flex:0 0 140px;min-width:0}
   .drawer-content{flex:0 0 380px;min-width:0;flex-direction:column;gap:14px}
   .drawer-content > .group{width:100%}
-  .canvas-col-drawers{flex:0 0 150px;display:flex;flex-direction:column;gap:6px;min-width:0}
-  .drawer-handle-btn{width:100%;text-align:left;background:var(--panel2);
+  /* Icon rail (24) — just wide enough for one glyph plus its padding. */
+  .canvas-col-drawers{flex:0 0 44px;display:flex;flex-direction:column;gap:6px;min-width:0}
+  .drawer-handle-btn{width:100%;text-align:center;background:var(--panel2);
                       border:1px solid var(--line);border-radius:8px;color:var(--dim);
-                      cursor:pointer;padding:10px 12px;font-size:11px;letter-spacing:.08em;
-                      text-transform:uppercase;font-weight:500}
+                      cursor:pointer;padding:9px 0;font-size:16px;line-height:1;
+                      font-weight:500}
   .drawer-handle-btn:hover{color:var(--ink);border-color:var(--cyan)}
   .drawer-handle-btn.open{color:var(--cyan);border-color:var(--cyan)}
   @media(max-width:1100px){
     .canvas-3col .stage{flex:0 0 auto;width:100%;border-right:none}
     .canvas-col-shapes{flex:0 0 auto;width:100%}
     .drawer-content{flex:0 0 auto;width:100%}
+    /* Rail goes horizontal when the row wraps, so it stays a single strip
+       of icons above its pane instead of a tall stack beside nothing. */
+    .canvas-col-drawers{flex:0 0 auto;width:100%;flex-direction:row;flex-wrap:wrap}
+    .drawer-handle-btn{width:44px}
   }
   .filtercol{border-left:1px solid var(--line);background:var(--panel);padding:16px;
              display:flex;flex-direction:column;gap:18px;min-width:0}
@@ -406,6 +414,7 @@
   <img class="logo" src="/static/lightsaber.png" alt="">
   <h1>LIGHTSABER</h1>
   <button class="icon-btn" id="settings-open" title="Settings">⚙</button>
+  <button class="icon-btn" id="about-open" title="About Lightsaber">?</button>
   <div class="api-status">
     <span>Status:</span>
     <span class="statusdot" id="engine-dot" title="backend engine websocket"></span>
@@ -670,6 +679,22 @@
       </div>
       </div>
 
+      <!-- Drawer rail (24) — icon-only, and moved to sit immediately after
+           the shapes list rather than at the far right of the row. The
+           handle now sits directly against the pane it opens, so the two
+           read as one unit instead of the handle being stranded on the
+           other side of a wide content panel. Words survive as tooltips
+           (title=) and as each pane's own <h2>. -->
+      <div class="canvas-col-drawers">
+        <button id="handle-shapesettings" class="drawer-handle-btn" data-drawer="shapesettings" title="Shape settings" aria-label="Shape settings">⬡</button>
+        <button id="handle-playback" class="drawer-handle-btn" data-drawer="playback" title="Playback — video in/out, speed, loop mode" aria-label="Playback">⏵</button>
+        <button id="handle-mask" class="drawer-handle-btn" data-drawer="mask" title="Mask / clipping" aria-label="Mask and clipping">✂</button>
+        <button id="handle-colourize" class="drawer-handle-btn" data-drawer="colourize" title="Colourize" aria-label="Colourize">🎨</button>
+        <button id="handle-transform" class="drawer-handle-btn" data-drawer="transform" title="Transform — flip and mirror" aria-label="Transform">⤢</button>
+        <button id="handle-effectors" class="drawer-handle-btn" data-drawer="effectors" title="Effectors — LFO and audio modulation" aria-label="Effectors">∿</button>
+        <button id="handle-settings" class="drawer-handle-btn" data-drawer="settings" title="Settings — global, motion, shape camera" aria-label="Settings">⚙</button>
+      </div>
+
       <div id="content-shapesettings" class="drawer-content">
       <div class="group" id="g-shapesettings" style="display:none">
         <h2>Shape settings</h2>
@@ -704,6 +729,46 @@
           <div class="hint" id="poly-media-link-status"></div>
         </div>
         <div class="hint" id="poly-media-hint" style="display:none">images and videos loop automatically — drag corners same as a scene shape</div>
+        <div class="hint" id="poly-playback-pointer" style="display:none">in/out points, speed and loop mode live in the <b>Playback</b> pane →</div>
+        <div class="field" id="poly-webcam-field" style="display:none"><label>camera</label>
+          <select id="poly-webcam-device"></select></div>
+        <div class="hint" id="poly-webcam-hint" style="display:none">a live feed from the browser's default camera until a device is picked (open Input &gt; Webcam and hit refresh if the list is empty) — the camera stays on for as long as a shape uses it</div>
+        <div class="field" id="poly-text-field" style="display:none"><label>text</label>
+          <textarea id="poly-text-content" rows="2" style="flex:1;resize:vertical;font:inherit;background:var(--panel2,#1b1e26);color:inherit;border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:6px"></textarea></div>
+        <div class="field" id="poly-text-color-field" style="display:none"><label>text colour</label>
+          <input type="color" id="poly-text-color" value="#ffffff"></div>
+        <div class="field" id="poly-text-size-field" style="display:none"><label>text size</label>
+          <input type="range" id="poly-text-size" min="0.02" max="1" step="0.01" value="0.2">
+          <span class="val" id="v-polytextsize">0.20</span></div>
+        <div class="hint" id="poly-knockout-hint" style="display:none">a boolean cutout — solid, blocks the output wherever it overlaps other shapes (see z-index below). Not a quad: double-click an edge to add a point, double-click a point to remove it (min. 3)</div>
+        <div class="field" id="poly-opacity-field"><label>opacity</label>
+          <input type="range" id="poly-opacity" min="0" max="1" step="0.01" value="1">
+          <span class="val" id="v-polyopacity">1.00</span></div>
+        <div class="field" id="poly-fit-field"><label>fit</label>
+          <select id="poly-fit">
+            <option value="stretch">Stretch</option>
+            <option value="fit">Fit (letterbox)</option>
+            <option value="crop">Crop (fill)</option>
+          </select></div>
+        <div class="hint" id="poly-fit-hint">how the scene's own frame shape fits this shape's quad</div>
+        <div class="field"><label>z-index</label>
+          <input type="range" id="poly-zindex" min="1" max="10" step="1" value="5">
+          <span class="val" id="v-polyzindex">5</span></div>
+        <div class="hint">paint order — 10 is furthest back, 1 is furthest front (in front of everything else)</div>
+        <button id="poly-reset-btn" title="Reset this shape's corners back to its original, undistorted quad">⟲ Reset to original polygon</button>
+        <button id="poly-delete" title="Delete this shape">✕ Delete shape</button>
+      </div>
+      </div>
+
+      <!-- Playback (21) — split out of Shape settings, which had grown into
+           one long scroll mixing "what is this shape" with "how does its
+           clip play". Only meaningful for a video, so the whole pane
+           reports why it's empty otherwise rather than showing dead
+           controls. -->
+      <div id="content-playback" class="drawer-content" style="display:none">
+      <div class="group" id="g-playback">
+        <h2>Playback</h2>
+        <div class="hint" id="playback-empty">select a shape filled with a video to trim it — images, scenes, webcams and text have no playhead</div>
         <div id="poly-playback-field" style="display:none">
           <div class="field"><label>playback</label>
             <select id="poly-media-mode" style="flex:1">
@@ -741,49 +806,35 @@
           </div>
           <div class="hint" id="poly-media-inherit"></div>
         </div>
-        <div class="field" id="poly-webcam-field" style="display:none"><label>camera</label>
-          <select id="poly-webcam-device"></select></div>
-        <div class="hint" id="poly-webcam-hint" style="display:none">a live feed from the browser's default camera until a device is picked (open Input &gt; Webcam and hit refresh if the list is empty) — the camera stays on for as long as a shape uses it</div>
-        <div class="field" id="poly-text-field" style="display:none"><label>text</label>
-          <textarea id="poly-text-content" rows="2" style="flex:1;resize:vertical;font:inherit;background:var(--panel2,#1b1e26);color:inherit;border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:6px"></textarea></div>
-        <div class="field" id="poly-text-color-field" style="display:none"><label>text colour</label>
-          <input type="color" id="poly-text-color" value="#ffffff"></div>
-        <div class="field" id="poly-text-size-field" style="display:none"><label>text size</label>
-          <input type="range" id="poly-text-size" min="0.02" max="1" step="0.01" value="0.2">
-          <span class="val" id="v-polytextsize">0.20</span></div>
-        <div class="hint" id="poly-knockout-hint" style="display:none">a boolean cutout — solid, blocks the output wherever it overlaps other shapes (see z-index below). Not a quad: double-click an edge to add a point, double-click a point to remove it (min. 3)</div>
-        <div class="field" id="poly-opacity-field"><label>opacity</label>
-          <input type="range" id="poly-opacity" min="0" max="1" step="0.01" value="1">
-          <span class="val" id="v-polyopacity">1.00</span></div>
-        <div class="field" id="poly-fit-field"><label>fit</label>
-          <select id="poly-fit">
-            <option value="stretch">Stretch</option>
-            <option value="fit">Fit (letterbox)</option>
-            <option value="crop">Crop (fill)</option>
-          </select></div>
-        <div class="hint" id="poly-fit-hint">how the scene's own frame shape fits this shape's quad</div>
-        <div class="field" id="poly-clip-field"><label>clip shape</label>
-          <select id="poly-clip-shape">
-            <option value="">none</option>
-            <option value="circle">circle</option>
-            <option value="hexagon">hexagon</option>
-            <option value="triangle">triangle</option>
-            <option value="square">square</option>
-            <option value="custom">custom polygon…</option>
-          </select></div>
-        <div class="field" id="poly-clip-scale-field" style="display:none"><label>clip size</label>
-          <input type="range" id="poly-clip-scale" min="0.1" max="3" step="0.01" value="1">
-          <span class="val" id="v-polyclipscale">1.00</span></div>
-        <div class="field" id="poly-editmode-field" style="display:none"><label>edit</label>
-          <button id="poly-mode-warp" class="amber" title="Drag the four corner pins — distorts the shape and its mask together">◳ Warp</button>
-          <button id="poly-mode-mask" title="Drag the mask outline — reshapes the silhouette without moving the shape">✎ Mask</button></div>
-        <div class="hint" id="poly-mask-hint" style="display:none">drag a point to reshape the silhouette · double-click an edge to add a point, a point to remove it (min. 3) · drag inside to move the whole mask · Esc back to Warp. The mask lives in the shape's own space, so warping the corner pins warps the mask along with the content.</div>
-        <div class="field"><label>z-index</label>
-          <input type="range" id="poly-zindex" min="1" max="10" step="1" value="5">
-          <span class="val" id="v-polyzindex">5</span></div>
-        <div class="hint">paint order — 10 is furthest back, 1 is furthest front (in front of everything else)</div>
-        <button id="poly-reset-btn" title="Reset this shape's corners back to its original, undistorted quad">⟲ Reset to original polygon</button>
-        <button id="poly-delete" title="Delete this shape">✕ Delete shape</button>
+      </div>
+      </div>
+
+      <!-- Mask/clipping (22) — the silhouette controls, split out of Shape
+           settings for the same reason. The Distort/Mask toggle comes with
+           them: it selects which geometry the canvas drag handles edit, so
+           it belongs beside the mask it edits, not beside the fill type. -->
+      <div id="content-mask" class="drawer-content" style="display:none">
+      <div class="group" id="g-mask">
+        <h2>Mask / clipping</h2>
+        <div class="hint" id="mask-empty" style="display:none">select a shape to mask it</div>
+        <div id="mask-fields">
+          <div class="field" id="poly-clip-field"><label>clip shape</label>
+            <select id="poly-clip-shape">
+              <option value="">none</option>
+              <option value="circle">circle</option>
+              <option value="hexagon">hexagon</option>
+              <option value="triangle">triangle</option>
+              <option value="square">square</option>
+              <option value="custom">custom polygon…</option>
+            </select></div>
+          <div class="field" id="poly-clip-scale-field" style="display:none"><label>clip size</label>
+            <input type="range" id="poly-clip-scale" min="0.1" max="3" step="0.01" value="1">
+            <span class="val" id="v-polyclipscale">1.00</span></div>
+          <div class="field" id="poly-editmode-field" style="display:none"><label>edit</label>
+            <button id="poly-mode-warp" class="amber" title="Drag the four corner pins — distorts the shape and its mask together">◳ Distort</button>
+            <button id="poly-mode-mask" title="Drag the mask outline — reshapes the silhouette without moving the shape">✎ Mask</button></div>
+          <div class="hint" id="poly-mask-hint" style="display:none">drag a point to reshape the silhouette · double-click an edge to add a point, a point to remove it (min. 3) · drag inside to move the whole mask · Esc back to Distort. The mask lives in the shape's own space, so distorting the corner pins warps the mask along with the content.</div>
+        </div>
       </div>
       </div>
 
@@ -946,14 +997,6 @@
         </div>
       </div>
 
-      <div class="canvas-col-drawers">
-        <button id="handle-shapesettings" class="drawer-handle-btn" data-drawer="shapesettings">Shape settings</button>
-        <button id="handle-colourize" class="drawer-handle-btn" data-drawer="colourize">Colourize</button>
-        <button id="handle-transform" class="drawer-handle-btn" data-drawer="transform">Transform</button>
-        <button id="handle-effectors" class="drawer-handle-btn" data-drawer="effectors">Effectors</button>
-        <button id="handle-settings" class="drawer-handle-btn" data-drawer="settings">Settings</button>
-      </div>
-
     </div>
 
     <details class="accordion" id="acc-perf" closed>
@@ -1049,6 +1092,22 @@
     <button class="go" id="gen">Generate</button>
     <div class="progress" id="genprog"><div class="bar" id="genbar"></div></div>
     <div class="hint" id="dirhint-modal">keyword → scene (added to the library)</div>
+  </div>
+</div>
+
+<!-- About (25) — content comes from about.md at the repo root, fetched and
+     rendered at open time, so the text has one home rather than being
+     duplicated into markup that then drifts out of date. -->
+<div class="modal-backdrop" id="modal-about">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>About</h2>
+      <button class="modal-close" id="about-close">&times;</button>
+    </div>
+    <div class="group">
+      <div id="about-body" style="font-size:13px;line-height:1.55">loading…</div>
+      <div class="hint" id="about-version"></div>
+    </div>
   </div>
 </div>
 
@@ -1365,6 +1424,17 @@ const COLOR_AMBER = CSS_VAR("--amber") || "#f2a623";
 let _lastComposite = [];      // last composite payload (per-polygon strokes) from the server
 let _canvasDoc = null;        // last engine.state().canvas — authoritative polygon geometry/assignment
 let selectedPolyId = null;
+
+// How far outside the canvas a shape's corners may be dragged (19). The
+// canvas itself is [-1,1]; clamping corners to exactly that made it
+// impossible to push a DISTORTED shape flush against an edge, because the
+// corner you need to move is the one already sitting on the limit — the
+// shape would jam before its visible edge got there. Overshoot is legal
+// content anyway: anything past the boundary is simply cropped by the
+// output, which is what bleeding a shape off-canvas is supposed to do.
+// Bounded rather than free so a shape can't be flung somewhere it can't be
+// found again.
+const POLY_BOUND = 2;
 let _pendingSelectNewPoly = false;   // set before poly_add, so the newly-created polygon auto-selects
 // Extra poly_set calls to fire once that new polygon shows up — e.g. the
 // webcam/text "+" buttons below need the fresh polygon's id before they can
@@ -1838,6 +1908,62 @@ function mediaAspect(m){
   const w = m.kind === "video" ? m.el.videoWidth : m.el.naturalWidth;
   const h = m.kind === "video" ? m.el.videoHeight : m.el.naturalHeight;
   return (w && h) ? w / h : 1;
+}
+
+// Content-shaped default quad (18). A new shape is created at a default
+// that LOOKS 16:9 — right for a scene, wrong for content with a shape of
+// its own: a 4:3 clip or a line of text arrives visibly stretched, and the
+// only fix was to hand-drag the corners back.
+//
+// So: once a shape's content reports its true aspect, re-fit the quad to it
+// — but ONLY while the quad is still the untouched default. Anything
+// dragged, warped, or resized by hand is left alone permanently, because
+// silently re-fitting a shape someone has already placed is far worse than
+// the stretch this fixes. Position is preserved; only the height changes.
+const _autoFitDone = new Set();
+const DEFAULT_SHAPE_ASPECT = 16 / 9;
+function defaultHalfHeight(targetAspect){
+  // Mirror of composite.py's default_half_height — the canvas is [-1,1] on
+  // both axes but renders into the project's pixel rect, so a quad of
+  // half-width 0.5 needs this half-height to LOOK `targetAspect` wide.
+  const aspect = (_projectRes.width || 1920) / (_projectRes.height || 1080);
+  return 0.5 * aspect / Math.max(0.01, targetAspect);
+}
+function isUntouchedQuad(poly){
+  const c = poly && poly.corners;
+  if (!c || c.length !== 4) return false;
+  const eps = 1e-3;
+  const [tl, tr, br, bl] = c;
+  // axis-aligned and rectangular — i.e. still exactly what add_polygon
+  // made, allowing for the stagger offset it gives successive adds
+  if (Math.abs(tl[1] - tr[1]) > eps || Math.abs(bl[1] - br[1]) > eps) return false;
+  if (Math.abs(tl[0] - bl[0]) > eps || Math.abs(tr[0] - br[0]) > eps) return false;
+  if (Math.abs(Math.abs(tr[0] - tl[0]) - 1.0) > eps) return false;    // half-width 0.5 each side
+  return Math.abs(Math.abs(tl[1] - bl[1]) - 2 * defaultHalfHeight(DEFAULT_SHAPE_ASPECT)) < eps;
+}
+function autoFitShapeToContent(poly, contentAspect){
+  if (!poly || !(contentAspect > 0) || _autoFitDone.has(poly.id)) return;
+  // Decided once per shape either way, so a shape the user has already
+  // moved is never re-examined on later frames.
+  _autoFitDone.add(poly.id);
+  if (!isUntouchedQuad(poly)) return;
+  if (Math.abs(contentAspect - DEFAULT_SHAPE_ASPECT) < 1e-3) return;  // already right
+  const hh = defaultHalfHeight(contentAspect);
+  const cx = (poly.corners[0][0] + poly.corners[1][0]) / 2;
+  const cy = (poly.corners[0][1] + poly.corners[2][1]) / 2;
+  const corners = [[cx - 0.5, cy + hh], [cx + 0.5, cy + hh],
+                   [cx + 0.5, cy - hh], [cx - 0.5, cy - hh]];
+  poly.corners = corners;
+  send({type: "poly_corners", id: poly.id, corners});
+}
+// Reads the element cache without creating anything — drawPolyMedia has
+// already made the element by the time this runs.
+function autoFitFromMedia(poly, layer){
+  if (_autoFitDone.has(poly.id)) return;
+  const ref = mediaRefFor(layer || poly);
+  if (!ref) return;
+  const m = _mediaEls.get(ref.key + "|" + ((layer && layer.media_cfg) || ""));
+  if (m && m.ready) autoFitShapeToContent(poly, mediaAspect(m));
 }
 // Starts/stops every loaded video together — called from paintState, so it
 // tracks the master Start/Stop + freeze state without any per-shape wiring.
@@ -2334,6 +2460,14 @@ function paintCanvasEditor(){
   sctx.translate(rect.x + rect.w/2 + _view.panX, rect.y + rect.h/2 + _view.panY);
   sctx.scale(_view.zoom, _view.zoom);
   sctx.translate(-(rect.x + rect.w/2), -(rect.y + rect.h/2));
+  // Artboard clip (19) — now that corners may be dragged past the canvas
+  // edge, CONTENT has to stop at that edge or it would paint over the
+  // backdrop and imply the output shows more than it does. The outline and
+  // drag handles are drawn in a separate, unclipped pass below, so an
+  // overshooting corner is still visible and still grabbable.
+  sctx.beginPath();
+  sctx.rect(rect.x, rect.y, rect.w, rect.h);
+  sctx.clip();
   // Paint order (3): highest z-index first (furthest back), lowest last
   // (furthest front) — so e.g. a low-numbered "knockout" cutout shape ends up
   // drawn on top of whatever it should blank out.
@@ -2384,10 +2518,12 @@ function paintCanvasEditor(){
       sctx.filter = buildCssFilter(layer || poly.overrides || {});
       if (isMedia){
         drawPolyMedia(sctx, poly, liveCorners, rect, liveOpacity, layer);
+        autoFitFromMedia(poly, layer);          // (18) once, while still default
       } else if (isWebcam){
         drawPolyWebcam(sctx, poly, liveCorners, rect, liveOpacity);
       } else if (isText){
         drawPolyText(sctx, poly, liveCorners, rect, liveOpacity);
+        autoFitShapeToContent(poly, 1);         // (18) text reads best square
       } else if (layer && layer.strokes && layer.strokes.length){
         const H = homography(liveCorners);
         const opacity = liveOpacity;
@@ -2709,7 +2845,7 @@ setActiveTab(localStorage.getItem("pw_active_tab") || "tab-canvas");
 // adding a shape), the rest start closed. Opening/closing changes
 // #cv-edit's own rendered width (canvas-col-main is flex:1 in the row),
 // so its backing buffer needs the same nudge switching tabs does.
-const DRAWER_NAMES = ["shapesettings", "colourize", "transform", "effectors", "settings"];
+const DRAWER_NAMES = ["shapesettings", "playback", "mask", "colourize", "transform", "effectors", "settings"];
 const DRAWER_DEFAULT_OPEN = { shapesettings: true };
 function setDrawerOpen(name, on){
   if (on) DRAWER_NAMES.forEach(other => {
@@ -2885,7 +3021,8 @@ window.addEventListener("mousemove", e => {
   }
   if (_drag.type === "corner"){
     const [nx,ny] = pxToNorm(px, py, rect);
-    poly.corners[_drag.idx] = [Math.max(-1,Math.min(1,nx)), Math.max(-1,Math.min(1,ny))];
+    poly.corners[_drag.idx] = [Math.max(-POLY_BOUND,Math.min(POLY_BOUND,nx)),
+                               Math.max(-POLY_BOUND,Math.min(POLY_BOUND,ny))];
   } else {
     // Body drag (4): translate the whole shape by a uniform delta. The delta
     // itself is clamped (not each corner independently after the fact) so
@@ -2896,8 +3033,8 @@ window.addEventListener("mousemove", e => {
     const [nx1,ny1] = pxToNorm(px, py, rect);
     let dx = nx1-nx0, dy = ny1-ny0;
     const xs = _drag.origCorners.map(c=>c[0]), ys = _drag.origCorners.map(c=>c[1]);
-    dx = Math.max(-1-Math.min(...xs), Math.min(1-Math.max(...xs), dx));
-    dy = Math.max(-1-Math.min(...ys), Math.min(1-Math.max(...ys), dy));
+    dx = Math.max(-POLY_BOUND-Math.min(...xs), Math.min(POLY_BOUND-Math.max(...xs), dx));
+    dy = Math.max(-POLY_BOUND-Math.min(...ys), Math.min(POLY_BOUND-Math.max(...ys), dy));
     poly.corners = _drag.origCorners.map(c => [c[0]+dx, c[1]+dy]);
   }
   paintCanvasEditor();
@@ -3000,7 +3137,20 @@ function renderPolyInspector(){
   const box = $("g-shapesettings");
   const poly = polyById(selectedPolyId);
   ensureEditModeValid();
-  if (!poly){ box.style.display = "none"; return; }
+  // Playback and Mask are their own drawers now (21/22) but are still
+  // driven from here, so their empty states have to be set BEFORE the early
+  // return below — otherwise deselecting would leave the last shape's
+  // controls sitting there live in a pane that no longer refers to anything.
+  if (!poly){
+    box.style.display = "none";
+    $("poly-playback-field").style.display = "none";
+    $("playback-empty").style.display = "block";
+    $("mask-fields").style.display = "none";
+    $("mask-empty").style.display = "block";
+    return;
+  }
+  $("mask-fields").style.display = "block";
+  $("mask-empty").style.display = "none";
   box.style.display = "flex";
   if (document.activeElement !== $("poly-label")) $("poly-label").value = poly.label || "";
   if (document.activeElement !== $("poly-locked")) $("poly-locked").checked = !!poly.locked;
@@ -3040,6 +3190,8 @@ function renderPolyInspector(){
   const ref = isMedia ? mediaRefFor(poly) : null;
   const isVideo = !!ref && _MEDIA_VIDEO_EXT.has((ref.name.split(".").pop()||"").toLowerCase());
   $("poly-playback-field").style.display = isVideo ? "block" : "none";
+  $("playback-empty").style.display = isVideo ? "none" : "block";
+  $("poly-playback-pointer").style.display = isVideo ? "block" : "none";
   if (isVideo) renderPlaybackUI(poly);
   $("poly-webcam-field").style.display = isWebcam ? "flex" : "none";
   $("poly-webcam-hint").style.display = isWebcam ? "block" : "none";
@@ -3138,6 +3290,20 @@ function renderShapeList(){
       };
       box.appendChild(el);
     });
+    // Never land on an empty inspector (20). Deliberately inside the
+    // signature check, so this fires when the SHAPE LIST changes — opening
+    // a canvas, or deleting whatever was selected — and not when you click
+    // bare canvas to deselect on purpose, which would otherwise snap the
+    // selection straight back and make deselecting impossible.
+    // Re-entrant otherwise (renderPolyInspector calls this function), hence
+    // the deferred follow-up rather than a direct call.
+    if (!selectedPolyId && polys.length){
+      selectedPolyId = polys[0].id;
+      setDrawerOpen("shapesettings", true);
+      requestAnimationFrame(() => {
+        renderPolyInspector(); updatePolyControlsGate(); paintCanvasEditor();
+      });
+    }
   }
   box.querySelectorAll(".item").forEach(el => el.classList.toggle("active", el.dataset.id === selectedPolyId));
 }
@@ -4405,6 +4571,57 @@ function openModal(id){ $(id).classList.add("open"); }
 function closeModal(id){ $(id).classList.remove("open"); }
 $("gen-open").onclick = () => openModal("modal-generate");
 $("gen-close").onclick = () => closeModal("modal-generate");
+// About (25). Deliberately a tiny renderer rather than a markdown library:
+// about.md is a handful of headings, paragraphs, bullets and links, and
+// pulling in a parser for that would cost more than it's worth. Anything it
+// doesn't understand still shows as readable text.
+function renderMiniMarkdown(md){
+  const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const inline = s => esc(s)
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+             '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g,
+             '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
+    .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+  const out = [];
+  let inList = false;
+  for (const raw of md.split("\n")){
+    const line = raw.trimEnd();
+    const bullet = /^\s*[-*]\s+(.*)$/.exec(line);
+    if (bullet){
+      if (!inList){ out.push("<ul style='margin:6px 0 6px 18px;padding:0'>"); inList = true; }
+      out.push("<li>" + inline(bullet[1]) + "</li>");
+      continue;
+    }
+    if (inList){ out.push("</ul>"); inList = false; }
+    const h = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (h){
+      const lvl = Math.min(4, h[1].length + 1);
+      out.push(`<h${lvl} style="margin:10px 0 4px">` + inline(h[2]) + `</h${lvl}>`);
+    } else if (!line){
+      out.push("");
+    } else {
+      out.push("<p style='margin:6px 0'>" + inline(line) + "</p>");
+    }
+  }
+  if (inList) out.push("</ul>");
+  return out.join("\n");
+}
+$("about-open").onclick = async () => {
+  openModal("modal-about");
+  try {
+    const r = await fetch("/about");
+    const d = await r.json();
+    $("about-body").innerHTML = renderMiniMarkdown(d.markdown || "");
+    $("about-version").textContent = d.version ? "version " + d.version : "";
+  } catch (e) {
+    $("about-body").innerHTML =
+      '<p><a href="https://github.com/edmonkey-nz/lightsaber" target="_blank" rel="noopener">github.com/edmonkey-nz/lightsaber</a></p>';
+    $("about-version").textContent = "";
+  }
+};
+$("about-close").onclick = () => closeModal("modal-about");
+
 $("settings-open").onclick = () => { openModal("modal-settings"); renderMediaRootsList(); };
 $("settings-close").onclick = () => closeModal("modal-settings");
 $("diag-enabled-toggle").onchange = () => {

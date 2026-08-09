@@ -402,18 +402,33 @@ class CompositeRenderer:
         self._enqueue(lambda: self.canvases.delete(name))
 
     # polygon editing (queued) -------------------------------------------
+    def default_half_height(self, target_aspect: float = 16 / 9) -> float:
+        """Half-height, in canvas [-1,1] units, of a new quad that should
+        LOOK `target_aspect` wide once drawn (18).
+
+        The canvas is [-1,1] on both axes but renders into the project's own
+        pixel rect, so normalized units are not square on screen: a quad of
+        half-width hw and half-height hh appears with aspect
+        (hw/hh) * (project_w/project_h). Solving that for hw=0.5 gives the
+        expression below.
+
+        The previous formula was `0.5 / aspect`, which is this inverted —
+        it multiplied the project's distortion instead of cancelling it, so
+        a new shape on a 1920x1080 project came out 3.16:1 rather than 16:9.
+        That's the "very stretched" default; text and media were worst
+        because their content has a definite shape of its own to disagree
+        with.
+        """
+        if self.current_project is None or not self.current_project.height:
+            return 0.5 * (1.0 / target_aspect)
+        aspect = self.current_project.width / self.current_project.height
+        return 0.5 * aspect / max(0.01, target_aspect)
+
     def add_polygon(self, scene: str | None = None):
         def apply():
             poly = PolygonSpec(scene=scene, label=scene or "")
-            # Default quad matches the PROJECT's own aspect ratio (1, not
-            # DEFAULT_CORNERS' hardcoded 16:9) — spans the same half-width
-            # (1.0 of the [-1,1] canvas) DEFAULT_CORNERS always did, just
-            # with a height that keeps it looking proportionate whatever
-            # resolution this project is set to (see set_project_resolution)
-            # instead of a fixed shape regardless of it.
             if self.current_project is not None and self.current_project.height:
-                aspect = self.current_project.width / self.current_project.height
-                half_h = 0.5 / aspect
+                half_h = self.default_half_height()
                 poly.corners = [[-0.5, half_h], [0.5, half_h], [0.5, -half_h], [-0.5, -half_h]]
             n = len(self.canvases.current.polygons)
             if n:

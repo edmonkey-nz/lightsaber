@@ -14,11 +14,11 @@ future enchancements
 14) DONE remove the words from the tools (select/hand)
 15) DONE add a video media playbook filter, eg in/out points, playback(loop,ping-pong,once)
 17) DONE simplify readme and move other stuff into technical.md
-18) review appraoch of using project resolution for new shapes or inserted shapes, very stretched - looks terrible for text, media etc.for media it should use the media's ratio. for text maybe 1:1?
-19) allow poly/shape points to extend past the canvas boundaries if possible, so can drag closer shape to edge, as currenlty unable to move a point past the bounds, so can't move a distorted shape right to the edge of the canvas.
-20) if no shape is selected , choose the first shape in the list, and show the 'shape settings' pane open
-21) move the 'media' playback, in/out , trim etc to its own pane, (from the 'shape settings' pane) and have a button for this in the last column
-22)  move the 'clip shape' options etc to its own pane, (from the 'shape settings' pane) and have a button for this in the last column titled 'Mask/clipping', and change button label from 'warp' to 'distort'.
-23) reduce width of 'shapes list' column by 30%
-24) move the last column "shape settings, colourize, etc" after the 'shapes list' column, and replace words with icons (with tooltips for the words tho), and make this quite narrow, just wider than the columns and wrap into the left side, so its visually tied to the settings for each of the new icons.
-25) add an 'about.md' file and a new modal with a '?' icon in the header after the settings, fill this file with a very short explaination and link back to the github repo.
+18) DONE - review appraoch of using project resolution for new shapes or inserted shapes, very stretched - looks terrible for text, media etc.for media it should use the media's ratio. for text maybe 1:1?
+19) DONE - allow poly/shape points to extend past the canvas boundaries if possible, so can drag closer shape to edge, as currenlty unable to move a point past the bounds, so can't move a distorted shape right to the edge of the canvas.
+20) DONE - if no shape is selected , choose the first shape in the list, and show the 'shape settings' pane open
+21) DONE - move the 'media' playback, in/out , trim etc to its own pane, (from the 'shape settings' pane) and have a button for this in the last column
+22) DONE - move the 'clip shape' options etc to its own pane, (from the 'shape settings' pane) and have a button for this in the last column titled 'Mask/clipping', and change button label from 'warp' to 'distort'.
+23) DONE - reduce width of 'shapes list' column by 30%
+24) DONE - move the last column "shape settings, colourize, etc" after the 'shapes list' column, and replace words with icons (with tooltips for the words tho), and make this quite narrow, just wider than the columns and wrap into the left side, so its visually tied to the settings for each of the new icons.
+25) DONE - add an 'about.md' file and a new modal with a '?' icon in the header after the settings, fill this file with a very short explaination and link back to the github repo.

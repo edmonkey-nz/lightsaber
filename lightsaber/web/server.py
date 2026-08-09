@@ -133,6 +133,24 @@ def make_app(engine, media_dir: str) -> web.Application:
     async def index(request):
         return _no_cache(web.FileResponse(os.path.join(_STATIC, "index.html")))
 
+    async def about_info(request):
+        """about.md's text plus the running version (25).
+
+        Read at request time rather than baked into index.html so the file
+        stays the single source for this blurb — editing about.md is enough,
+        with no matching markup edit to forget.
+        """
+        from .. import __version__
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "about.md")
+        try:
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+        except OSError:
+            text = "# Lightsaber\n\nhttps://github.com/edmonkey-nz/lightsaber\n"
+        return web.json_response({"markdown": text, "version": __version__})
+
     async def output_page(request):
         # A bare, chrome-less fullscreen canvas — meant to be opened as its
         # own window and dragged onto a projector or second screen. No
@@ -325,6 +343,7 @@ def make_app(engine, media_dir: str) -> web.Application:
 
     app.router.add_get("/", index)
     app.router.add_get("/output", output_page)
+    app.router.add_get("/about", about_info)
     # Unified asset inventory for the Media tab — the app's own uploaded
     # library AND every linked file this install knows about, in one list.
     #

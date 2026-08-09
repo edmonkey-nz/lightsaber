@@ -7,6 +7,49 @@ and APIs between minor versions until a 1.0 release.
 ## [Unreleased]
 - Project scaffolding for VSCode / GitHub (this changelog, `.vscode/`, `LICENSE`, `pyproject.toml`)
 
+## [0.34.0]
+
+### Canvas tab layout
+- **The drawer rail is icon-only and has moved** to sit immediately after the
+  Shapes list rather than at the far right of the row, so a handle now sits
+  directly against the pane it opens instead of being stranded on the other
+  side of a wide content panel. The words survive as tooltips and as each
+  pane's own heading. (24)
+- **Playback is its own pane** — in/out points, loop mode, speed, offset and
+  the trim scrubber, split out of Shape settings, which had grown into one
+  long scroll mixing "what is this shape" with "how does its clip play". The
+  pane says why it's empty for anything that isn't a video. (21)
+- **Mask / clipping is its own pane**, taking the clip shape, clip size and
+  the geometry-edit toggle with it — that toggle picks which geometry the
+  canvas handles edit, so it belongs beside the mask rather than beside the
+  fill type. **"Warp" is now "Distort"** throughout. (22)
+- Shapes list narrowed by 30% (200px → 140px); the width was coming straight
+  out of the canvas's own share of the row. (23)
+
+### Fixed
+- **New shapes are no longer stretched.** The default quad's half-height was
+  computed as `0.5 / aspect`, which multiplies the project's own aspect
+  distortion instead of cancelling it — a new shape on a 1920x1080 project
+  came out **3.16:1 rather than 16:9**. Text and media looked worst, having
+  a definite shape of their own to disagree with. (18)
+- **A shape now takes its content's aspect** once that content reports one:
+  a clip's true ratio, or 1:1 for text. Applied only while the quad is still
+  the untouched default — anything placed by hand is left alone. (18)
+- **Corners can be dragged past the canvas edge** (up to one canvas-width).
+  Clamping them to exactly the boundary made it impossible to push a
+  *distorted* shape flush against an edge, because the corner you need to
+  move is the one already sitting on the limit. Content is now clipped to
+  the artboard in the editor, matching what the output actually shows, while
+  outlines and handles stay visible outside it. (19)
+- The editor no longer sits on an empty inspector: opening a canvas, or
+  deleting whatever was selected, lands on the first shape with Shape
+  settings open. Clicking bare canvas to deselect still works. (20)
+
+### Added
+- **About modal** — a `?` in the header, rendering `about.md` from the repo
+  root plus the running version, so the blurb has one home rather than being
+  duplicated into markup that drifts. Served by a new `/about` route. (25)
+
 ## [0.33.1]
 
 ### Fixed — video playback performance
