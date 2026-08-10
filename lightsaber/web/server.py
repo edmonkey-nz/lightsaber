@@ -38,6 +38,7 @@ thumbnails; 404 if that canvas was never saved since this feature shipped.
         # same as resolution above — not auto-persisted per keystroke.
     {"type":"project_set_output_count", "count":2}   # resizes the outputs list — see set_output_count
     {"type":"project_set_viewports_enabled", "value":true}
+    {"type":"project_set_edge_overlap", "value":0.06}  # projector edge-blend band width
     {"type":"project_set_show_fps", "value":true}
     {"type":"project_set_fps", "value":60}
     {"type":"set_test_pattern", "index":0, "value":true}
@@ -626,6 +627,8 @@ async def _handle(engine, m: dict):
         engine.composite.set_output_config(m["index"], m["key"], m.get("value"))
     elif t == "project_set_output_count":
         engine.composite.set_output_count(m["count"])
+    elif t == "project_set_edge_overlap":
+        engine.composite.set_edge_overlap(m.get("value", 0.0))
     elif t == "project_set_viewports_enabled":
         engine.composite.set_viewports_enabled(bool(m.get("value")))
     elif t == "project_set_show_fps":

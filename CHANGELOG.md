@@ -7,6 +7,39 @@ and APIs between minor versions until a 1.0 release.
 ## [Unreleased]
 - Project scaffolding for VSCode / GitHub (this changelog, `.vscode/`, `LICENSE`, `pyproject.toml`)
 
+## [0.36.0]
+
+### Added — projector edge blending
+- **Outputs can now overlap and feather into each other** instead of only
+  butting edge to edge. `Project > Output monitors > edge overlap` sets the
+  width of the shared band as a percentage of one output's width, and each
+  output says explicitly which of its own edges (left/right/top/bottom) sit
+  in a physical overlap.
+- Ticking an edge **widens that output's viewport** by half the band, so the
+  two projectors' cones genuinely cover a shared strip that each fades
+  across. Feathering inside the authored crop instead would simply dim the
+  last few percent of each output and leave a dark stripe down the join.
+- The falloff is **smoothstep, chosen because S(t) + S(1-t) = 1** — two
+  neighbours' ramps are exact complements, so the shared band comes back to
+  full brightness. Verified by measurement, not assumption: summed light
+  across the band is flat to within 0.4% (12-stop gradient quantisation and
+  8-bit rounding). It's a `multiply` pass on the finished frame, because this
+  models light adding between two projectors, not transparency.
+- Which edges blend is **explicit, never inferred** from whether two
+  viewports happen to abut — projectors don't always sit edge to edge, and
+  guessing wrong fades content to black against nothing.
+- The editor and Output Preview show the overlap as a **shaded guide band**
+  over the existing crop guides rather than the real ramp; the editor shows
+  the whole uncropped canvas, so drawing the actual falloff there would dim
+  a stripe across the middle of what you're composing. The output windows
+  themselves render the real blend.
+- Defaults to 0 (no blending, hard cuts), so every existing project is
+  unchanged. The field only appears once display viewports are on, since
+  duplicate feeds have no seam to blend.
+- The data model mirrors `renderhost`'s `OutputSpec.left_overlap` /
+  `right_overlap`, so a project configured here carries over to the render
+  host unchanged (ARCHITECTURE.md §5).
+
 ## [0.35.0]
 
 ### Fixed — shapes spanning two projectors (40)

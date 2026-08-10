@@ -84,12 +84,63 @@ if (isPreview){
 // sitting on them from before this existed. duplicate_of resolves to
 // ANOTHER output's viewport (not this one's own) — flip/keystone above
 // stay independent regardless, only the crop rect is shared.
-const filters = { flipX: false, flipY: false, keystoneH: 0, keystoneV: 0, viewport: null };
-function resolveViewport(outputs, index){
+const filters = { flipX: false, flipY: false, keystoneH: 0, keystoneV: 0, viewport: null,
+                  blend: null };
+// Edge blending. `edge_overlap` is the width of the physical band two
+// neighbouring projectors both light, as a fraction of ONE output's width;
+// each of the two extends half that band past the nominal seam, so together
+// they cover a strip each fades across. Extending the VIEWPORT (rather than
+// feathering inside the authored crop) is what makes this correct: feathering
+// inside would just dim the last few percent of each output and leave a dark
+// stripe down the join.
+//
+// Which edges extend is explicit per output (overlap_left/right/top/bottom),
+// never inferred from whether two viewports happen to abut — projectors don't
+// always sit edge to edge, and guessing wrong fades content to black against
+// nothing.
+function resolveViewport(outputs, index, edgeOverlap){
   let cfg = outputs[index], guard = 0;
   while (cfg && cfg.duplicate_of != null && guard++ < 8) cfg = outputs[cfg.duplicate_of];
   if (!cfg) return null;
-  return { x: cfg.viewport_x ?? 0, y: cfg.viewport_y ?? 0, w: cfg.viewport_w ?? 1, h: cfg.viewport_h ?? 1 };
+  const x = cfg.viewport_x ?? 0, y = cfg.viewport_y ?? 0;
+  const w = cfg.viewport_w ?? 1, h = cfg.viewport_h ?? 1;
+  const f = Math.max(0, Math.min(0.5, edgeOverlap || 0));
+  if (!f) return {x, y, w, h};
+  // Half-bands, computed from the AUTHORED size so extending one edge can't
+  // feed back into the other's width.
+  const hx = (f * w) / 2, hy = (f * h) / 2;
+  const L = !!cfg.overlap_left, R = !!cfg.overlap_right;
+  const T = !!cfg.overlap_top,  B = !!cfg.overlap_bottom;
+  return {
+    x: x - (L ? hx : 0),
+    y: y - (T ? hy : 0),
+    w: w + (L ? hx : 0) + (R ? hx : 0),
+    h: h + (T ? hy : 0) + (B ? hy : 0),
+  };
+}
+// The feather bands, expressed as a fraction of the EXPANDED viewport, so
+// they can be turned into device pixels against the letterboxed content rect.
+function resolveBlend(outputs, index, edgeOverlap){
+  let cfg = outputs[index], guard = 0;
+  while (cfg && cfg.duplicate_of != null && guard++ < 8) cfg = outputs[cfg.duplicate_of];
+  const f = Math.max(0, Math.min(0.5, edgeOverlap || 0));
+  if (!cfg || !f) return null;
+  const L = !!cfg.overlap_left, R = !!cfg.overlap_right;
+  const T = !!cfg.overlap_top,  B = !!cfg.overlap_bottom;
+  if (!L && !R && !T && !B) return null;
+  const w = cfg.viewport_w ?? 1, h = cfg.viewport_h ?? 1;
+  const hx = (f * w) / 2, hy = (f * h) / 2;
+  const w2 = w + (L ? hx : 0) + (R ? hx : 0);
+  const h2 = h + (T ? hy : 0) + (B ? hy : 0);
+  // A full band is 2 half-bands wide: this output's extension plus the same
+  // distance back inside its own nominal area, which is what its neighbour
+  // is extending across.
+  return {
+    left:   L ? (2 * hx) / w2 : 0,
+    right:  R ? (2 * hx) / w2 : 0,
+    top:    T ? (2 * hy) / h2 : 0,
+    bottom: B ? (2 * hy) / h2 : 0,
+  };
 }
 function applyOutputFilters(state){
   const outputs = (state && state.outputs) || [];
@@ -99,7 +150,56 @@ function applyOutputFilters(state){
   filters.flipY = !!cfg.flip_y;
   filters.keystoneH = cfg.keystone_h ?? 0;
   filters.keystoneV = cfg.keystone_v ?? 0;
-  filters.viewport = (state && state.viewports_enabled) ? resolveViewport(outputs, idx) : null;
+  const vpOn = !!(state && state.viewports_enabled);
+  const ov = vpOn ? (state.edge_overlap || 0) : 0;
+  filters.viewport = vpOn ? resolveViewport(outputs, idx, ov) : null;
+  filters.blend = vpOn ? resolveBlend(outputs, idx, ov) : null;
+}
+// Multiplies the finished frame down to black across each feathered edge.
+// `multiply` rather than an alpha ramp because this models light, not
+// transparency: two projectors overlapping add their output, so each has to
+// fall off in brightness and the pair sum back to one.
+//
+// smoothstep is used for the falloff precisely because S(t) + S(1-t) = 1 —
+// the two neighbours' ramps are exact complements, so the shared band comes
+// out at full brightness with no seam. (A linear ramp is also complementary,
+// but lands a visible crease at each end of the band.)
+const BLEND_STOPS = 12;
+function smoothstep(t){ return t * t * (3 - 2 * t); }
+function applyEdgeBlend(ctx, w, h, blend, cx0, cy0, halfW, halfH){
+  if (!blend) return;
+  const left = cx0 - halfW, right = cx0 + halfW;
+  const top = cy0 - halfH, bottom = cy0 + halfH;
+  const contentW = halfW * 2, contentH = halfH * 2;
+  // Each pass multiplies, so several edges compose without extra work.
+  const bands = [
+    blend.left   ? {horiz: true,  from: left,   to: left + blend.left * contentW} : null,
+    blend.right  ? {horiz: true,  from: right,  to: right - blend.right * contentW} : null,
+    blend.top    ? {horiz: false, from: top,    to: top + blend.top * contentH} : null,
+    blend.bottom ? {horiz: false, from: bottom, to: bottom - blend.bottom * contentH} : null,
+  ].filter(Boolean);
+  if (!bands.length) return;
+  ctx.save();
+  ctx.globalCompositeOperation = "multiply";
+  ctx.globalAlpha = 1;
+  ctx.filter = "none";
+  for (const b of bands){
+    // Gradient runs from the outer edge (black) inward to full brightness.
+    const g = b.horiz
+      ? ctx.createLinearGradient(b.from, 0, b.to, 0)
+      : ctx.createLinearGradient(0, b.from, 0, b.to);
+    for (let i = 0; i <= BLEND_STOPS; i++){
+      const t = i / BLEND_STOPS;
+      const v = Math.round(255 * smoothstep(t));
+      g.addColorStop(t, `rgb(${v},${v},${v})`);
+    }
+    // White past the band's inner end so the rest of the frame is untouched
+    // by the multiply.
+    g.addColorStop(1, "rgb(255,255,255)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+  }
+  ctx.restore();
 }
 // Remaps a normalized [-1,1] (Y-up) canvas coordinate so the viewport rect
 // fills the whole [-1,1] range instead of the full canvas — everything
@@ -1120,6 +1220,11 @@ function paintComposite(layers, resW, resH, masterGain, active, testPattern, sho
   cx.globalAlpha = gain;
   cx.drawImage(scratch, 0, 0);
   cx.restore();
+  // Edge blend before flip: the falloff is authored in canvas space, and
+  // flip is a physical-mount correction applied to the finished frame, so a
+  // flipped projector's blend has to flip with it to land on the right
+  // physical edge.
+  applyEdgeBlend(cx, w, h, filters.blend, cx0, cy0, halfW, halfH);
   if (filters.flipX || filters.flipY) applyFlip(cx, cv, filters.flipX, filters.flipY);
   if (showFps) drawFpsOverlay(cx, updateFpsCounter());
 }

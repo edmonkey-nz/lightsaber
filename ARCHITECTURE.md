@@ -544,6 +544,25 @@ apply.
   the render host ever reuses the same state-broadcast pattern for its own
   preview link (§8's prototype already does).
 
+- **Edge blending now exists in topology A too, and its config is
+  deliberately the same shape as §5's.** `OutputMonitorConfig` gained
+  `overlap_left/right/top/bottom` (booleans, which of this output's edges sit
+  in a physical overlap) and `ProjectSpec` gained `edge_overlap` (band width
+  as a fraction of one output's width) — the same split as renderhost's
+  `OutputSpec.left_overlap`/`right_overlap` plus `compute_overlap_layout`'s
+  single `overlap_frac`, so a project configured on the laptop carries over
+  rather than being re-entered. Two details worth keeping when the GL version
+  is built: ticking an edge **widens that output's viewport** by half the
+  band (feathering inside the authored crop leaves a dark stripe at the join
+  instead of a seamless one), and the ramp is **smoothstep specifically
+  because S(t) + S(1-t) = 1**, which is what makes two neighbours' ramps sum
+  back to full brightness — measured flat to within 0.4% in the Canvas2D
+  implementation. Which edges blend is explicit per output rather than
+  inferred from abutting viewports, since projectors are not always adjacent.
+  §5's gamma/black-lift stage is NOT implemented here; the browser path stops
+  at the geometric ramp, and those belong with real projectors to tune
+  against.
+
 - **Measured: the topology-A media path caps out around 4–6 distorted HD
   layers, and the limit is compositing, not decode or bitrate.** Benchmarked
   on a Ryzen 5 5500U with GPU-rasterized Canvas2D (AMD radeonsi via ANGLE),

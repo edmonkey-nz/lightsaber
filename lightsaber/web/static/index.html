@@ -508,6 +508,9 @@
           <label style="display:flex;align-items:center;gap:6px;font-size:13px">
             <input type="checkbox" id="viewports-enabled"> display viewports</label>
           <div class="hint">off (default): every output shows the full canvas, unconditionally — a duplicate feed, same as always. On: each output shows only its own "content" crop below instead — for one wide canvas sliced across several projectors, not the same image repeated on each.</div>
+          <div class="field" id="edge-overlap-field"><label>edge overlap</label>
+            <input type="number" id="edge-overlap" min="0" max="50" step="0.5" style="max-width:70px"> %</div>
+          <div class="hint" id="edge-overlap-hint">for projectors whose images physically overlap. This is the width of the shared band as a percentage of one output's width; each neighbour extends half of it past the seam and fades across, so the two sum back to full brightness. 0 = hard-cut edges. Tick which edges of each output actually overlap below — nothing is assumed from the crops, since projectors don't always sit edge to edge.</div>
           <label style="display:flex;align-items:center;gap:6px;font-size:13px">
             <input type="checkbox" id="show-fps"> show output FPS</label>
           <div class="hint">a small counter in the corner of every output window — the actual end-to-end delivery rate reaching that window, not a claimed/target rate.</div>
@@ -2721,6 +2724,7 @@ function drawOutputCropGuides(ctx, rect){
   ctx.strokeStyle = "rgba(255,255,255,.34)";
   ctx.font = "11px ui-monospace, \"SF Mono\", Menlo, Consolas, monospace";
   ctx.textBaseline = "top";
+  const f = Math.max(0, Math.min(0.5, s.edge_overlap || 0));
   outs.forEach((o, i) => {
     // Viewport fractions are top-left origin over the whole canvas; the
     // editor works in [-1,1] with y up, hence the flip on y.
@@ -2728,6 +2732,27 @@ function drawOutputCropGuides(ctx, rect){
     const vw = o.viewport_w ?? 1, vh = o.viewport_h ?? 1;
     const [x0, y0] = normToPx(vx * 2 - 1, 1 - vy * 2, rect);
     const [x1, y1] = normToPx((vx + vw) * 2 - 1, 1 - (vy + vh) * 2, rect);
+    // Overlap bands (edge blending) — shown as a shaded strip straddling
+    // the seam rather than as the real alpha ramp: the editor shows the
+    // whole uncropped canvas, so drawing the actual falloff here would dim
+    // a band across the middle of the thing you're composing.
+    if (f && o.duplicate_of == null){
+      const bw = f * vw, bh = f * vh;         // full band, canvas fractions
+      const band = (fx0, fy0, fx1, fy1) => {
+        const [ax, ay] = normToPx(fx0 * 2 - 1, 1 - fy0 * 2, rect);
+        const [bx, by] = normToPx(fx1 * 2 - 1, 1 - fy1 * 2, rect);
+        ctx.save();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(51,224,208,.10)";
+        ctx.fillRect(Math.min(ax, bx), Math.min(ay, by),
+                     Math.abs(bx - ax), Math.abs(by - ay));
+        ctx.restore();
+      };
+      if (o.overlap_left)   band(vx - bw / 2, vy, vx + bw / 2, vy + vh);
+      if (o.overlap_right)  band(vx + vw - bw / 2, vy, vx + vw + bw / 2, vy + vh);
+      if (o.overlap_top)    band(vx, vy - bh / 2, vx + vw, vy + bh / 2);
+      if (o.overlap_bottom) band(vx, vy + vh - bh / 2, vx + vw, vy + vh + bh / 2);
+    }
     ctx.strokeRect(Math.min(x0, x1), Math.min(y0, y1),
                    Math.abs(x1 - x0), Math.abs(y1 - y0));
     const label = String(i + 1);
@@ -3830,6 +3855,17 @@ function renderOutputMonitorRows(outs){
         <input type="number" class="om-vp-y" min="0" max="100" step="1" style="max-width:56px" title="top edge">
         <input type="number" class="om-vp-w" min="1" max="100" step="1" style="max-width:56px" title="width">
         <input type="number" class="om-vp-h" min="1" max="100" step="1" style="max-width:56px" title="height">
+      </div>
+      <div class="row om-overlap-row" style="gap:10px;align-items:center;flex-wrap:wrap">
+        <label>blend edge</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px" title="This output's LEFT edge overlaps the projector to its left">
+          <input type="checkbox" class="om-ov-left"> left</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px" title="This output's RIGHT edge overlaps the projector to its right">
+          <input type="checkbox" class="om-ov-right"> right</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px" title="This output's TOP edge overlaps the projector above it">
+          <input type="checkbox" class="om-ov-top"> top</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px" title="This output's BOTTOM edge overlaps the projector below it">
+          <input type="checkbox" class="om-ov-bottom"> bottom</label>
       </div>`;
     row.querySelector(".om-flip-x").onchange = e =>
       send({type:"project_set_output", index:i, key:"flip_x", value:e.target.checked});
@@ -3846,6 +3882,10 @@ function renderOutputMonitorRows(outs){
     ["x","y","w","h"].forEach(axis => {
       row.querySelector(`.om-vp-${axis}`).addEventListener("change", e =>
         send({type:"project_set_output", index:i, key:`viewport_${axis}`, value:+e.target.value/100}));
+    });
+    ["left","right","top","bottom"].forEach(edge => {
+      row.querySelector(`.om-ov-${edge}`).onchange = e =>
+        send({type:"project_set_output", index:i, key:`overlap_${edge}`, value:e.target.checked});
     });
     list.appendChild(row);
   });
@@ -3869,6 +3909,14 @@ function syncOutputMonitorRows(outs, tp){
     if (document.activeElement !== vy) vy.value = Math.round((cfg.viewport_y ?? 0) * 100);
     if (document.activeElement !== vw) vw.value = Math.round((cfg.viewport_w ?? 1) * 100);
     if (document.activeElement !== vh) vh.value = Math.round((cfg.viewport_h ?? 1) * 100);
+    ["left","right","top","bottom"].forEach(edge => {
+      const el = row.querySelector(`.om-ov-${edge}`);
+      if (document.activeElement !== el) el.checked = !!cfg[`overlap_${edge}`];
+    });
+    // Blending is a viewport-era concept: with viewports off every output
+    // shows the whole canvas, so there is no seam to blend across.
+    row.querySelector(".om-overlap-row").style.display =
+      (_lastState && _lastState.viewports_enabled && cfg.duplicate_of == null) ? "flex" : "none";
   });
 }
 function applyOutputConfigs(s){
@@ -3879,6 +3927,13 @@ function applyOutputConfigs(s){
   if (document.activeElement !== $("output-count")) $("output-count").value = outs.length;
   if (document.activeElement !== $("viewports-enabled")) $("viewports-enabled").checked = !!s.viewports_enabled;
   if (document.activeElement !== $("show-fps")) $("show-fps").checked = !!s.show_fps;
+  if (document.activeElement !== $("edge-overlap"))
+    $("edge-overlap").value = +(((s.edge_overlap || 0) * 100).toFixed(1));
+  // Only meaningful once outputs are slices of one canvas rather than
+  // duplicates of it.
+  const showBlend = !!s.viewports_enabled;
+  $("edge-overlap-field").style.display = showBlend ? "flex" : "none";
+  $("edge-overlap-hint").style.display = showBlend ? "block" : "none";
   renderOutputLaunchButtons(outs.length || 2);
   renderOutputPreview(outs.length || 2, s.project_width || 1920, s.project_height || 1080);
 }
@@ -3887,6 +3942,11 @@ $("output-count").addEventListener("change", () => {
   send({type:"project_set_output_count", count:n});
 });
 $("viewports-enabled").onchange = () => send({type:"project_set_viewports_enabled", value:$("viewports-enabled").checked});
+$("edge-overlap").addEventListener("change", () => {
+  const v = Math.max(0, Math.min(50, parseFloat($("edge-overlap").value) || 0));
+  $("edge-overlap").value = v;
+  send({type:"project_set_edge_overlap", value: v / 100});
+});
 $("show-fps").onchange = () => send({type:"project_set_show_fps", value:$("show-fps").checked});
 
 // Output preview (4) — a grid of <iframe src="/output?...&preview=1"> tiles,

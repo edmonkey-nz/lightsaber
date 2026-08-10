@@ -336,6 +336,8 @@ class CompositeRenderer:
                 cfg.viewport_w = max(0.01, min(1.0, float(value)))
             elif key == "viewport_h":
                 cfg.viewport_h = max(0.01, min(1.0, float(value)))
+            elif key in ("overlap_left", "overlap_right", "overlap_top", "overlap_bottom"):
+                setattr(cfg, key, bool(value))
             elif key == "duplicate_of":
                 if value is None:
                     cfg.duplicate_of = None
@@ -371,6 +373,17 @@ class CompositeRenderer:
             if self.current_project is None:
                 return
             self.current_project.viewports_enabled = bool(value)
+        self._enqueue(apply)
+
+    def set_edge_overlap(self, value: float):
+        """Width of the physical overlap band between adjacent projectors,
+        as a fraction of one output's width. Capped at 0.5: past that the
+        band is wider than half an output and the two ramps stop being
+        complementary."""
+        def apply():
+            if self.current_project is None:
+                return
+            self.current_project.edge_overlap = max(0.0, min(0.5, float(value or 0.0)))
         self._enqueue(apply)
 
     def set_show_fps(self, value: bool):
@@ -1197,6 +1210,7 @@ class CompositeRenderer:
             "outputs": [o.to_dict() for o in self.current_project.outputs] if self.current_project
                        else [OutputMonitorConfig().to_dict(), OutputMonitorConfig().to_dict()],
             "viewports_enabled": self.current_project.viewports_enabled if self.current_project else False,
+            "edge_overlap": self.current_project.edge_overlap if self.current_project else 0.0,
             "show_fps": self.current_project.show_fps if self.current_project else False,
             # The live loop rate, not the saved one — they only differ in the
             # window between changing the field and hitting Save, which is

@@ -67,13 +67,34 @@ class OutputMonitorConfig:
     # needs its own flip) — this only ever affects which canvas region is
     # shown, never the physical-orientation fields above.
     duplicate_of: int | None = None
+    # Edge blending. Which of this output's own edges sit in a physical
+    # overlap with a neighbouring projector, and so need feathering.
+    #
+    # Explicit per edge rather than inferred from whether two viewports
+    # happen to touch: projectors don't always abut (a deliberately
+    # separated pair of surfaces is a normal rig), and guessing wrong
+    # silently fades content to black at an edge nothing overlaps.
+    #
+    # The AMOUNT is one project-wide number (ProjectSpec.edge_overlap),
+    # not per edge — one figure to set against the physical rig at load-in.
+    # Ticking an edge widens this output's viewport outward by half the
+    # overlap band, so the two neighbours' cones cover a shared strip that
+    # each fades across; see ARCHITECTURE.md §5 and renderhost's
+    # OutputSpec.left_overlap/right_overlap, whose model this mirrors so a
+    # project carries over to the render host unchanged.
+    overlap_left: bool = False
+    overlap_right: bool = False
+    overlap_top: bool = False
+    overlap_bottom: bool = False
 
     def to_dict(self) -> dict:
         return {"flip_x": self.flip_x, "flip_y": self.flip_y,
                 "keystone_h": self.keystone_h, "keystone_v": self.keystone_v,
                 "viewport_x": self.viewport_x, "viewport_y": self.viewport_y,
                 "viewport_w": self.viewport_w, "viewport_h": self.viewport_h,
-                "duplicate_of": self.duplicate_of}
+                "duplicate_of": self.duplicate_of,
+                "overlap_left": self.overlap_left, "overlap_right": self.overlap_right,
+                "overlap_top": self.overlap_top, "overlap_bottom": self.overlap_bottom}
 
     @staticmethod
     def from_dict(d: dict) -> "OutputMonitorConfig":
@@ -87,6 +108,10 @@ class OutputMonitorConfig:
             viewport_w=max(0.01, min(1.0, float(d.get("viewport_w", 1.0)))),
             viewport_h=max(0.01, min(1.0, float(d.get("viewport_h", 1.0)))),
             duplicate_of=(int(d["duplicate_of"]) if d.get("duplicate_of") is not None else None),
+            overlap_left=bool(d.get("overlap_left", False)),
+            overlap_right=bool(d.get("overlap_right", False)),
+            overlap_top=bool(d.get("overlap_top", False)),
+            overlap_bottom=bool(d.get("overlap_bottom", False)),
         )
 
 
@@ -121,6 +146,16 @@ class ProjectSpec:
     # it now has viewport fields sitting there unused. Flip it on to start
     # treating each output as a slice of one wide canvas instead.
     viewports_enabled: bool = False
+    # Width of the physical overlap band between two adjacent projectors,
+    # as a fraction of ONE output's width (or height, on a horizontal
+    # seam). Project-wide rather than per output: it's a property of how
+    # the rig is physically set up, and one number is what you tune against
+    # the wall at load-in.
+    #
+    # Which edges actually use it is per output and explicit — see
+    # OutputMonitorConfig.overlap_*. 0.0 means no blending anywhere, which
+    # is the default, so every existing project keeps its hard-cut edges.
+    edge_overlap: float = 0.0
     # Small FPS readout drawn in the corner of each output window — a
     # calibration/diagnostic aid (Project tab), not show content, so it
     # lives right next to viewports_enabled rather than on
@@ -148,7 +183,8 @@ class ProjectSpec:
         return {"name": self.name, "active_canvas": self.active_canvas,
                 "width": self.width, "height": self.height,
                 "outputs": [o.to_dict() for o in self.outputs],
-                "viewports_enabled": self.viewports_enabled, "show_fps": self.show_fps,
+                "viewports_enabled": self.viewports_enabled,
+                "edge_overlap": self.edge_overlap, "show_fps": self.show_fps,
                 "fps": self.fps, "notes": self.notes, "schema": self.schema}
 
     @staticmethod
@@ -163,6 +199,7 @@ class ProjectSpec:
             height=int(d.get("height", 1080)),
             outputs=outputs,
             viewports_enabled=bool(d.get("viewports_enabled", False)),
+            edge_overlap=max(0.0, min(0.5, float(d.get("edge_overlap", 0.0) or 0.0))),
             show_fps=bool(d.get("show_fps", False)),
             fps=max(1, min(120, int(d.get("fps", 20)))),
             notes=str(d.get("notes", "")),

@@ -9,4 +9,4 @@ framerate with no further API calls. Projects (see projects.py) are the
 base-level container, each owning its own canvases and sequence.
 """
 
-__version__ = "0.35.0"
+__version__ = "0.36.0"
