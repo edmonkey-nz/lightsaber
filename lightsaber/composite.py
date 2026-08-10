@@ -91,7 +91,12 @@ class CompositeRenderer:
         self._scene_loader = scene_loader
         self.projects = projects
         self.current_project: ProjectSpec | None = None
-        self.fps = fps
+        # Same 1..120 clamp the other two writers use (set_project_fps and
+        # the project-load path). This was the one way in that skipped it, so
+        # `--fps 240` really did drive the render loop AND server.py's
+        # broadcaster at 240Hz — well past any display's refresh, so the
+        # extra frames were pure cost with nothing to show for them.
+        self.fps = max(1, min(120, int(fps)))
 
         self._running = False
         self._thread = None

@@ -219,18 +219,29 @@ def make_app(engine, media_dir: str) -> web.Application:
                     payload_std = json.dumps({"type": "state", "state": state, "composite": composite_std,
                                               "renderhost_connected": renderhost_connected})
                     payload_hq = None   # built lazily, only if an hq client is actually connected
-                    for ws, meta in list(app["clients"].items()):
+                    if any(meta.get("hq") for meta in app["clients"].values()):
+                        composite_hq = engine.composite_preview(max_points=8000, stroke_thin=400)
+                        payload_hq = json.dumps({"type": "state", "state": state, "composite": composite_hq,
+                                                 "renderhost_connected": renderhost_connected})
+
+                    # Sent concurrently, not one-after-another. These were
+                    # sequential awaits, so a single slow client held up
+                    # delivery to every other one: with two output windows,
+                    # whichever was busier decided when the other got its
+                    # frame, and the other then received several at once when
+                    # the backlog cleared. That burstiness is what makes a
+                    # frame-rate meter read absurdly high while the picture
+                    # stutters (see output.html's updateFpsCounter).
+                    async def _send(ws, meta):
                         try:
-                            if meta.get("hq"):
-                                if payload_hq is None:
-                                    composite_hq = engine.composite_preview(max_points=8000, stroke_thin=400)
-                                    payload_hq = json.dumps({"type": "state", "state": state, "composite": composite_hq,
-                                                             "renderhost_connected": renderhost_connected})
-                                await ws.send_str(payload_hq)
-                            else:
-                                await ws.send_str(payload_std)
+                            await ws.send_str(payload_hq if meta.get("hq") else payload_std)
                         except Exception:
                             app["clients"].pop(ws, None)
+
+                    targets = list(app["clients"].items())
+                    if targets:
+                        await asyncio.gather(*(_send(ws, meta) for ws, meta in targets),
+                                             return_exceptions=True)
                 await asyncio.sleep(period)
         except asyncio.CancelledError:
             pass
@@ -334,6 +345,47 @@ def make_app(engine, media_dir: str) -> web.Application:
     async def media_roots_remove(request):
         ok = media_roots.remove_root(request.match_info["name"])
         return web.json_response({"ok": ok}, status=200 if ok else 404)
+
+    async def fs_dirs(request):
+        """Directory listing for the "choose a media folder" picker (32).
+
+        A browser cannot hand us an absolute path: the native folder dialog
+        (showDirectoryPicker / webkitdirectory) deliberately withholds one,
+        because exposing the user's filesystem layout to a web page is the
+        thing the sandbox exists to prevent. Since the server IS the machine
+        holding the media, the picker browses server-side instead.
+
+        Directories only — never files — and this grants no new access: the
+        existing POST /media/roots already accepts any absolute directory,
+        so anything reachable here was already registrable blind. Note that
+        both are exposed on whatever --host binds to (0.0.0.0 by default).
+        """
+        raw = request.query.get("path", "") or os.path.expanduser("~")
+        path = os.path.realpath(raw)
+        if not os.path.isdir(path):
+            return web.json_response({"error": f"not a directory: {path}"}, status=400)
+        show_hidden = request.query.get("hidden") == "1"
+        dirs = []
+        try:
+            with os.scandir(path) as it:
+                for e in it:
+                    if not e.is_dir(follow_symlinks=True):
+                        continue
+                    if not show_hidden and e.name.startswith("."):
+                        continue
+                    dirs.append(e.name)
+        except PermissionError:
+            return web.json_response({"error": f"permission denied: {path}"}, status=403)
+        except OSError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        dirs.sort(key=str.lower)
+        parent = os.path.dirname(path)
+        return web.json_response({
+            "path": path,
+            "parent": None if parent == path else parent,
+            "dirs": dirs,
+            "home": os.path.expanduser("~"),
+        })
 
     async def media_browse(request):
         result = media_roots.browse(request.query.get("root", ""),
@@ -493,6 +545,7 @@ def make_app(engine, media_dir: str) -> web.Application:
     app.router.add_post("/media/roots", media_roots_add)
     app.router.add_delete("/media/roots/{name}", media_roots_remove)
     app.router.add_get("/media/browse", media_browse)
+    app.router.add_get("/fs/dirs", fs_dirs)
     app.router.add_get("/media-link/{root}/{tail:.*}", media_link_file)
     app.router.add_get("/ws", ws_handler)
     app.router.add_get("/media/list", media_list)

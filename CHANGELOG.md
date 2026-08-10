@@ -7,6 +7,116 @@ and APIs between minor versions until a 1.0 release.
 ## [Unreleased]
 - Project scaffolding for VSCode / GitHub (this changelog, `.vscode/`, `LICENSE`, `pyproject.toml`)
 
+## [0.35.0]
+
+### Fixed — shapes spanning two projectors (40)
+- **`applyKeystone` clamped coordinates to [-1,1].** Clamping a *coordinate*
+  crops nothing; it collapses off-screen geometry onto the edge, corrupting
+  the shape it belongs to. Worst on the parallelogram fast path in
+  `drawMediaWarped`, where the destination affine comes from just three
+  corners — clamp one and the whole texture is squeezed into the visible
+  area. A text shape crossing the seam therefore drew the **entire word on
+  both outputs at different scales** instead of one half on each. Measured
+  before the fix: output 1 placed the quad's top-right at x=1024 (the window
+  edge) where the true value was ~1506.
+- This affected **every** shape crossing a seam, not only text — media was
+  less obvious because the 7×7 mesh path spreads the error across many
+  points rather than three. It also became much easier to hit once corners
+  were allowed past the canvas edge (19).
+
+### Canvas tab (37/38/39)
+- **Output crop guides.** A dim dashed outline plus a number marks each
+  projector's slice of the canvas, so a shape sitting across a physical join
+  is visible while composing rather than discovered on the wall. Only drawn
+  when viewports are enabled and there's more than one output.
+- **The Shapes list stopped overflowing its column.** The shared `.lib` grid
+  uses `minmax(170px, 1fr)`, wider than the 140px the column has been since
+  it was narrowed (23), so rows ran 30px past the gutter and over the rail's
+  divider — the "overlapping line". The list is one column now.
+- The rail has its own heading, so its icons sit on the same baseline as the
+  Shapes rows and the Shape settings fields instead of ~30px above them, and
+  the divider no longer runs up alongside the other columns' titles.
+- **The "Shape settings" heading no longer disappears** when nothing is
+  selected. It lived inside the fields group, which is hidden in that state,
+  so the column lost its title while its neighbour kept one; it now sits
+  outside the group with an empty-state hint, matching "Shapes".
+
+### Output frame rate (36)
+- **Painting is decoupled from delivery.** Output windows painted straight
+  out of `onmessage`, so a burst of queued messages — exactly what a busy
+  window gets when its socket backlog flushes — became a burst of
+  full-canvas repaints of near-identical frames. That worsened the stall,
+  which grew the next backlog: falling behind was self-reinforcing. Each
+  window now keeps only the newest state, paints on `requestAnimationFrame`,
+  and never faster than the project's frame rate; stale frames are dropped
+  rather than drawn.
+- **The frame-rate overlay was lying.** It was an EMA of the *instantaneous*
+  rate (`1000/dt`), which is convex and so biased upward by jitter: two
+  messages delivered 1ms apart inject 100 into the average in a single step.
+  Modelled, 10% coalesced frames made a true 33.6fps read as **141**. It read
+  highest exactly when the window was struggling, because struggling is what
+  makes delivery bursty. Now a straight count of paints in the last second.
+- **One slow client no longer holds up the others.** The broadcaster awaited
+  each client in turn, so with two output windows the busier one decided
+  when the other got its frame — and the other then received several at
+  once. Sends now go out concurrently. Measured at 60fps with two windows:
+  61.5 and 50.7 paints/s, up from 34.9 and 44.7.
+- `--fps` is clamped to 1..120 like the other two paths that set it; it was
+  the one way in that skipped the clamp, so `--fps 240` really did drive the
+  render loop and broadcaster at 240Hz.
+- Fixed a 404 on every output window: it asked for `lightsaber.svg`, which
+  doesn't exist (the file is `lightsaber.png`).
+- **Frame rate is now a dropdown, not a free number.** Since output windows
+  paint on `requestAnimationFrame`, the only rates a browser can actually
+  hit are refresh/n — on a 60Hz display 60, 30, 20, 15, 10. Asking for 50
+  silently gave 30, which is precisely the "fps isn't doing what I set"
+  confusion this removes. The list is built from the display's *measured*
+  refresh rather than assuming 60, so a 50Hz projector offers 50/25/10 and a
+  120Hz panel offers more; a refresh that divides badly (144, 165) falls
+  back to the usual rates with a note that they'll be approximate. A project
+  saved at a rate this display can't hit keeps its value as a flagged extra
+  option instead of being snapped to a neighbour on next save.
+
+### Media tab fixes
+- **Images preview again.** A still was handed to the `<video>` element,
+  which renders black — so a JPEG looked like a broken file. Stills now get
+  their own `<img>`, and the trim controls hide rather than offering an
+  in/out and a "duration unknown" that will never resolve. (30)
+- **"Upload a copy…" actually uploads.** It used to switch to the Canvas
+  tab and `focus()` a file input inside two closed accordions, which opens
+  no picker and looks like nothing happened. It now uploads from the Media
+  tab and refreshes both lists. (31)
+- **The trim bars scrub.** Pressing anywhere that isn't an in/out handle now
+  drags the playhead continuously, like any other transport bar; before, it
+  seeked once on mousedown and ignored the rest of the gesture. Cursor
+  reflects which gesture you'll get. (29)
+
+### Media folders (was "media roots")
+- Renamed and rewritten in plain language: folders on this computer that
+  Lightsaber may read from, without copying. (32)
+- **Added a folder picker.** The OS dialog can't be used for this — browsers
+  deliberately withhold absolute paths from web pages, so
+  `showDirectoryPicker`/`webkitdirectory` yield a bare folder name and no
+  way to locate it on disk. The picker browses the *server's* folders
+  instead, via a new `/fs/dirs` route (directories only). This grants no
+  access that `POST /media/roots` didn't already allow.
+- Documented why folders are per computer rather than per project: projects
+  store the short name, not the path, which is exactly what lets a project
+  move to the render host and still find its media.
+
+### Canvas
+- **Shift-drag a corner scales the whole shape** about its centre, keeping
+  any corner-pin distortion intact. (28)
+- **A new webcam shape takes the camera's native aspect** rather than a 16:9
+  guess. (26)
+- More separation between the Shapes list and the icon rail, which were
+  touching. (27)
+
+### Added
+- **Escape closes any open modal**, and clicking the dimmed backdrop does
+  too. Works off `.modal-backdrop.open`, so modals added later are covered
+  without maintaining a list. (33)
+
 ## [0.34.0]
 
 ### Canvas tab layout

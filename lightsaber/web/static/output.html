@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Lightsaber — Output</title>
-<link rel="icon" type="image/svg+xml" href="/static/lightsaber.svg">
+<link rel="icon" type="image/png" href="/static/lightsaber.png">
 <style>
   html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden;
             cursor:none}
@@ -117,7 +117,20 @@ function applyViewport(x, y, vp){
 function applyKeystone(x, y, kh, kv){
   const xk = x * (1 + kh * y);
   const yk = y * (1 + kv * xk);
-  return [Math.max(-1, Math.min(1, xk)), Math.max(-1, Math.min(1, yk))];
+  // Deliberately NOT clamped to [-1,1] (40). Clamping a COORDINATE doesn't
+  // crop anything — it collapses off-screen geometry onto the edge, which
+  // silently corrupts the shape it belongs to. Worst on the parallelogram
+  // fast path in drawMediaWarped, where the destination affine is derived
+  // from just three corners: clamp one of them and the entire texture is
+  // squeezed into the visible area. That's why a text shape spanning two
+  // projectors drew the whole word on BOTH outputs at different scales
+  // instead of one half on each.
+  //
+  // Anything outside [-1,1] is simply outside this output's slice and gets
+  // clipped by the canvas raster for free, which is the correct behaviour —
+  // and is now routine, since shape corners may legitimately sit past the
+  // canvas edge (19).
+  return [xk, yk];
 }
 
 // Reverses the WHOLE image, no reflection — the per-output-monitor "flip"
@@ -1117,15 +1130,21 @@ function paintComposite(layers, resW, resH, masterGain, active, testPattern, sho
 // flip. Measures wall-clock time between paintComposite calls, i.e. the
 // actual end-to-end delivery rate reaching THIS window (server render rate
 // + network + this browser's own paint) — not a claimed/target rate.
-let _lastFrameTime = null, _fpsEma = 0;
+// Counts paints in a rolling one-second window (36). This was an EMA of the
+// INSTANTANEOUS rate (1000/dt), which is badly biased upward by jitter:
+// 1000/dt is convex, so occasional near-zero gaps dominate the average.
+// Two websocket messages delivered back-to-back after a stall (a 1ms gap)
+// inject 100 into the EMA in one step and it decays only slowly. Modelled:
+// with 10% of frames arriving coalesced, a true 33.6 fps reads as 141.
+// That's the reverse of what a frame-rate meter is for — it read HIGHEST
+// exactly when the window was struggling, because struggling is what makes
+// delivery bursty.
+let _fpsStamps = [];
 function updateFpsCounter(){
   const now = performance.now();
-  if (_lastFrameTime !== null){
-    const dt = now - _lastFrameTime;
-    if (dt > 0) _fpsEma = _fpsEma ? _fpsEma * 0.9 + (1000 / dt) * 0.1 : 1000 / dt;
-  }
-  _lastFrameTime = now;
-  return _fpsEma;
+  _fpsStamps.push(now);
+  while (_fpsStamps.length && now - _fpsStamps[0] > 1000) _fpsStamps.shift();
+  return _fpsStamps.length;
 }
 function drawFpsOverlay(ctx, fps){
   const text = `${fps.toFixed(1)} fps`;
@@ -1146,9 +1165,36 @@ function connect(){
   ws.onopen = () => statusEl.classList.remove("show");
   ws.onclose = () => { statusEl.classList.add("show"); setTimeout(connect, 1000); };
   ws.onerror = () => ws.close();
-  ws.onmessage = e => {
-    const m = JSON.parse(e.data);
-    if (m.type !== "state") return;
+  // Paint is decoupled from delivery (36). Painting straight out of
+  // onmessage means a burst of queued messages — which is exactly what a
+  // busy window gets once the socket backlog flushes — becomes a burst of
+  // full-canvas repaints of near-identical frames. That makes the stall
+  // worse, which makes the next backlog bigger: a window that falls behind
+  // is punished for it.
+  //
+  // Instead: keep only the newest state, paint on requestAnimationFrame,
+  // and never faster than the project's own frame rate. Stale frames are
+  // dropped rather than drawn, and rAF also stops us painting faster than
+  // the display can actually show — a repaint between two refreshes is work
+  // nobody ever sees.
+  let _pending = null, _rafQueued = false, _lastPaintAt = 0;
+  function drawPending(){
+    _rafQueued = false;
+    const m = _pending;
+    if (!m) return;
+    const targetFps = Math.max(1, (m.state && m.state.project_fps) || 30);
+    const minPeriod = 1000 / targetFps;
+    const now = performance.now();
+    // 0.85 rather than 1.0: rAF lands on ~16.7ms boundaries, so demanding a
+    // full period would quantise 30fps down to 30 -> 20 (two refreshes
+    // become three). The slack lets it take the nearer refresh.
+    if (now - _lastPaintAt < minPeriod * 0.85){
+      _rafQueued = true;
+      requestAnimationFrame(drawPending);      // keep the newest, try again
+      return;
+    }
+    _pending = null;
+    _lastPaintAt = now;
     // Resolution lives on the project (ProjectSpec), not the canvas — every
     // canvas in a project's sequencer shares one output resolution.
     const active = !!(m.state && m.state.active);
@@ -1159,6 +1205,14 @@ function connect(){
                     (m.state && m.state.project_height) || 1080,
                     m.state && m.state.master_gain, active, tp,
                     !!(m.state && m.state.show_fps));
+  }
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.type !== "state") return;
+    _pending = m;                               // newest wins; older ones are dropped
+    if (_rafQueued) return;
+    _rafQueued = true;
+    requestAnimationFrame(drawPending);
   };
 }
 connect();

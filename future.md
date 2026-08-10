@@ -22,3 +22,18 @@ future enchancements
 23) DONE - reduce width of 'shapes list' column by 30%
 24) DONE - move the last column "shape settings, colourize, etc" after the 'shapes list' column, and replace words with icons (with tooltips for the words tho), and make this quite narrow, just wider than the columns and wrap into the left side, so its visually tied to the settings for each of the new icons.
 25) DONE - add an 'about.md' file and a new modal with a '?' icon in the header after the settings, fill this file with a very short explaination and link back to the github repo.
+26) done use the webcam's native resolution and dimensions when adding a new webcam shape to the canvas
+27) done - add more horuzronal padding between the 'shape list' and the next column, as the icons are overlapping the shape list, needs a visual diffentiaion 
+28) done - on the canvas, if i shift drag the corners of a shape it shoudl scale proportioanlly in all directions.
+29)done -  on the 'media' tab - the two sliders dont allow the mouse to be dragged in realtime, its a click to action, ideally this could be a realtime playback scrubber, if you click and drag it moves the video etc, like a normal playback bar
+30) done -  cant see jpg imaes in preview within 'media' tab.
+31) done-  'upload a copy' in the media tab doesnt work
+32) done-ish - ideally for the 'absolute path' this could be an option to chooose a folder using the computers native file/folder picker - and change the button/language to 'Media folder' - and i assume this is per-project too - so a diff project can use a diffeent 'media folder'? this section (link media/media root) is a bit ambigious and needs to be plain langauge.
+33) done - all modals should be able to be closed with the 'escape' key
+34) download the bootstrap icons and replace emojis with relevant options using the bootstrap ones instead.
+35) remove/fix terminal errors when quitting the process using 'control c'
+36) DONE - FPS is still not fixed as close as possibel to projects settings - witho both outpyut windows opening its goign up to 200fps and getting bad performance. 
+37) DONE - fix the spacing between the 'shapes list' and the 'shape settings' columns, theres a vertical line thats being overlapped. 
+38) DONE - add a H2 called 'Shape settings' above the last column, so its simlar to the 'shapes' title in the shapes list.
+39) DONE - add a dim overlay line on the canvas where the output crops are, so i can see where the 'cut' is set.
+40) DONE - 'text' shapes aren't drawn correcly when they span across two outputs. you can see this on the doublehappy768 - wide1 canvas, the 'hello' text appears incorrectly on the 2 outputs.

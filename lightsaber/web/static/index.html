@@ -90,8 +90,18 @@
   .canvas-col-shapes{flex:0 0 140px;min-width:0}
   .drawer-content{flex:0 0 380px;min-width:0;flex-direction:column;gap:14px}
   .drawer-content > .group{width:100%}
-  /* Icon rail (24) — just wide enough for one glyph plus its padding. */
-  .canvas-col-drawers{flex:0 0 44px;display:flex;flex-direction:column;gap:6px;min-width:0}
+  /* Icon rail (24) — just wide enough for one glyph plus its padding.
+     (27) The rail sat hard against the shapes list, so the icons read as
+     part of it and the delete ✕ on each row looked crowded. A wider gutter
+     plus a divider makes the boundary explicit. */
+  /* 66px = 44 icon + 21 gutter + 1 divider, since box-sizing is border-box.
+     (37) Gutter widened and the divider inset from the shapes list, which
+     it was sitting hard against. */
+  .canvas-col-drawers{flex:0 0 66px;display:flex;flex-direction:column;gap:6px;min-width:0;
+                      padding-left:21px;margin-left:14px;border-left:1px solid var(--line)}
+  /* Same type as .group h2 so the three column headings line up exactly. */
+  .rail-title{margin:0 0 2px;font-size:11px;font-weight:500;letter-spacing:.16em;
+              text-transform:uppercase;color:var(--dim);white-space:nowrap}
   .drawer-handle-btn{width:100%;text-align:center;background:var(--panel2);
                       border:1px solid var(--line);border-radius:8px;color:var(--dim);
                       cursor:pointer;padding:9px 0;font-size:16px;line-height:1;
@@ -224,6 +234,11 @@
              padding:7px 10px;border:1px solid var(--line);border-radius:8px;
              cursor:pointer;font-family:var(--mono);font-size:12px;min-width:0}
   .lib .item span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* (37) The shared .lib grid uses minmax(170px,1fr), which is wider than
+     the Shapes column has been since it was narrowed to 140px (23) — so its
+     rows overflowed 30px to the right, across the gutter and over the rail's
+     divider. One column that simply fits is what this list wants anyway. */
+  #shape-list{grid-template-columns:1fr}
   .lib .item:hover{border-color:var(--cyan)}
   .lib .item.active{border-color:var(--cyan);background:rgba(51,224,208,.12)}
   .lib .item.active span:first-child{color:var(--cyan)}
@@ -477,7 +492,8 @@
         <summary>Performance</summary>
         <div class="accordion-body">
           <div class="field"><label>frame rate</label>
-            <input type="number" id="project-fps" min="1" max="120" step="1" style="max-width:70px"> fps</div>
+            <select id="project-fps" style="max-width:110px"></select></div>
+          <div class="hint" id="project-fps-refresh"></div>
           <div class="hint">how fast this project renders AND pushes frames to every output window — the two are deliberately tied, since a slower push silently caps what the outputs actually show no matter how fast frames are made. Applies live; <code>--fps</code> on the command line is now just the startup default. Higher costs more CPU: try 30-60 for a light vector canvas, lower it if a heavy video canvas starts stuttering.</div>
         </div>
       </details>
@@ -519,6 +535,11 @@
       <div class="row">
         <button class="go" id="media-tab-link">🔗 Link a file…</button>
         <button id="media-tab-upload">⬆ Upload a copy…</button>
+        <!-- (31) Uploads straight from this tab. The button used to jump to
+             the Canvas tab and focus() a file input buried in two closed
+             accordions, which opens no picker and looks like nothing
+             happened. -->
+        <input type="file" id="media-tab-file" multiple accept="image/*,video/*" style="display:none">
         <button id="media-tab-refresh" title="Rescan">⟲</button>
         <span class="hint" id="media-tab-summary" style="margin-left:auto"></span>
       </div>
@@ -532,6 +553,11 @@
             <div class="hint" id="media-detail-path" style="word-break:break-all"></div>
             <video id="media-preview" playsinline muted
                    style="width:100%;max-height:44vh;background:#000;border:1px solid var(--line);border-radius:6px"></video>
+            <!-- (30) A <video> can't render a still, so an image asset used
+                 to show as a black box. Separate element, one of the two
+                 shown at a time — see renderAssetDetail. -->
+            <img id="media-preview-img" alt="" style="display:none;width:100%;max-height:44vh;
+                 object-fit:contain;background:#000;border:1px solid var(--line);border-radius:6px">
             <div class="row" style="align-items:center;gap:6px;margin-top:6px">
               <button id="media-preview-play">▶</button>
               <button id="media-preview-in" title="Jump to the in point">⇤</button>
@@ -557,17 +583,19 @@
               <span class="val" id="v-mediazoom">±10s</span>
             </div>
 
-            <div class="field"><label>in</label>
-              <input type="text" id="media-in" style="flex:1;min-width:0;font-size:11px">
-              <button id="media-in-set" title="Set in to the preview playhead">⇤ set</button></div>
-            <div class="field"><label>out</label>
-              <input type="text" id="media-out" style="flex:1;min-width:0;font-size:11px" placeholder="end">
-              <button id="media-out-set" title="Set out to the preview playhead">set ⇥</button></div>
-            <div class="row" style="gap:6px">
-              <button class="go" id="media-trim-save" style="flex:1">Save as this file's default trim</button>
-              <button id="media-trim-clear" title="Clear the default trim (back to the whole file)">⟲</button>
+            <div id="media-trim-section">
+              <div class="field"><label>in</label>
+                <input type="text" id="media-in" style="flex:1;min-width:0;font-size:11px">
+                <button id="media-in-set" title="Set in to the preview playhead">⇤ set</button></div>
+              <div class="field"><label>out</label>
+                <input type="text" id="media-out" style="flex:1;min-width:0;font-size:11px" placeholder="end">
+                <button id="media-out-set" title="Set out to the preview playhead">set ⇥</button></div>
+              <div class="row" style="gap:6px">
+                <button class="go" id="media-trim-save" style="flex:1">Save as this file's default trim</button>
+                <button id="media-trim-clear" title="Clear the default trim (back to the whole file)">⟲</button>
+              </div>
+              <div class="hint" id="media-trim-status"></div>
             </div>
-            <div class="hint" id="media-trim-status"></div>
 
             <h2 style="margin-top:12px">Used by</h2>
             <div class="lib" id="media-usedby" style="grid-template-columns:1fr"></div>
@@ -664,7 +692,7 @@
         </div>
         <div class="hint">scroll to zoom · hold space (or Hand tool) + drag to pan</div>
         <canvas id="cv-edit" width="640" height="360"></canvas>
-        <div class="hint">click a shape to select it, drag its corners to distort · assign a scene from Shape settings below, or the "+" next to a scene in the library below</div>
+        <div class="hint">click a shape to select it, drag its corners to distort · <b>shift</b>-drag a corner to scale the whole shape · assign a scene from Shape settings below, or the "+" next to a scene in the library below</div>
       </div>
       </div>
 
@@ -686,6 +714,12 @@
            other side of a wide content panel. Words survive as tooltips
            (title=) and as each pane's own <h2>. -->
       <div class="canvas-col-drawers">
+        <!-- (37/38) The rail had no heading, so its icons started ~30px
+             above the Shapes list items and the Shape settings fields, and
+             the divider ran up alongside the other columns' headings — which
+             is the "overlapping line" it looked like. A heading of its own
+             puts all three columns on the same baseline. -->
+        <h2 class="rail-title">Panes</h2>
         <button id="handle-shapesettings" class="drawer-handle-btn" data-drawer="shapesettings" title="Shape settings" aria-label="Shape settings">⬡</button>
         <button id="handle-playback" class="drawer-handle-btn" data-drawer="playback" title="Playback — video in/out, speed, loop mode" aria-label="Playback">⏵</button>
         <button id="handle-mask" class="drawer-handle-btn" data-drawer="mask" title="Mask / clipping" aria-label="Mask and clipping">✂</button>
@@ -696,8 +730,16 @@
       </div>
 
       <div id="content-shapesettings" class="drawer-content">
-      <div class="group" id="g-shapesettings" style="display:none">
+      <!-- (38) The heading lives OUTSIDE the fields group so it stays put
+           the way the Shapes list's own title does. It used to be inside
+           #g-shapesettings, which is display:none whenever nothing is
+           selected — so this column lost its title entirely while its
+           neighbour kept one. -->
+      <div class="group" id="g-shapesettings-head">
         <h2>Shape settings</h2>
+        <div class="hint" id="shapesettings-empty" style="display:none">select a shape in the list to edit it</div>
+      </div>
+      <div class="group" id="g-shapesettings" style="display:none">
         <div class="field"><label>name</label>
           <input type="text" id="poly-label" placeholder="e.g. Left panel"></div>
         <label style="display:flex;align-items:center;gap:6px;font-size:13px">
@@ -1145,9 +1187,10 @@
       <div class="hint">turns off the render-loop timing instrumentation live, no relaunch needed — for isolating whether the instrumentation itself costs anything.</div>
     </div>
     <div class="field" style="flex-direction:column;align-items:stretch;gap:6px">
-      <label class="flabel">Media roots</label>
+      <label class="flabel">Media folders</label>
+      <div class="hint">folders on this computer that Lightsaber may read video and images from, without copying them</div>
       <div class="lib" id="media-roots-list" style="grid-template-columns:1fr"></div>
-      <button id="settings-addroot">✚ Add media root</button>
+      <button id="settings-addroot">✚ Add media folder</button>
       <div class="hint">folders that linked media may be referenced from. This server listens on all interfaces by default, so ONLY files under a registered root are ever served — keep them as narrow as you can. The root's <i>name</i> is what projects store, so the same project resolves on another machine that defines a root of the same name.</div>
     </div>
   </div>
@@ -1185,16 +1228,42 @@
 <div class="modal-backdrop" id="modal-addroot">
   <div class="modal">
     <div class="modal-head">
-      <h2>Add media root</h2>
+      <h2>Add a media folder</h2>
       <button class="modal-close" id="addroot-close">&times;</button>
     </div>
-    <label class="flabel" for="addroot-name">name</label>
+    <div class="hint">Pick a folder on this computer that Lightsaber may read video and images from. Files stay where they are — nothing is copied.</div>
+    <label class="flabel" for="addroot-path">folder</label>
+    <div class="row" style="gap:6px">
+      <input type="text" id="addroot-path" placeholder="/home/you/Videos" style="flex:1;min-width:0">
+      <button id="addroot-browse" title="Browse folders on this computer">📂 Browse…</button>
+    </div>
+    <label class="flabel" for="addroot-name">short name</label>
     <input type="text" id="addroot-name" placeholder="e.g. videos">
-    <label class="flabel" for="addroot-path">absolute path</label>
-    <input type="text" id="addroot-path" placeholder="/home/you/Videos">
-    <button class="go" id="addroot-confirm">Add root</button>
-    <div class="hint">the name is what gets stored in your projects (<code>videos::gig2/clip.mp4</code>), so the same project works on another machine that defines a root of the same name. This server listens on all interfaces by default — only files under a registered root are ever served, so keep roots as narrow as you can.</div>
+    <div class="hint">The short name is what your projects store (<code>videos::gig2/clip.mp4</code>) rather than the full path, so the same project still finds its media on another machine — the render host, say — as long as that machine has a folder with the same short name. That's also why these are set up per computer, not per project: any project can use any folder listed here.</div>
+    <button class="go" id="addroot-confirm">Add folder</button>
+    <div class="hint">⚠ Lightsaber serves files to any device on your network by default. Only files inside the folders listed here are ever served, so choose the narrowest folder that holds your media rather than a whole drive.</div>
     <div class="hint" id="addroot-status"></div>
+  </div>
+</div>
+
+<!-- Folder picker (32). Browsers deliberately refuse to give a web page an
+     absolute filesystem path, so the OS dialog can't be used to fill the
+     field above. This browses the SERVER's own folders instead, which is
+     the same machine the media is on. -->
+<div class="modal-backdrop" id="modal-folderpick">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Choose a folder</h2>
+      <button class="modal-close" id="folderpick-close">&times;</button>
+    </div>
+    <div class="row" style="gap:6px;align-items:center">
+      <button id="folderpick-up" title="Up one level">↑</button>
+      <button id="folderpick-home" title="Home folder">⌂</button>
+      <span class="hint" id="folderpick-path" style="flex:1;word-break:break-all"></span>
+    </div>
+    <div class="lib" id="folderpick-list" style="grid-template-columns:1fr;max-height:44vh;overflow:auto"></div>
+    <div class="hint" id="folderpick-status"></div>
+    <button class="go" id="folderpick-choose">Use this folder</button>
   </div>
 </div>
 
@@ -1965,6 +2034,17 @@ function autoFitFromMedia(poly, layer){
   const m = _mediaEls.get(ref.key + "|" + ((layer && layer.media_cfg) || ""));
   if (m && m.ready) autoFitShapeToContent(poly, mediaAspect(m));
 }
+// Same for a webcam (26) — the camera's own capture resolution, whatever it
+// negotiated, rather than a 16:9 guess. A 4:3 camera in a 16:9 quad is
+// letterboxed or cropped by `fit` for no reason when the shape could just
+// be the right shape to begin with.
+function autoFitFromWebcam(poly){
+  if (_autoFitDone.has(poly.id)) return;
+  const s = _webcamStreams.get(poly.webcam_device || "__default__");
+  if (s && s.ready && s.video && s.video.videoWidth){
+    autoFitShapeToContent(poly, s.video.videoWidth / s.video.videoHeight);
+  }
+}
 // Starts/stops every loaded video together — called from paintState, so it
 // tracks the master Start/Stop + freeze state without any per-shape wiring.
 // Guarded by .paused so idempotent repeated calls (every ~20Hz state tick)
@@ -2521,6 +2601,7 @@ function paintCanvasEditor(){
         autoFitFromMedia(poly, layer);          // (18) once, while still default
       } else if (isWebcam){
         drawPolyWebcam(sctx, poly, liveCorners, rect, liveOpacity);
+        autoFitFromWebcam(poly);                // (26) camera's native aspect
       } else if (isText){
         drawPolyText(sctx, poly, liveCorners, rect, liveOpacity);
         autoFitShapeToContent(poly, 1);         // (18) text reads best square
@@ -2615,7 +2696,48 @@ function paintCanvasEditor(){
     cvCtx.restore();
     drawZBadge(cvCtx, poly, rect);
   });
+  drawOutputCropGuides(cvCtx, rect);
   cvCtx.restore();   // matches the view-transform save() above
+}
+
+// Output crop guides (39) — where each projector's slice of the canvas
+// starts and stops. Without these the seam is invisible while composing, so
+// you only discover a shape is sitting across a physical join once it's on
+// the wall. Drawn in the outline pass, inside the same view transform as the
+// shape outlines, so it zooms and pans with everything else and never dims
+// with master gain.
+//
+// Deliberately quiet: a dashed hairline plus a small number, no fill. This
+// is a reference mark on top of live content, so it has to stay readable
+// without competing with the picture underneath.
+function drawOutputCropGuides(ctx, rect){
+  const s = _lastState;
+  if (!s || !s.viewports_enabled) return;
+  const outs = s.outputs || [];
+  if (outs.length < 2) return;     // one output showing everything has no seam
+  ctx.save();
+  ctx.setLineDash([5, 5]);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(255,255,255,.34)";
+  ctx.font = "11px ui-monospace, \"SF Mono\", Menlo, Consolas, monospace";
+  ctx.textBaseline = "top";
+  outs.forEach((o, i) => {
+    // Viewport fractions are top-left origin over the whole canvas; the
+    // editor works in [-1,1] with y up, hence the flip on y.
+    const vx = o.viewport_x ?? 0, vy = o.viewport_y ?? 0;
+    const vw = o.viewport_w ?? 1, vh = o.viewport_h ?? 1;
+    const [x0, y0] = normToPx(vx * 2 - 1, 1 - vy * 2, rect);
+    const [x1, y1] = normToPx((vx + vw) * 2 - 1, 1 - (vy + vh) * 2, rect);
+    ctx.strokeRect(Math.min(x0, x1), Math.min(y0, y1),
+                   Math.abs(x1 - x0), Math.abs(y1 - y0));
+    const label = String(i + 1);
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = "rgba(0,0,0,.55)";
+    ctx.fillRect(Math.min(x0, x1) + 3, Math.min(y0, y1) + 3, tw + 8, 15);
+    ctx.fillStyle = "rgba(255,255,255,.72)";
+    ctx.fillText(label, Math.min(x0, x1) + 7, Math.min(y0, y1) + 5);
+  });
+  ctx.restore();
 }
 
 function polyById(id){ return _canvasDoc && _canvasDoc.polygons.find(p=>p.id===id); }
@@ -2959,7 +3081,16 @@ cvEdit.addEventListener("mousedown", e => {
     }
   }
   const cIdx = hitTestCorner(px, py, selPoly, rect);
-  if (selPoly && cIdx >= 0){ _drag = {type:"corner", polyId:selPoly.id, idx:cIdx}; return; }
+  if (selPoly && cIdx >= 0){
+    // Shift-drag scales the whole shape about its centre (28) instead of
+    // moving the one corner — the usual "resize proportionally" modifier.
+    // The scale factor comes from how far the dragged corner has moved
+    // relative to the centre, so the corner still tracks the pointer while
+    // the other three follow.
+    _drag = {type: e.shiftKey ? "scale" : "corner", polyId:selPoly.id, idx:cIdx,
+             origCorners: selPoly.corners.map(c => [...c])};
+    return;
+  }
   // Frontmost (lowest z-index) first, matching the paint order in
   // paintCanvasEditor — otherwise clicking an overlap could select whatever
   // shape happens to be earliest in the list instead of whatever's visually
@@ -3019,7 +3150,36 @@ window.addEventListener("mousemove", e => {
     }
     return;
   }
-  if (_drag.type === "corner"){
+  if (_drag.type === "scale"){
+    // Uniform scale about the shape's centroid (28). Uses the distance
+    // ratio along the dragged corner's own radius, so dragging outward
+    // grows and inward shrinks, and a corner-pinned shape keeps its
+    // distortion exactly — every corner moves along its own radius by the
+    // same factor.
+    const [nx,ny] = pxToNorm(px, py, rect);
+    const oc = _drag.origCorners;
+    const cx = (oc[0][0]+oc[1][0]+oc[2][0]+oc[3][0])/4;
+    const cy = (oc[0][1]+oc[1][1]+oc[2][1]+oc[3][1])/4;
+    const ox = oc[_drag.idx][0]-cx, oy = oc[_drag.idx][1]-cy;
+    const r0 = Math.hypot(ox, oy);
+    let k = r0 > 1e-6 ? Math.hypot(nx-cx, ny-cy) / r0 : 1;
+    k = Math.max(0.02, Math.min(20, k));
+    // Cap so no corner leaves the legal range, scaled as one rigid body
+    // (same reasoning as the body drag below). A scaled coordinate is
+    // c = centre + delta*k, so the largest legal k on each axis is
+    // whichever root of |centre + delta*k| = POLY_BOUND is positive.
+    const axisMax = (centre, delta) => {
+      if (Math.abs(delta) < 1e-9) return Infinity;      // never moves on this axis
+      const a = (POLY_BOUND - centre) / delta, b = (-POLY_BOUND - centre) / delta;
+      const hi = Math.max(a, b);
+      return hi > 0 ? hi : Infinity;                    // centre already outside; don't fight it
+    };
+    for (const c of oc){
+      k = Math.min(k, axisMax(cx, c[0]-cx), axisMax(cy, c[1]-cy));
+    }
+    k = Math.max(0.02, k);
+    poly.corners = oc.map(c => [cx + (c[0]-cx)*k, cy + (c[1]-cy)*k]);
+  } else if (_drag.type === "corner"){
     const [nx,ny] = pxToNorm(px, py, rect);
     poly.corners[_drag.idx] = [Math.max(-POLY_BOUND,Math.min(POLY_BOUND,nx)),
                                Math.max(-POLY_BOUND,Math.min(POLY_BOUND,ny))];
@@ -3143,6 +3303,7 @@ function renderPolyInspector(){
   // controls sitting there live in a pane that no longer refers to anything.
   if (!poly){
     box.style.display = "none";
+    $("shapesettings-empty").style.display = "block";
     $("poly-playback-field").style.display = "none";
     $("playback-empty").style.display = "block";
     $("mask-fields").style.display = "none";
@@ -3151,6 +3312,7 @@ function renderPolyInspector(){
   }
   $("mask-fields").style.display = "block";
   $("mask-empty").style.display = "none";
+  $("shapesettings-empty").style.display = "none";
   box.style.display = "flex";
   if (document.activeElement !== $("poly-label")) $("poly-label").value = poly.label || "";
   if (document.activeElement !== $("poly-locked")) $("poly-locked").checked = !!poly.locked;
@@ -3541,13 +3703,94 @@ $("project-notes").addEventListener("change", () => send({type:"project_set_note
 // two above. The value shown is the LIVE loop rate (state.project_fps reads
 // composite.fps, not the saved spec), so this field always reflects what's
 // actually running rather than what was last written to disk.
+// Frame rate is a fixed list, not a free number (36). Output windows paint
+// on requestAnimationFrame, which is locked to the display's refresh, so the
+// only rates a browser can actually hit are refresh/n. On a 60Hz display
+// that's 60, 30, 20, 15, 10 — ask for 50 and you get 30, which is exactly
+// the "fps isn't doing what I set" confusion this list removes.
+//
+// Measured rather than assumed: a 50Hz projector or a 120Hz laptop panel has
+// a different set, and guessing 60 would put the same trap back with
+// different numbers.
+let _refreshHz = null;
+function measureRefreshRate(){
+  return new Promise(resolve => {
+    const times = [];
+    let n = 0;
+    function tick(t){
+      times.push(t);
+      if (++n < 40) return requestAnimationFrame(tick);
+      const gaps = [];
+      for (let i = 1; i < times.length; i++) gaps.push(times[i] - times[i-1]);
+      gaps.sort((a, b) => a - b);
+      const median = gaps[gaps.length >> 1];
+      resolve(median > 0 ? 1000 / median : 60);
+    }
+    requestAnimationFrame(tick);
+  });
+}
+// Rates that are BOTH an exact divisor of the refresh (so rAF can hit them)
+// and a rate anyone would actually want. 60Hz divides to 60/30/20/15/12/10;
+// intersecting with the list below drops 12, which is a real option but not
+// a useful one. On a 50Hz projector this yields 50/25/10, on a 120Hz panel
+// 120/60/30/24/20/15 — the point is the list follows the hardware instead of
+// hardcoding one display's answer.
+const FPS_PREFERRED = [10, 15, 20, 24, 25, 30, 48, 50, 60, 120];
+const FPS_FALLBACK = [10, 15, 20, 30, 60];
+function fpsOptionsFor(hz){
+  const base = Math.round(hz);
+  const out = FPS_PREFERRED.filter(v =>
+    v <= 120 && v <= base && Math.abs(base / v - Math.round(base / v)) < 0.01);
+  // Odd refresh rates divide badly — 165Hz yields only 15, 144Hz only
+  // 24/48. A list that short is worse than a slightly inexact one, so fall
+  // back to the usual rates and let the paint throttle land where it can.
+  // Projectors are 60Hz (or 50) essentially always; this is for the laptop
+  // panel someone happens to be editing on.
+  return out.length >= 3 ? out : FPS_FALLBACK;
+}
+function buildFpsOptions(current){
+  const sel = $("project-fps");
+  const opts = fpsOptionsFor(_refreshHz || 60);
+  const cur = Math.round(current || 20);
+  // applyProjectFps runs on every state broadcast (~30/s), so bail out when
+  // nothing has actually changed rather than rebuilding the option list that
+  // many times a second.
+  const sig = opts.join(",") + "|" + cur;
+  if (sel.dataset.sig === sig) return;
+  sel.dataset.sig = sig;
+  sel.innerHTML = "";
+  opts.forEach(v => {
+    const o = document.createElement("option");
+    o.value = v; o.textContent = v + " fps";
+    sel.appendChild(o);
+  });
+  // A project saved with a rate this display can't hit (an older project, or
+  // one authored on different hardware) keeps its value as an extra entry
+  // rather than being silently snapped to a neighbour on next save.
+  if (!opts.includes(cur)){
+    const o = document.createElement("option");
+    o.value = cur;
+    o.textContent = `${cur} fps — this display can't hit this`;
+    sel.appendChild(o);
+  }
+  sel.value = String(cur);
+}
 function applyProjectFps(s){
-  if (document.activeElement !== $("project-fps")) $("project-fps").value = s.project_fps || 20;
+  if (document.activeElement === $("project-fps")) return;
+  buildFpsOptions(s.project_fps || 20);
 }
 $("project-fps").addEventListener("change", () => {
   const v = Math.max(1, Math.min(120, parseInt($("project-fps").value, 10) || 20));
-  $("project-fps").value = v;
   send({type:"project_set_fps", value:v});
+});
+measureRefreshRate().then(hz => {
+  _refreshHz = hz;
+  const opts = fpsOptionsFor(hz);
+  const exact = opts.every(v => Math.abs(Math.round(hz) / v - Math.round(Math.round(hz) / v)) < 0.01);
+  $("project-fps-refresh").textContent = exact
+    ? `this display refreshes at ~${hz.toFixed(0)}Hz, so output windows can paint at exactly ${opts.join(", ")} fps`
+    : `this display refreshes at ~${hz.toFixed(0)}Hz, which doesn't divide evenly into the usual rates — output windows will land near, not exactly on, whichever you pick`;
+  buildFpsOptions(parseInt($("project-fps").value, 10) || (_lastState && _lastState.project_fps) || 20);
 });
 
 // Output monitors — moved off browser localStorage onto the PROJECT (see
@@ -4569,6 +4812,24 @@ $("apitest").onclick = () => {
 // inside the dialog itself) also closes
 function openModal(id){ $(id).classList.add("open"); }
 function closeModal(id){ $(id).classList.remove("open"); }
+// Escape closes whatever modal is open (33) — every one of them, including
+// any added later, since it works off .modal-backdrop.open rather than a
+// hand-maintained list. Capture phase and stopPropagation so it beats the
+// mask-mode Escape handler further up: with a modal open, "get me out of
+// this dialog" is unambiguously what Escape means.
+// Clicking the dimmed backdrop closes too, but a click INSIDE the dialog
+// must not — hence the e.target check.
+window.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  const open = [...document.querySelectorAll(".modal-backdrop.open")];
+  if (!open.length) return;
+  open.forEach(m => m.classList.remove("open"));
+  e.stopPropagation();
+  e.preventDefault();
+}, true);
+document.querySelectorAll(".modal-backdrop").forEach(m => {
+  m.addEventListener("mousedown", e => { if (e.target === m) m.classList.remove("open"); });
+});
 $("gen-open").onclick = () => openModal("modal-generate");
 $("gen-close").onclick = () => closeModal("modal-generate");
 // About (25). Deliberately a tiny renderer rather than a markdown library:
@@ -4687,22 +4948,43 @@ function renderAssetDetail(){
   $("media-detail-name").textContent = (a.kind === "link" ? "🔗 " : "📁 ") + a.name;
   $("media-detail-path").textContent = a.exists
     ? (a.path || "") : "⚠ not found: " + (a.path || a.link || a.name);
-  const vid = $("media-preview");
-  if (vid.dataset.key !== a.key){
-    vid.dataset.key = a.key;
-    vid.src = a.exists && a.url ? a.url : "";
-    vid.load?.();
-  }
   const isVid = isVideoName(a.name);
+  const vid = $("media-preview"), img = $("media-preview-img");
+  const src = a.exists && a.url ? a.url : "";
+  // (30) Show whichever element can actually render this file. A still
+  // handed to the <video> just painted black, which read as a broken
+  // preview rather than "wrong element".
+  vid.style.display = isVid ? "" : "none";
+  img.style.display = isVid ? "none" : "";
+  if (isVid){
+    if (vid.dataset.key !== a.key){
+      vid.dataset.key = a.key;
+      vid.src = src;
+      vid.load?.();
+    }
+    // Release the still so a big JPEG isn't held decoded behind a video.
+    if (img.dataset.key){ img.removeAttribute("src"); delete img.dataset.key; }
+  } else {
+    if (img.dataset.key !== a.key){
+      img.dataset.key = a.key;
+      if (src) img.src = src; else img.removeAttribute("src");
+    }
+    if (vid.dataset.key){ vid.pause?.(); vid.removeAttribute("src"); vid.load?.(); delete vid.dataset.key; }
+  }
   ["media-bar-overview","media-bar-zoom","media-zoom-label","media-preview-play",
    "media-preview-in","media-preview-out"].forEach(id => {
     $(id).style.display = isVid ? "" : "none";
   });
+  $("media-preview-time").style.display = isVid ? "" : "none";
   $("media-delete").style.display = a.kind === "lib" ? "" : "none";
   $("media-relink").style.display = a.kind === "link" ? "" : "none";
   if (document.activeElement !== $("media-in")) $("media-in").value = fmtTime(a.in || 0, true);
   if (document.activeElement !== $("media-out"))
     $("media-out").value = a.out == null ? "" : fmtTime(a.out, true);
+  // A still has nothing to trim — the whole section goes, rather than
+  // showing in/out fields that can't do anything and a "duration unknown"
+  // that will never resolve (30).
+  $("media-trim-section").style.display = isVid ? "" : "none";
   $("media-trim-status").textContent = a.duration
     ? `file ${fmtTime(a.duration)} · trimmed ${fmtTime((a.out ?? a.duration) - (a.in || 0))}`
     : "duration unknown until the file loads";
@@ -4772,11 +5054,28 @@ function wireTrimBar(barId){
     const inS = a.in || 0, outS = a.out ?? a.duration;
     const scale = barId === "media-bar-overview" ? a.duration : _zoomSpan;
     const near = scale * 0.02;   // ~2% of what's on screen
-    if (Math.abs(t - inS) < near) _trimDrag = "in";
-    else if (Math.abs(t - outS) < near) _trimDrag = "out";
-    else { $("media-preview").currentTime = t; renderTrimBars(); return; }
-    _trimDrag = {edge: _trimDrag, bar};
+    // Anywhere that isn't an edge scrubs (29) — press and drag moves the
+    // playhead continuously, like any other transport bar. It used to seek
+    // once on mousedown and then ignore the drag entirely, which felt like
+    // a broken slider.
+    let edge = "seek";
+    if (Math.abs(t - inS) < near) edge = "in";
+    else if (Math.abs(t - outS) < near) edge = "out";
+    _trimDrag = {edge, bar};
+    if (edge === "seek"){ $("media-preview").currentTime = t; renderTrimBars(); }
     e.preventDefault();
+  });
+  // Hint at the gesture before it's made: resize cursor over an edge,
+  // grab cursor over the scrub area.
+  bar.addEventListener("mousemove", e => {
+    if (_trimDrag) return;
+    const a = selectedAsset();
+    if (!a || !a.duration){ bar.style.cursor = ""; return; }
+    const t = barTime(e, bar, a);
+    const scale = barId === "media-bar-overview" ? a.duration : _zoomSpan;
+    const near = scale * 0.02;
+    const onEdge = Math.abs(t - (a.in || 0)) < near || Math.abs(t - (a.out ?? a.duration)) < near;
+    bar.style.cursor = onEdge ? "ew-resize" : "grab";
   });
 }
 window.addEventListener("mousemove", e => {
@@ -4784,6 +5083,14 @@ window.addEventListener("mousemove", e => {
   const a = selectedAsset();
   if (!a || !a.duration) return;
   const t = barTime(e, _trimDrag.bar, a);
+  if (_trimDrag.edge === "seek"){
+    // Seek only; renderTrimBars is enough (renderAssetDetail would rewrite
+    // the in/out inputs mid-gesture for no reason).
+    const v = $("media-preview");
+    if (Number.isFinite(t)) v.currentTime = Math.max(0, Math.min(a.duration, t));
+    renderTrimBars();
+    return;
+  }
   if (_trimDrag.edge === "in") a.in = Math.max(0, Math.min(t, (a.out ?? a.duration) - 0.05));
   else a.out = Math.min(a.duration, Math.max(t, (a.in || 0) + 0.05));
   renderAssetDetail();
@@ -4868,12 +5175,29 @@ $("media-delete").onclick = async () => {
 };
 $("media-tab-refresh").onclick = () => loadAssets(true);
 $("media-tab-link").onclick = () => openMediaLinkPicker(null);
-$("media-tab-upload").onclick = () => {
-  setActiveTab("tab-canvas");
-  const acc = $("acc-input-media"), up = $("acc-input-upload");
-  if (acc) acc.open = true;
-  if (up) up.open = true;
-  $("media-file-input")?.focus();
+// (31) Real upload from this tab. .click() on a hidden input is allowed
+// here because we're inside a user gesture; the old code called .focus(),
+// which opens nothing.
+$("media-tab-upload").onclick = () => $("media-tab-file").click();
+$("media-tab-file").onchange = async () => {
+  const input = $("media-tab-file");
+  if (!input.files.length) return;
+  const btn = $("media-tab-upload");
+  const label = btn.textContent;
+  const fd = new FormData();
+  for (const f of input.files) fd.append("file", f);
+  btn.disabled = true; btn.textContent = "uploading…";
+  try {
+    const r = await fetch("/media/upload", {method: "POST", body: fd});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    input.value = "";
+    await loadAssets(true);        // Media tab's own list
+    await refreshMediaList();      // the Canvas tab's library dropdown
+  } catch (e) {
+    alert("Upload failed: " + (e.message || e));
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
 };
 
 // ---- Video playback: trim + mode, per instance (item 15) ---------------
@@ -5136,6 +5460,58 @@ $("medialink-addroot").onclick = () => {
   $("modal-addroot").classList.add("open");
 };
 $("addroot-close").onclick = () => closeModal("modal-addroot");
+
+// ---- Server-side folder picker (32) -----------------------------------
+// The OS folder dialog can't be used here: browsers withhold absolute paths
+// from web pages by design, so showDirectoryPicker/webkitdirectory would
+// hand us a bare folder NAME and no way to find it on disk. The server is
+// on the same machine as the media, so it does the browsing.
+let _fpPath = "";
+async function fpLoad(path){
+  $("folderpick-status").textContent = "loading…";
+  try {
+    const r = await fetch("/fs/dirs?path=" + encodeURIComponent(path || ""));
+    const d = await r.json();
+    if (d.error){ $("folderpick-status").textContent = d.error; return; }
+    _fpPath = d.path;
+    $("folderpick-path").textContent = d.path;
+    $("folderpick-up").disabled = !d.parent;
+    $("folderpick-up").dataset.parent = d.parent || "";
+    $("folderpick-home").dataset.home = d.home || "";
+    const box = $("folderpick-list");
+    box.innerHTML = "";
+    if (!d.dirs.length){
+      box.innerHTML = '<div class="hint">no sub-folders here — "Use this folder" to pick it</div>';
+    }
+    d.dirs.forEach(name => {
+      const el = document.createElement("div");
+      el.className = "item";
+      el.innerHTML = `<span>📁 ${name}</span>`;
+      el.onclick = () => fpLoad(d.path.replace(/\/$/, "") + "/" + name);
+      box.appendChild(el);
+    });
+    $("folderpick-status").textContent = "";
+  } catch (e) {
+    $("folderpick-status").textContent = e.message || String(e);
+  }
+}
+$("addroot-browse").onclick = () => {
+  openModal("modal-folderpick");
+  fpLoad($("addroot-path").value.trim() || "");
+};
+$("folderpick-close").onclick = () => closeModal("modal-folderpick");
+$("folderpick-up").onclick = () => fpLoad($("folderpick-up").dataset.parent || "");
+$("folderpick-home").onclick = () => fpLoad($("folderpick-home").dataset.home || "");
+$("folderpick-choose").onclick = () => {
+  $("addroot-path").value = _fpPath;
+  // Suggest the folder's own name, so the common case needs no typing.
+  if (!$("addroot-name").value.trim()){
+    const base = (_fpPath.split("/").filter(Boolean).pop() || "media")
+      .toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+    $("addroot-name").value = base || "media";
+  }
+  closeModal("modal-folderpick");
+};
 $("addroot-confirm").onclick = async () => {
   const name = $("addroot-name").value.trim(), path = $("addroot-path").value.trim();
   try {
