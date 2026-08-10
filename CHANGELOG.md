@@ -40,6 +40,20 @@ and APIs between minor versions until a 1.0 release.
   `right_overlap`, so a project configured here carries over to the render
   host unchanged (ARCHITECTURE.md §5).
 
+### Fixed
+- **Output Preview tiles are shaped like the output they preview.** Every
+  tile was built at the full canvas aspect regardless of crops, so on a
+  2048×768 canvas split between two projectors each tile was drawn 2.67:1
+  while the slice inside it is 1024×768 (1.33:1) — the content came out
+  letterboxed inside a box the wrong shape, with roughly half of each tile
+  black. Tiles now take their own output's aspect, follow `duplicate_of`,
+  and widen with the edge-overlap expansion, so a tile matches what that
+  output actually renders. Measured: content now fills each tile to within
+  1px. Tiles may differ from each other, since outputs can have different
+  crops.
+- Each tile is labelled with the source pixels it's fed (`Output 1 ·
+  1024×768`) — the number to check against the projector's native mode.
+
 ## [0.35.0]
 
 ### Fixed — shapes spanning two projectors (40)

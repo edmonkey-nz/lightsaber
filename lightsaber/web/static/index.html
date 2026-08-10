@@ -3935,7 +3935,7 @@ function applyOutputConfigs(s){
   $("edge-overlap-field").style.display = showBlend ? "flex" : "none";
   $("edge-overlap-hint").style.display = showBlend ? "block" : "none";
   renderOutputLaunchButtons(outs.length || 2);
-  renderOutputPreview(outs.length || 2, s.project_width || 1920, s.project_height || 1080);
+  renderOutputPreview(outs.length || 2, s.project_width || 1920, s.project_height || 1080, s);
 }
 $("output-count").addEventListener("change", () => {
   const n = Math.max(1, Math.min(8, parseInt($("output-count").value, 10) || 2));
@@ -3963,20 +3963,57 @@ $("show-fps").onchange = () => send({type:"project_set_show_fps", value:$("show-
 // updates its content live on its own regardless.
 const OUTPUT_PREVIEW_W = 440;   // "2x" the original 220px
 let _outputPreviewSig = "";
-function renderOutputPreview(count, projW, projH){
-  const aspect = projW / (projH || 1) || (16/9);
-  const sig = `${count}|${aspect.toFixed(4)}`;
+// The region one output actually shows, in canvas [0,1] fractions —
+// the same resolution output.html's own resolveViewport performs, including
+// following duplicate_of and the edge-overlap expansion, so a preview tile
+// is shaped like the thing it previews rather than approximating it.
+function effectiveOutputViewport(s, index){
+  const outs = (s && s.outputs) || [];
+  if (!s || !s.viewports_enabled) return {x: 0, y: 0, w: 1, h: 1};
+  let cfg = outs[index], guard = 0;
+  while (cfg && cfg.duplicate_of != null && guard++ < 8) cfg = outs[cfg.duplicate_of];
+  if (!cfg) return {x: 0, y: 0, w: 1, h: 1};
+  const x = cfg.viewport_x ?? 0, y = cfg.viewport_y ?? 0;
+  const w = cfg.viewport_w ?? 1, h = cfg.viewport_h ?? 1;
+  const f = Math.max(0, Math.min(0.5, s.edge_overlap || 0));
+  if (!f) return {x, y, w, h};
+  const hx = (f * w) / 2, hy = (f * h) / 2;
+  const L = !!cfg.overlap_left, R = !!cfg.overlap_right;
+  const T = !!cfg.overlap_top,  B = !!cfg.overlap_bottom;
+  return {x: x - (L ? hx : 0), y: y - (T ? hy : 0),
+          w: w + (L ? hx : 0) + (R ? hx : 0),
+          h: h + (T ? hy : 0) + (B ? hy : 0)};
+}
+// Each tile is shaped like ITS OWN slice, not like the whole canvas. This
+// used to size every tile to projW/projH regardless of crops, so on a wide
+// canvas split across two projectors each tile was drawn at the full 2.67:1
+// while the slice inside it is 1.33:1 — the content came out letterboxed
+// inside a box the wrong shape, which is exactly what a preview must not do.
+// Tiles can now differ from each other, since outputs can have different
+// crops.
+function renderOutputPreview(count, projW, projH, state){
+  const s = state || _lastState || {};
+  const vps = [];
+  for (let i = 0; i < count; i++) vps.push(effectiveOutputViewport(s, i));
+  const sig = `${count}|${projW}x${projH}|` +
+    vps.map(v => `${v.x.toFixed(4)},${v.y.toFixed(4)},${v.w.toFixed(4)},${v.h.toFixed(4)}`).join(";");
   if (sig === _outputPreviewSig) return;
   _outputPreviewSig = sig;
-  const tileH = Math.round(OUTPUT_PREVIEW_W / aspect);
   const grid = $("output-preview-grid");
   grid.innerHTML = "";
   for (let i = 1; i <= count; i++){
+    const vp = vps[i - 1];
+    // Source pixels this output is fed — the number to compare against the
+    // projector's own native mode when checking a rig.
+    const srcW = Math.round((projW || 1920) * vp.w);
+    const srcH = Math.round((projH || 1080) * vp.h);
+    const aspect = srcW / (srcH || 1) || (16 / 9);
+    const tileH = Math.round(OUTPUT_PREVIEW_W / aspect);
     const tile = document.createElement("div");
     tile.className = "output-preview-tile";
     tile.innerHTML = `<div class="frame" style="width:${OUTPUT_PREVIEW_W}px;height:${tileH}px">
         <iframe src="/output?out=${i}&preview=1" tabindex="-1"></iframe></div>
-      <div class="label">Output ${i}</div>`;
+      <div class="label">Output ${i} · ${srcW}×${srcH}</div>`;
     grid.appendChild(tile);
   }
 }
