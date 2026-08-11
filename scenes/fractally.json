@@ -1,0 +1,3239 @@
+{
+  "name": "fractally",
+  "layers": [
+    {
+      "generator": "world",
+      "params": {
+        "defs": {
+          "spiral_ring": [
+            {
+              "op": "circle",
+              "r": 1,
+              "plane": "xy",
+              "c": [
+                0,
+                0,
+                0
+              ],
+              "seg": 24
+            },
+            {
+              "op": "circle",
+              "r": 0.7,
+              "plane": "xy",
+              "c": [
+                0,
+                0,
+                0
+              ],
+              "seg": 24
+            },
+            {
+              "op": "line",
+              "a": [
+                0,
+                -1,
+                0
+              ],
+              "b": [
+                0,
+                -0.7,
+                0
+              ]
+            },
+            {
+              "op": "line",
+              "a": [
+                1,
+                0,
+                0
+              ],
+              "b": [
+                0.7,
+                0,
+                0
+              ]
+            },
+            {
+              "op": "line",
+              "a": [
+                0,
+                1,
+                0
+              ],
+              "b": [
+                0,
+                0.7,
+                0
+              ]
+            },
+            {
+              "op": "line",
+              "a": [
+                -1,
+                0,
+                0
+              ],
+              "b": [
+                -0.7,
+                0,
+                0
+              ]
+            }
+          ],
+          "fractal_box": [
+            {
+              "op": "box",
+              "size": [
+                1,
+                1,
+                1
+              ],
+              "c": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "mandel_cross": [
+            {
+              "op": "line",
+              "a": [
+                -1.5,
+                0,
+                0
+              ],
+              "b": [
+                1.5,
+                0,
+                0
+              ]
+            },
+            {
+              "op": "line",
+              "a": [
+                0,
+                -1.5,
+                0
+              ],
+              "b": [
+                0,
+                1.5,
+                0
+              ]
+            },
+            {
+              "op": "line",
+              "a": [
+                0,
+                0,
+                -1.5
+              ],
+              "b": [
+                0,
+                0,
+                1.5
+              ]
+            },
+            {
+              "op": "circle",
+              "r": 1.5,
+              "plane": "xy",
+              "c": [
+                0,
+                0,
+                0
+              ],
+              "seg": 32
+            },
+            {
+              "op": "circle",
+              "r": 1.5,
+              "plane": "xz",
+              "c": [
+                0,
+                0,
+                0
+              ],
+              "seg": 32
+            }
+          ],
+          "nested_squares": [
+            {
+              "op": "rect",
+              "w": 2,
+              "h": 2,
+              "plane": "xy",
+              "c": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "op": "rect",
+              "w": 1.4,
+              "h": 1.4,
+              "plane": "xy",
+              "c": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "op": "rect",
+              "w": 0.8,
+              "h": 0.8,
+              "plane": "xy",
+              "c": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "op": "rect",
+              "w": 0.4,
+              "h": 0.4,
+              "plane": "xy",
+              "c": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "spiral_strand": [
+            {
+              "op": "polyline",
+              "pts": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0.3,
+                  0.1,
+                  0.1
+                ],
+                [
+                  0.5,
+                  0.4,
+                  0.2
+                ],
+                [
+                  0.6,
+                  0.8,
+                  0.4
+                ],
+                [
+                  0.5,
+                  1.2,
+                  0.6
+                ],
+                [
+                  0.2,
+                  1.5,
+                  0.8
+                ],
+                [
+                  -0.1,
+                  1.6,
+                  1
+                ],
+                [
+                  -0.4,
+                  1.5,
+                  1.1
+                ],
+                [
+                  -0.6,
+                  1.2,
+                  1.0
+                ],
+                [
+                  -0.7,
+                  0.8,
+                  0.8
+                ],
+                [
+                  -0.6,
+                  0.4,
+                  0.6
+                ],
+                [
+                  -0.3,
+                  0.1,
+                  0.4
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ]
+            }
+          ],
+          "triangular_web": [
+            {
+              "op": "line",
+              "a": [
+                0,
+                0,
+                0
+              ],
+              "b": [
+                1,
+                0,
+                0
+              ]
+            },
+            {
+              "op": "line",
+              "a": [
+                1,
+                0,
+                0
+              ],
+              "b": [
+                0.5,
+                0.866,
+                0
+              ]
+            },
+            {
+              "op": "line",
+              "a": [
+                0.5,
+                0.866,
+                0
+              ],
+              "b": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "op": "line",
+              "a": [
+                0.5,
+                0.289,
+                0
+              ],
+              "b": [
+                0.25,
+                0.433,
+                0
+              ]
+            },
+            {
+              "op": "line",
+              "a": [
+                0.25,
+                0.433,
+                0
+              ],
+              "b": [
+                0.75,
+                0.433,
+                0
+              ]
+            },
+            {
+              "op": "line",
+              "a": [
+                0.75,
+                0.433,
+                0
+              ],
+              "b": [
+                0.5,
+                0.289,
+                0
+              ]
+            }
+          ],
+          "hypercube_projection": [
+            {
+              "op": "box",
+              "size": [
+                1,
+                1,
+                1
+              ],
+              "c": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "op": "box",
+              "size": [
+                0.5,
+                0.5,
+                0.5
+              ],
+              "c": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "op": "line",
+              "a": [
+                -0.5,
+                -0.5,
+                -0.5
+              ],
+              "b": [
+                -0.25,
+                -0.25,
+                -0.25
+              ]
+            },
+            {
+              "op": "line",
+              "a": [
+                0.5,
+                0.5,
+                0.5
+              ],
+              "b": [
+                0.25,
+                0.25,
+                0.25
+              ]
+            },
+            {
+              "op": "line",
+              "a": [
+                -0.5,
+                0.5,
+                -0.5
+              ],
+              "b": [
+                -0.25,
+                0.25,
+                -0.25
+              ]
+            },
+            {
+              "op": "line",
+              "a": [
+                0.5,
+                -0.5,
+                0.5
+              ],
+              "b": [
+                0.25,
+                -0.25,
+                0.25
+              ]
+            }
+          ],
+          "diamond_grid": [
+            {
+              "op": "grid",
+              "w": 2,
+              "h": 2,
+              "nx": 3,
+              "ny": 3,
+              "plane": "xy",
+              "c": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "toroidal_curve": [
+            {
+              "op": "circle",
+              "r": 1.5,
+              "plane": "xy",
+              "c": [
+                0,
+                0,
+                0
+              ],
+              "seg": 32
+            },
+            {
+              "op": "circle",
+              "r": 0.5,
+              "plane": "xz",
+              "c": [
+                1.5,
+                0,
+                0
+              ],
+              "seg": 24
+            }
+          ]
+        },
+        "nodes": [
+          {
+            "shape": "spiral_ring",
+            "pos": [
+              0,
+              0,
+              0
+            ],
+            "scale": 1.2,
+            "color": [
+              0.2,
+              0.8,
+              0.9
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.8,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "spiral_ring",
+            "pos": [
+              2,
+              1,
+              1
+            ],
+            "scale": 0.8,
+            "color": [
+              0.3,
+              0.6,
+              0.95
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.2,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_ring",
+            "pos": [
+              -2,
+              1,
+              -1
+            ],
+            "scale": 0.6,
+            "color": [
+              0.4,
+              0.5,
+              0.85
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.6,
+              "axis": "x"
+            }
+          },
+          {
+            "shape": "fractal_box",
+            "pos": [
+              3,
+              -1,
+              2
+            ],
+            "scale": 1.5,
+            "color": [
+              0.9,
+              0.3,
+              0.6
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 1.5,
+              "amp": 0.2
+            }
+          },
+          {
+            "shape": "fractal_box",
+            "pos": [
+              -3,
+              0,
+              3
+            ],
+            "scale": 0.9,
+            "color": [
+              0.8,
+              0.2,
+              0.7
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 2,
+              "amp": 0.15
+            }
+          },
+          {
+            "shape": "mandel_cross",
+            "pos": [
+              5,
+              2,
+              0
+            ],
+            "scale": 1.1,
+            "color": [
+              0.1,
+              0.9,
+              0.7
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.4,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "mandel_cross",
+            "pos": [
+              -5,
+              1,
+              2
+            ],
+            "scale": 0.7,
+            "color": [
+              0.2,
+              0.85,
+              0.8
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.5,
+              "axis": "x"
+            }
+          },
+          {
+            "shape": "nested_squares",
+            "pos": [
+              4,
+              -2,
+              -1
+            ],
+            "scale": 1.3,
+            "color": [
+              0.95,
+              0.4,
+              0.2
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.9,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "nested_squares",
+            "pos": [
+              -4,
+              -1,
+              -2
+            ],
+            "scale": 0.8,
+            "color": [
+              0.9,
+              0.5,
+              0.1
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.1,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_strand",
+            "pos": [
+              6,
+              0,
+              1
+            ],
+            "scale": 1,
+            "color": [
+              0.3,
+              0.9,
+              0.4
+            ],
+            "motion": {
+              "type": "bob",
+              "speed": 0.7,
+              "amp": 0.4,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_strand",
+            "pos": [
+              -6,
+              1,
+              -1
+            ],
+            "scale": 0.9,
+            "color": [
+              0.2,
+              0.85,
+              0.5
+            ],
+            "motion": {
+              "type": "bob",
+              "speed": 0.8,
+              "amp": 0.35,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "triangular_web",
+            "pos": [
+              2,
+              3,
+              -2
+            ],
+            "scale": 1.4,
+            "color": [
+              0.7,
+              0.3,
+              0.9
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.3,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "triangular_web",
+            "pos": [
+              -3,
+              2,
+              1
+            ],
+            "scale": 0.9,
+            "color": [
+              0.75,
+              0.2,
+              0.85
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.7,
+              "axis": "x"
+            }
+          },
+          {
+            "shape": "hypercube_projection",
+            "pos": [
+              7,
+              -1,
+              3
+            ],
+            "scale": 1.2,
+            "color": [
+              0.2,
+              0.4,
+              0.95
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "hypercube_projection",
+            "pos": [
+              -7,
+              0,
+              -2
+            ],
+            "scale": 0.8,
+            "color": [
+              0.3,
+              0.35,
+              0.9
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.6,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "diamond_grid",
+            "pos": [
+              1,
+              2,
+              4
+            ],
+            "scale": 1.1,
+            "color": [
+              0.9,
+              0.2,
+              0.3
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 1.8,
+              "amp": 0.1
+            }
+          },
+          {
+            "shape": "diamond_grid",
+            "pos": [
+              -1,
+              1,
+              -4
+            ],
+            "scale": 0.9,
+            "color": [
+              0.85,
+              0.1,
+              0.4
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 2.2,
+              "amp": 0.12
+            }
+          },
+          {
+            "shape": "toroidal_curve",
+            "pos": [
+              8,
+              2,
+              -1
+            ],
+            "scale": 1,
+            "color": [
+              0.4,
+              0.8,
+              0.2
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.5,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "toroidal_curve",
+            "pos": [
+              -8,
+              -1,
+              2
+            ],
+            "scale": 0.8,
+            "color": [
+              0.35,
+              0.75,
+              0.3
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.7,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_ring",
+            "pos": [
+              0,
+              5,
+              5
+            ],
+            "scale": 0.7,
+            "color": [
+              0.5,
+              0.6,
+              0.8
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.5,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "fractal_box",
+            "pos": [
+              3,
+              4,
+              6
+            ],
+            "scale": 1.1,
+            "color": [
+              0.8,
+              0.4,
+              0.5
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 1.2,
+              "amp": 0.18
+            }
+          },
+          {
+            "shape": "mandel_cross",
+            "pos": [
+              -4,
+              3,
+              5
+            ],
+            "scale": 0.9,
+            "color": [
+              0.15,
+              0.8,
+              0.75
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.6,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "nested_squares",
+            "pos": [
+              5,
+              6,
+              4
+            ],
+            "scale": 0.95,
+            "color": [
+              0.92,
+              0.45,
+              0.15
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.8,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "spiral_strand",
+            "pos": [
+              -5,
+              5,
+              6
+            ],
+            "scale": 0.85,
+            "color": [
+              0.25,
+              0.88,
+              0.45
+            ],
+            "motion": {
+              "type": "bob",
+              "speed": 0.9,
+              "amp": 0.3,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "triangular_web",
+            "pos": [
+              1,
+              7,
+              3
+            ],
+            "scale": 1.2,
+            "color": [
+              0.65,
+              0.35,
+              0.88
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.1,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "hypercube_projection",
+            "pos": [
+              -6,
+              4,
+              7
+            ],
+            "scale": 1,
+            "color": [
+              0.25,
+              0.45,
+              0.92
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.7,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "diamond_grid",
+            "pos": [
+              4,
+              3,
+              2
+            ],
+            "scale": 1.05,
+            "color": [
+              0.88,
+              0.25,
+              0.35
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 1.6,
+              "amp": 0.14
+            }
+          },
+          {
+            "shape": "toroidal_curve",
+            "pos": [
+              -3,
+              6,
+              1
+            ],
+            "scale": 0.9,
+            "color": [
+              0.4,
+              0.78,
+              0.28
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.65,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_ring",
+            "pos": [
+              6,
+              -3,
+              4
+            ],
+            "scale": 0.8,
+            "color": [
+              0.45,
+              0.65,
+              0.82
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.3,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "fractal_box",
+            "pos": [
+              -5,
+              -2,
+              5
+            ],
+            "scale": 1,
+            "color": [
+              0.78,
+              0.38,
+              0.55
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 1.4,
+              "amp": 0.16
+            }
+          },
+          {
+            "shape": "mandel_cross",
+            "pos": [
+              7,
+              -4,
+              3
+            ],
+            "scale": 0.85,
+            "color": [
+              0.18,
+              0.82,
+              0.72
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.55,
+              "axis": "x"
+            }
+          },
+          {
+            "shape": "nested_squares",
+            "pos": [
+              -7,
+              -3,
+              4
+            ],
+            "scale": 1,
+            "color": [
+              0.9,
+              0.48,
+              0.12
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.85,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_strand",
+            "pos": [
+              2,
+              -4,
+              6
+            ],
+            "scale": 0.92,
+            "color": [
+              0.28,
+              0.85,
+              0.48
+            ],
+            "motion": {
+              "type": "bob",
+              "speed": 0.75,
+              "amp": 0.32,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "triangular_web",
+            "pos": [
+              -2,
+              -5,
+              5
+            ],
+            "scale": 1.15,
+            "color": [
+              0.68,
+              0.32,
+              0.85
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.2,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "hypercube_projection",
+            "pos": [
+              8,
+              -5,
+              2
+            ],
+            "scale": 0.95,
+            "color": [
+              0.22,
+              0.42,
+              0.9
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.75,
+              "axis": "x"
+            }
+          },
+          {
+            "shape": "diamond_grid",
+            "pos": [
+              -8,
+              -4,
+              3
+            ],
+            "scale": 0.95,
+            "color": [
+              0.85,
+              0.28,
+              0.38
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 1.7,
+              "amp": 0.13
+            }
+          },
+          {
+            "shape": "toroidal_curve",
+            "pos": [
+              5,
+              -6,
+              1
+            ],
+            "scale": 0.85,
+            "color": [
+              0.38,
+              0.8,
+              0.32
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.6,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_ring",
+            "pos": [
+              -6,
+              -6,
+              0
+            ],
+            "scale": 0.75,
+            "color": [
+              0.5,
+              0.62,
+              0.8
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.4,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "fractal_box",
+            "pos": [
+              4,
+              -5,
+              -3
+            ],
+            "scale": 1.05,
+            "color": [
+              0.8,
+              0.42,
+              0.52
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 1.3,
+              "amp": 0.17
+            }
+          },
+          {
+            "shape": "mandel_cross",
+            "pos": [
+              -4,
+              -6,
+              -2
+            ],
+            "scale": 0.9,
+            "color": [
+              0.2,
+              0.8,
+              0.7
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.5,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "nested_squares",
+            "pos": [
+              3,
+              -7,
+              -1
+            ],
+            "scale": 0.98,
+            "color": [
+              0.88,
+              0.5,
+              0.18
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.9,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "spiral_strand",
+            "pos": [
+              -3,
+              -7,
+              0
+            ],
+            "scale": 0.88,
+            "color": [
+              0.3,
+              0.82,
+              0.5
+            ],
+            "motion": {
+              "type": "bob",
+              "speed": 0.85,
+              "amp": 0.33,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "triangular_web",
+            "pos": [
+              0,
+              -8,
+              -3
+            ],
+            "scale": 1.1,
+            "color": [
+              0.7,
+              0.28,
+              0.8
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.3,
+              "axis": "x"
+            }
+          },
+          {
+            "shape": "hypercube_projection",
+            "pos": [
+              6,
+              -7,
+              1
+            ],
+            "scale": 0.92,
+            "color": [
+              0.28,
+              0.48,
+              0.88
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.65,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "diamond_grid",
+            "pos": [
+              -5,
+              -8,
+              -1
+            ],
+            "scale": 0.98,
+            "color": [
+              0.82,
+              0.32,
+              0.42
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 1.8,
+              "amp": 0.11
+            }
+          },
+          {
+            "shape": "toroidal_curve",
+            "pos": [
+              7,
+              -8,
+              0
+            ],
+            "scale": 0.9,
+            "color": [
+              0.42,
+              0.75,
+              0.35
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.55,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_ring",
+            "pos": [
+              -7,
+              -7,
+              1
+            ],
+            "scale": 0.78,
+            "color": [
+              0.48,
+              0.58,
+              0.78
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.5,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "fractal_box",
+            "pos": [
+              2,
+              -9,
+              -4
+            ],
+            "scale": 1.02,
+            "color": [
+              0.75,
+              0.4,
+              0.58
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 1.25,
+              "amp": 0.19
+            }
+          },
+          {
+            "shape": "mandel_cross",
+            "pos": [
+              -2,
+              -9,
+              -3
+            ],
+            "scale": 0.88,
+            "color": [
+              0.22,
+              0.78,
+              0.68
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.52,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "nested_squares",
+            "pos": [
+              5,
+              -9,
+              -2
+            ],
+            "scale": 0.96,
+            "color": [
+              0.86,
+              0.52,
+              0.2
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.88,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_strand",
+            "pos": [
+              -5,
+              -9,
+              -1
+            ],
+            "scale": 0.9,
+            "color": [
+              0.32,
+              0.8,
+              0.52
+            ],
+            "motion": {
+              "type": "bob",
+              "speed": 0.8,
+              "amp": 0.34,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "triangular_web",
+            "pos": [
+              8,
+              -7,
+              -2
+            ],
+            "scale": 1.12,
+            "color": [
+              0.68,
+              0.3,
+              0.82
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.25,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "hypercube_projection",
+            "pos": [
+              -8,
+              -8,
+              -1
+            ],
+            "scale": 0.9,
+            "color": [
+              0.3,
+              0.5,
+              0.85
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.7,
+              "axis": "x"
+            }
+          },
+          {
+            "shape": "diamond_grid",
+            "pos": [
+              1,
+              -10,
+              -5
+            ],
+            "scale": 0.96,
+            "color": [
+              0.8,
+              0.35,
+              0.45
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 1.9,
+              "amp": 0.1
+            }
+          },
+          {
+            "shape": "toroidal_curve",
+            "pos": [
+              -1,
+              -10,
+              -4
+            ],
+            "scale": 0.88,
+            "color": [
+              0.45,
+              0.72,
+              0.38
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.58,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_ring",
+            "pos": [
+              4,
+              -10,
+              -3
+            ],
+            "scale": 0.8,
+            "color": [
+              0.52,
+              0.6,
+              0.76
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.6,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "fractal_box",
+            "pos": [
+              -4,
+              -10,
+              -2
+            ],
+            "scale": 1,
+            "color": [
+              0.72,
+              0.44,
+              0.6
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 1.15,
+              "amp": 0.2
+            }
+          },
+          {
+            "shape": "mandel_cross",
+            "pos": [
+              7,
+              -9,
+              -4
+            ],
+            "scale": 0.92,
+            "color": [
+              0.25,
+              0.75,
+              0.65
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.48,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "nested_squares",
+            "pos": [
+              -6,
+              -10,
+              -3
+            ],
+            "scale": 0.94,
+            "color": [
+              0.84,
+              0.55,
+              0.22
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.92,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "spiral_strand",
+            "pos": [
+              6,
+              -11,
+              -2
+            ],
+            "scale": 0.92,
+            "color": [
+              0.35,
+              0.78,
+              0.55
+            ],
+            "motion": {
+              "type": "bob",
+              "speed": 0.88,
+              "amp": 0.31,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "triangular_web",
+            "pos": [
+              -7,
+              -11,
+              -1
+            ],
+            "scale": 1.08,
+            "color": [
+              0.65,
+              0.32,
+              0.78
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.35,
+              "axis": "x"
+            }
+          },
+          {
+            "shape": "hypercube_projection",
+            "pos": [
+              0,
+              -12,
+              0
+            ],
+            "scale": 0.95,
+            "color": [
+              0.32,
+              0.52,
+              0.82
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.75,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "diamond_grid",
+            "pos": [
+              5,
+              -11,
+              1
+            ],
+            "scale": 0.98,
+            "color": [
+              0.78,
+              0.38,
+              0.48
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 2,
+              "amp": 0.09
+            }
+          },
+          {
+            "shape": "toroidal_curve",
+            "pos": [
+              -5,
+              -12,
+              2
+            ],
+            "scale": 0.9,
+            "color": [
+              0.48,
+              0.7,
+              0.4
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.62,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_ring",
+            "pos": [
+              8,
+              -10,
+              3
+            ],
+            "scale": 0.82,
+            "color": [
+              0.55,
+              0.58,
+              0.74
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.7,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "fractal_box",
+            "pos": [
+              -8,
+              -11,
+              4
+            ],
+            "scale": 0.98,
+            "color": [
+              0.7,
+              0.46,
+              0.62
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 1.1,
+              "amp": 0.21
+            }
+          },
+          {
+            "shape": "mandel_cross",
+            "pos": [
+              3,
+              -12,
+              5
+            ],
+            "scale": 0.94,
+            "color": [
+              0.28,
+              0.72,
+              0.62
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.45,
+              "axis": "x"
+            }
+          },
+          {
+            "shape": "nested_squares",
+            "pos": [
+              -3,
+              -12,
+              6
+            ],
+            "scale": 0.92,
+            "color": [
+              0.82,
+              0.58,
+              0.25
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.95,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_strand",
+            "pos": [
+              7,
+              -13,
+              7
+            ],
+            "scale": 0.94,
+            "color": [
+              0.38,
+              0.76,
+              0.58
+            ],
+            "motion": {
+              "type": "bob",
+              "speed": 0.92,
+              "amp": 0.3,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "triangular_web",
+            "pos": [
+              -7,
+              -14,
+              8
+            ],
+            "scale": 1.05,
+            "color": [
+              0.62,
+              0.34,
+              0.75
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.4,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "hypercube_projection",
+            "pos": [
+              2,
+              -13,
+              8
+            ],
+            "scale": 0.98,
+            "color": [
+              0.35,
+              0.54,
+              0.8
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.8,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "diamond_grid",
+            "pos": [
+              -2,
+              -14,
+              9
+            ],
+            "scale": 0.96,
+            "color": [
+              0.75,
+              0.4,
+              0.52
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 2.1,
+              "amp": 0.08
+            }
+          },
+          {
+            "shape": "toroidal_curve",
+            "pos": [
+              6,
+              -15,
+              10
+            ],
+            "scale": 0.92,
+            "color": [
+              0.5,
+              0.68,
+              0.42
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.65,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_ring",
+            "pos": [
+              -6,
+              -16,
+              11
+            ],
+            "scale": 0.84,
+            "color": [
+              0.58,
+              0.56,
+              0.72
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.8,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "fractal_box",
+            "pos": [
+              1,
+              -16,
+              12
+            ],
+            "scale": 0.96,
+            "color": [
+              0.68,
+              0.48,
+              0.64
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 1.05,
+              "amp": 0.22
+            }
+          },
+          {
+            "shape": "mandel_cross",
+            "pos": [
+              -1,
+              -17,
+              13
+            ],
+            "scale": 0.96,
+            "color": [
+              0.3,
+              0.7,
+              0.6
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.42,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "nested_squares",
+            "pos": [
+              4,
+              -17,
+              14
+            ],
+            "scale": 0.9,
+            "color": [
+              0.8,
+              0.6,
+              0.28
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.98,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "spiral_strand",
+            "pos": [
+              -4,
+              -18,
+              15
+            ],
+            "scale": 0.96,
+            "color": [
+              0.4,
+              0.74,
+              0.6
+            ],
+            "motion": {
+              "type": "bob",
+              "speed": 0.95,
+              "amp": 0.29,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "triangular_web",
+            "pos": [
+              8,
+              -18,
+              16
+            ],
+            "scale": 1.02,
+            "color": [
+              0.6,
+              0.36,
+              0.72
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.45,
+              "axis": "x"
+            }
+          },
+          {
+            "shape": "hypercube_projection",
+            "pos": [
+              -8,
+              -19,
+              17
+            ],
+            "scale": 0.96,
+            "color": [
+              0.38,
+              0.56,
+              0.78
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.85,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "diamond_grid",
+            "pos": [
+              3,
+              -19,
+              18
+            ],
+            "scale": 0.94,
+            "color": [
+              0.72,
+              0.42,
+              0.56
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 2.2,
+              "amp": 0.07
+            }
+          },
+          {
+            "shape": "toroidal_curve",
+            "pos": [
+              -3,
+              -20,
+              19
+            ],
+            "scale": 0.94,
+            "color": [
+              0.52,
+              0.66,
+              0.45
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.68,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_ring",
+            "pos": [
+              7,
+              -20,
+              20
+            ],
+            "scale": 0.86,
+            "color": [
+              0.6,
+              0.54,
+              0.7
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.9,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "fractal_box",
+            "pos": [
+              -7,
+              -21,
+              21
+            ],
+            "scale": 0.94,
+            "color": [
+              0.66,
+              0.5,
+              0.66
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 1,
+              "amp": 0.23
+            }
+          },
+          {
+            "shape": "mandel_cross",
+            "pos": [
+              2,
+              -21,
+              22
+            ],
+            "scale": 0.98,
+            "color": [
+              0.32,
+              0.68,
+              0.58
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.4,
+              "axis": "x"
+            }
+          },
+          {
+            "shape": "nested_squares",
+            "pos": [
+              -2,
+              -22,
+              23
+            ],
+            "scale": 0.88,
+            "color": [
+              0.78,
+              0.62,
+              0.3
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_strand",
+            "pos": [
+              5,
+              -22,
+              24
+            ],
+            "scale": 0.98,
+            "color": [
+              0.42,
+              0.72,
+              0.62
+            ],
+            "motion": {
+              "type": "bob",
+              "speed": 1,
+              "amp": 0.28,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "triangular_web",
+            "pos": [
+              -5,
+              -23,
+              25
+            ],
+            "scale": 0.99,
+            "color": [
+              0.58,
+              0.38,
+              0.7
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.5,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "hypercube_projection",
+            "pos": [
+              0,
+              -24,
+              26
+            ],
+            "scale": 0.94,
+            "color": [
+              0.4,
+              0.58,
+              0.76
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.9,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "diamond_grid",
+            "pos": [
+              6,
+              -24,
+              27
+            ],
+            "scale": 0.92,
+            "color": [
+              0.7,
+              0.44,
+              0.6
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 2.3,
+              "amp": 0.06
+            }
+          },
+          {
+            "shape": "toroidal_curve",
+            "pos": [
+              -6,
+              -25,
+              28
+            ],
+            "scale": 0.96,
+            "color": [
+              0.54,
+              0.64,
+              0.48
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.7,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_ring",
+            "pos": [
+              4,
+              -25,
+              29
+            ],
+            "scale": 0.88,
+            "color": [
+              0.62,
+              0.52,
+              0.68
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 2,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "fractal_box",
+            "pos": [
+              -4,
+              -26,
+              30
+            ],
+            "scale": 0.92,
+            "color": [
+              0.64,
+              0.52,
+              0.68
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 0.95,
+              "amp": 0.24
+            }
+          },
+          {
+            "shape": "mandel_cross",
+            "pos": [
+              8,
+              -26,
+              31
+            ],
+            "scale": 0.98,
+            "color": [
+              0.34,
+              0.66,
+              0.56
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.38,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "nested_squares",
+            "pos": [
+              -8,
+              -27,
+              32
+            ],
+            "scale": 0.86,
+            "color": [
+              0.76,
+              0.64,
+              0.32
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.02,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "spiral_strand",
+            "pos": [
+              3,
+              -27,
+              33
+            ],
+            "scale": 0.98,
+            "color": [
+              0.44,
+              0.7,
+              0.64
+            ],
+            "motion": {
+              "type": "bob",
+              "speed": 1.02,
+              "amp": 0.27,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "triangular_web",
+            "pos": [
+              -3,
+              -28,
+              34
+            ],
+            "scale": 0.96,
+            "color": [
+              0.56,
+              0.4,
+              0.68
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.55,
+              "axis": "x"
+            }
+          },
+          {
+            "shape": "hypercube_projection",
+            "pos": [
+              7,
+              -28,
+              35
+            ],
+            "scale": 0.92,
+            "color": [
+              0.42,
+              0.6,
+              0.74
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.95,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "diamond_grid",
+            "pos": [
+              -7,
+              -29,
+              36
+            ],
+            "scale": 0.9,
+            "color": [
+              0.68,
+              0.46,
+              0.64
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 2.4,
+              "amp": 0.05
+            }
+          },
+          {
+            "shape": "toroidal_curve",
+            "pos": [
+              1,
+              -29,
+              37
+            ],
+            "scale": 0.98,
+            "color": [
+              0.56,
+              0.62,
+              0.5
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.72,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_ring",
+            "pos": [
+              -1,
+              -30,
+              38
+            ],
+            "scale": 0.9,
+            "color": [
+              0.64,
+              0.5,
+              0.66
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 2.1,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "fractal_box",
+            "pos": [
+              5,
+              -30,
+              39
+            ],
+            "scale": 0.9,
+            "color": [
+              0.62,
+              0.54,
+              0.7
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 0.9,
+              "amp": 0.25
+            }
+          },
+          {
+            "shape": "mandel_cross",
+            "pos": [
+              -5,
+              -31,
+              40
+            ],
+            "scale": 0.96,
+            "color": [
+              0.36,
+              0.64,
+              0.54
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.36,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "nested_squares",
+            "pos": [
+              6,
+              -31,
+              35
+            ],
+            "scale": 0.84,
+            "color": [
+              0.74,
+              0.66,
+              0.34
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.04,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_strand",
+            "pos": [
+              -6,
+              -32,
+              30
+            ],
+            "scale": 0.96,
+            "color": [
+              0.46,
+              0.68,
+              0.66
+            ],
+            "motion": {
+              "type": "bob",
+              "speed": 1.04,
+              "amp": 0.26,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "triangular_web",
+            "pos": [
+              2,
+              -32,
+              25
+            ],
+            "scale": 0.94,
+            "color": [
+              0.54,
+              0.42,
+              0.66
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.6,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "hypercube_projection",
+            "pos": [
+              -2,
+              -33,
+              20
+            ],
+            "scale": 0.9,
+            "color": [
+              0.44,
+              0.62,
+              0.72
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1,
+              "axis": "x"
+            }
+          },
+          {
+            "shape": "diamond_grid",
+            "pos": [
+              8,
+              -33,
+              15
+            ],
+            "scale": 0.88,
+            "color": [
+              0.66,
+              0.48,
+              0.68
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 2.5,
+              "amp": 0.04
+            }
+          },
+          {
+            "shape": "toroidal_curve",
+            "pos": [
+              -8,
+              -34,
+              10
+            ],
+            "scale": 0.96,
+            "color": [
+              0.58,
+              0.6,
+              0.52
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.74,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_ring",
+            "pos": [
+              4,
+              -34,
+              5
+            ],
+            "scale": 0.92,
+            "color": [
+              0.66,
+              0.48,
+              0.64
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 2.2,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "fractal_box",
+            "pos": [
+              -4,
+              -35,
+              0
+            ],
+            "scale": 0.88,
+            "color": [
+              0.6,
+              0.56,
+              0.72
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 0.85,
+              "amp": 0.26
+            }
+          },
+          {
+            "shape": "mandel_cross",
+            "pos": [
+              3,
+              -35,
+              -5
+            ],
+            "scale": 0.94,
+            "color": [
+              0.38,
+              0.62,
+              0.52
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.34,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "nested_squares",
+            "pos": [
+              -3,
+              -36,
+              -10
+            ],
+            "scale": 0.82,
+            "color": [
+              0.72,
+              0.68,
+              0.36
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.06,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "spiral_strand",
+            "pos": [
+              7,
+              -36,
+              -15
+            ],
+            "scale": 0.94,
+            "color": [
+              0.48,
+              0.66,
+              0.68
+            ],
+            "motion": {
+              "type": "bob",
+              "speed": 1.06,
+              "amp": 0.25,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "triangular_web",
+            "pos": [
+              -7,
+              -37,
+              -20
+            ],
+            "scale": 0.92,
+            "color": [
+              0.52,
+              0.44,
+              0.64
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.65,
+              "axis": "x"
+            }
+          },
+          {
+            "shape": "hypercube_projection",
+            "pos": [
+              0,
+              -37,
+              -25
+            ],
+            "scale": 0.88,
+            "color": [
+              0.46,
+              0.64,
+              0.7
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.05,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "diamond_grid",
+            "pos": [
+              5,
+              -38,
+              -30
+            ],
+            "scale": 0.86,
+            "color": [
+              0.64,
+              0.5,
+              0.72
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 2.6,
+              "amp": 0.03
+            }
+          },
+          {
+            "shape": "toroidal_curve",
+            "pos": [
+              -5,
+              -38,
+              -35
+            ],
+            "scale": 0.94,
+            "color": [
+              0.6,
+              0.58,
+              0.54
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.76,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_ring",
+            "pos": [
+              6,
+              -39,
+              -30
+            ],
+            "scale": 0.94,
+            "color": [
+              0.68,
+              0.46,
+              0.62
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 2.3,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "fractal_box",
+            "pos": [
+              -6,
+              -39,
+              -25
+            ],
+            "scale": 0.86,
+            "color": [
+              0.58,
+              0.58,
+              0.74
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 0.8,
+              "amp": 0.27
+            }
+          },
+          {
+            "shape": "mandel_cross",
+            "pos": [
+              1,
+              -40,
+              -20
+            ],
+            "scale": 0.92,
+            "color": [
+              0.4,
+              0.6,
+              0.5
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.32,
+              "axis": "x"
+            }
+          },
+          {
+            "shape": "nested_squares",
+            "pos": [
+              -1,
+              -40,
+              -15
+            ],
+            "scale": 0.8,
+            "color": [
+              0.7,
+              0.7,
+              0.38
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.08,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_strand",
+            "pos": [
+              4,
+              -40,
+              -10
+            ],
+            "scale": 0.92,
+            "color": [
+              0.5,
+              0.64,
+              0.7
+            ],
+            "motion": {
+              "type": "bob",
+              "speed": 1.08,
+              "amp": 0.24,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "triangular_web",
+            "pos": [
+              -4,
+              -40,
+              -5
+            ],
+            "scale": 0.9,
+            "color": [
+              0.5,
+              0.46,
+              0.62
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.7,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "hypercube_projection",
+            "pos": [
+              8,
+              -39,
+              0
+            ],
+            "scale": 0.86,
+            "color": [
+              0.48,
+              0.66,
+              0.68
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.1,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "diamond_grid",
+            "pos": [
+              -8,
+              -39,
+              5
+            ],
+            "scale": 0.84,
+            "color": [
+              0.62,
+              0.52,
+              0.76
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 2.7,
+              "amp": 0.02
+            }
+          },
+          {
+            "shape": "toroidal_curve",
+            "pos": [
+              2,
+              -38,
+              10
+            ],
+            "scale": 0.92,
+            "color": [
+              0.62,
+              0.56,
+              0.56
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.78,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_ring",
+            "pos": [
+              -2,
+              -37,
+              15
+            ],
+            "scale": 0.96,
+            "color": [
+              0.7,
+              0.44,
+              0.6
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 2.4,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "fractal_box",
+            "pos": [
+              3,
+              -36,
+              20
+            ],
+            "scale": 0.84,
+            "color": [
+              0.56,
+              0.6,
+              0.76
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 0.75,
+              "amp": 0.28
+            }
+          },
+          {
+            "shape": "mandel_cross",
+            "pos": [
+              -3,
+              -35,
+              25
+            ],
+            "scale": 0.9,
+            "color": [
+              0.42,
+              0.58,
+              0.48
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.3,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "nested_squares",
+            "pos": [
+              7,
+              -34,
+              30
+            ],
+            "scale": 0.78,
+            "color": [
+              0.68,
+              0.72,
+              0.4
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.1,
+              "axis": "z"
+            }
+          },
+          {
+            "shape": "spiral_strand",
+            "pos": [
+              -7,
+              -33,
+              35
+            ],
+            "scale": 0.9,
+            "color": [
+              0.52,
+              0.62,
+              0.72
+            ],
+            "motion": {
+              "type": "bob",
+              "speed": 1.1,
+              "amp": 0.23,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "triangular_web",
+            "pos": [
+              0,
+              -30,
+              40
+            ],
+            "scale": 0.88,
+            "color": [
+              0.48,
+              0.48,
+              0.6
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.75,
+              "axis": "x"
+            }
+          },
+          {
+            "shape": "hypercube_projection",
+            "pos": [
+              5,
+              -25,
+              38
+            ],
+            "scale": 0.84,
+            "color": [
+              0.5,
+              0.68,
+              0.66
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 1.15,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "diamond_grid",
+            "pos": [
+              -5,
+              -20,
+              36
+            ],
+            "scale": 0.82,
+            "color": [
+              0.6,
+              0.54,
+              0.8
+            ],
+            "motion": {
+              "type": "pulse",
+              "speed": 2.8,
+              "amp": 0.01
+            }
+          },
+          {
+            "shape": "toroidal_curve",
+            "pos": [
+              6,
+              -10,
+              34
+            ],
+            "scale": 0.9,
+            "color": [
+              0.64,
+              0.54,
+              0.58
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 0.8,
+              "axis": "y"
+            }
+          },
+          {
+            "shape": "spiral_ring",
+            "pos": [
+              -6,
+              0,
+              32
+            ],
+            "scale": 0.98,
+            "color": [
+              0.72,
+              0.42,
+              0.58
+            ],
+            "motion": {
+              "type": "spin",
+              "speed": 2.5,
+              "axis": "z"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "palette": [
+    "#0a0a1a",
+    "#1a4d7d",
+    "#2d8dcc",
+    "#33e0ff",
+    "#ff3366",
+    "#ff6699",
+    "#ff99bb",
+    "#ffaa00",
+    "#ffdd00",
+    "#00ff99"
+  ],
+  "modulation": [
+    {
+      "source": "lfo_slow",
+      "dest": "camera.speed",
+      "depth": 0.5
+    }
+  ],
+  "camera": {
+    "mode": "path",
+    "waypoints": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        8,
+        2,
+        5
+      ],
+      [
+        12,
+        5,
+        12
+      ],
+      [
+        10,
+        8,
+        20
+      ],
+      [
+        5,
+        10,
+        28
+      ],
+      [
+        -5,
+        12,
+        35
+      ],
+      [
+        -12,
+        10,
+        32
+      ],
+      [
+        -15,
+        5,
+        20
+      ],
+      [
+        -10,
+        2,
+        10
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "look_at": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        8,
+        3,
+        5
+      ],
+      [
+        12,
+        6,
+        12
+      ],
+      [
+        10,
+        9,
+        20
+      ],
+      [
+        5,
+        11,
+        28
+      ],
+      [
+        -5,
+        13,
+        35
+      ],
+      [
+        -12,
+        11,
+        32
+      ],
+      [
+        -15,
+        6,
+        20
+      ],
+      [
+        -10,
+        3,
+        10
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "lookahead": 2,
+    "speed": 0.6,
+    "fov": 62,
+    "near": 0.4,
+    "far": 50,
+    "max_strokes": 120,
+    "depth": {
+      "mode": "cull"
+    }
+  },
+  "aspect": "16:9"
+}

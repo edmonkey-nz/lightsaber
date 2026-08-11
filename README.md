@@ -92,6 +92,14 @@ Also on the list: more generators and post-processing, a UI for per-shape
 modulation routes, richer camera paths, and moving the API key out of a
 plaintext settings file before any public release.
 
+## Related project
+
+Lightsaber began as a fork of
+[promptwaver](https://github.com/edmonkey-nz/promptwaver), which drives a
+vector laser rather than projectors. The two still share a scene engine and
+features cross over selectively — see
+[TECHNICAL.md](TECHNICAL.md#relationship-to-promptwaver).
+
 ## Development
 
 Opens straight into VSCode — `.vscode/` points at `.venv` and has F5-ready

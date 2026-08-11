@@ -6,6 +6,38 @@ and APIs between minor versions until a 1.0 release.
 
 ## [Unreleased]
 
+### Added — camera "path" mode, ported from promptwaver
+- **A camera that walks a closed circuit** rather than orbiting or drifting.
+  `camera.mode = "path"` with `waypoints` (>=3) builds a closed Catmull-Rom
+  spline, parameterised by **arc length** so the camera doesn't accelerate
+  wherever waypoints happen to be further apart. Optional `look_at` (a
+  parallel list of points or nulls) decides what to watch while passing each
+  waypoint; `lookahead` aims along the path rather than down the straight
+  tangent, so the view leads into turns.
+- Speed integrates **distance**, not time × speed, for the same reason drift
+  integrates phase: a modulation route on `camera.speed` changes it every
+  frame, and multiplying raw `t` by a moving speed jumps position
+  discontinuously.
+- Fewer than 3 waypoints falls back to drift with a message, rather than
+  rendering from wherever the camera happened to start and never moving.
+- **`camera.wander`** on drift — roughens the wander with a second, slower
+  component at an unrelated rate, so a long-running drift doesn't visibly
+  retrace itself. Defaults to 0, which is **bit-identical** to the previous
+  drift, so every existing scene keeps exactly the motion it was tuned with.
+- New **"massive"** scene size for the director: asks for a long closed route
+  with geometry laid *along* it, and a path camera to travel it. Camera mode
+  and geometry layout are one decision — a path camera through drift-shaped
+  geometry stares into an empty room, and vice versa — so the tier states
+  both. Carries a 32k token floor, since 120-220 nodes doesn't fit an effort
+  tier's normal budget and overflowing it truncates into a silent fallback.
+- `path` and `massive` are selectable in the UI (Shape camera mode, Generate
+  modal).
+
+Deliberately **not** ported from promptwaver: the laser-specific
+`ttl_quantize` depth option, and its `aspect` projection fix — lightsaber
+never sets `Camera.aspect` (it stays 1.0, where both conventions agree), and
+output aspect is handled per-shape in the client instead.
+
 ### Changed — LFO routes have a range, not just a depth (53)
 - An LFO is bipolar (-1..1), so a bare "depth" always straddled zero: a sine
   on opacity spent half its cycle trying to go negative and just clamped.

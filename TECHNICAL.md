@@ -638,6 +638,66 @@ its target frame rate" is a number rather than a guess. **Off by default** —
 the instrumentation has a small real cost. Enable live in Settings ›
 Diagnostics or launch with `--diag`; no relaunch needed either way.
 
+## Relationship to promptwaver
+
+Lightsaber is a fork of [promptwaver](https://github.com/edmonkey-nz/promptwaver),
+which is still developed alongside it. Both are on the `upstream` remote:
+
+```
+origin    edmonkey-nz/lightsaber
+upstream  edmonkey-nz/promptwaver
+```
+
+**They are not merged, and shouldn't be.** Promptwaver drives a vector
+*laser*; lightsaber drives *projectors*. That single difference has pushed the
+two apart everywhere output is concerned, while leaving the scene engine
+largely shared. Roughly, by divergence:
+
+| Shared, drifting slowly | Diverged heavily | Lightsaber-only |
+|---|---|---|
+| `scene3d.py`, `modulation.py`, `geometry.py`, `generators/`, `director/` | `engine.py`, `web/server.py`, `scenes.py` | `projects.py`, `sequencer.py`, `media_roots.py`, `media_meta.py`, `canvases.py`, `renderhost/` |
+
+So changes flow **selectively, by hand, one feature at a time** — never as a
+merge or a rebase. A merge would drag laser assumptions into the projector
+path and vice versa.
+
+### Porting a feature across
+
+1. `diff -u lightsaber/<file> ../promptwaver/promptwaver/<file>` to see the
+   whole delta, then decide which hunks are the feature and which are
+   divergence. They are always mixed together.
+2. Strip laser-specific parts. Promptwaver assumes an on/off beam and a
+   few-hundred-stroke budget; lightsaber has neither constraint. `ttl_quantize`
+   on `DepthCue` is the clearest example — it snaps colour channels to 0/1 for
+   TTL RGB units and is meaningless here.
+3. Reword ported comments and docstrings. "a dark laser" is "an empty frame";
+   `print("[promptwaver] ...")` is `[lightsaber]`.
+4. Check any new knob **defaults to the old behaviour**, so existing saved
+   scenes are unaffected. Verify it, don't assume it: `camera.wander` defaults
+   to 0 and was checked bit-identical against the previous drift before
+   shipping.
+5. Check whether the feature needs UI, prompt text, or a token budget on this
+   side. `path` mode needed all three, and without the budget it would have
+   truncated into a silent fallback.
+
+### Ported so far
+
+- **Camera `path` mode + `PathSpline`** — a closed, arc-length-parameterised
+  Catmull-Rom circuit with `waypoints` / `look_at` / `lookahead`.
+- **`camera.wander`** on drift.
+- **The `massive` scene size** in the director, which specifies a route camera
+  *and* route-shaped geometry together, plus its 32k token floor.
+
+### Deliberately not ported
+
+- **`DepthCue.ttl_quantize`** — laser-only.
+- **Promptwaver's `aspect` projection fix.** It found its perspective divide
+  had `* aspect` where it should be `/ aspect`. Lightsaber has the same line,
+  but **never sets `Camera.aspect`** — `make_camera` doesn't pass it, so it
+  stays 1.0, where both conventions are identical. Latent, not live. If camera
+  aspect is ever wired through here, take promptwaver's version; output aspect
+  is currently handled per-shape in the client instead (see *Outputs*).
+
 ## Files on disk
 
 ```

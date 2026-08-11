@@ -9,6 +9,15 @@ video layer, an actual multi-projector rig) is **not** built. See §12 for
 exactly what's proven, what changed, and suggested next steps.
 Audience: Claude Code sessions working on this repo. Read this before proposing changes to display, network, or render-loop code.
 
+**This document, and everything under `renderhost/`, is lightsaber-only.**
+Lightsaber is a fork of promptwaver (still developed alongside it, on the
+`upstream` remote) and the two share a scene engine — but promptwaver drives a
+vector laser and has no render host, no projector rig, and no equivalent of
+any of this. So: don't look upstream for prior art on §2-§10, and don't try to
+port this work back. What *does* flow between them is scene/generator/director
+code, selectively and by hand — see TECHNICAL.md's "Relationship to
+promptwaver" for how, and for what has already crossed.
+
 ---
 
 ## 1. What this system is
