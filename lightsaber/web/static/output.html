@@ -343,7 +343,11 @@ function clipToQuadPath(ctx, corners, mapWin){
   ctx.closePath();
   ctx.clip();
 }
-function clipShapePath(ctx, shape, cx, cy, rx, ry){
+// `uniform` (44) keeps a preset's own proportions instead of stretching it
+// to the quad's bounding box — the smaller half-axis is used for both, so a
+// circle really is round on a 2:1 shape rather than an ellipse.
+function clipShapePath(ctx, shape, cx, cy, rx, ry, uniform){
+  if (uniform){ const r = Math.min(rx, ry); rx = r; ry = r; }
   ctx.beginPath();
   if (shape === "circle") {
     ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2);
@@ -393,7 +397,7 @@ function polyClipPath(ctx, layer, corners, mapWin){
   if (hasCustomMask(layer)){ customMaskPath(ctx, layer, homography(corners), mapWin); return; }
   const {cx, cy, rx, ry} = polygonBBoxPx(corners, mapWin);
   const s = layer.clip_scale ?? 1;
-  clipShapePath(ctx, layer.clip_shape, cx, cy, rx*s, ry*s);
+  clipShapePath(ctx, layer.clip_shape, cx, cy, rx*s, ry*s, !!layer.clip_uniform);
 }
 
 // Mirror-point fold — identical maths to index.html's foldFraction/foldG
@@ -801,6 +805,33 @@ function drawWarpedTriangle(ctx, img, s0,s1,s2, d0,d1,d2){
 // Mirror (5) — see index.html's drawMediaWarped for the full rationale:
 // flips which SOURCE pixels are sampled at each destination grid point,
 // leaving the destination geometry untouched.
+// Mesh compositing scratch. The anti-seam skirt makes each triangle overlap
+// its neighbours by ~1.5px; at full opacity that's invisible (opaque pixels
+// just redraw the same colour), but at ANY opacity below 1 the overlap band
+// gets alpha-composited two to four times and shows as a bright grid over
+// the shape. Measured on flat grey at 50%%: the band reached 125 where the
+// body was 64 — nearly double.
+//
+// Same bug, same fix as the vector renderer (ARCHITECTURE.md's "per-primitive
+// opacity blended BEFORE compositing double-counts anti-seam overlap"):
+// draw the mesh at FULL opacity into an offscreen buffer, then blend that
+// finished layer in once. The parallelogram fast path is a single drawImage
+// with nothing to overlap, so it keeps applying opacity directly.
+let _meshScratch = null;
+function getMeshScratch(w, h){
+  if (!_meshScratch){
+    _meshScratch = document.createElement("canvas");
+    _meshScratch.ctx = _meshScratch.getContext("2d");
+  }
+  if (_meshScratch.width !== w || _meshScratch.height !== h){
+    _meshScratch.width = w; _meshScratch.height = h;   // resizing already blanks it
+  } else {
+    _meshScratch.ctx.setTransform(1,0,0,1,0,0);
+    _meshScratch.ctx.clearRect(0, 0, w, h);
+  }
+  return _meshScratch;
+}
+const MESH_OPAQUE = 0.999;   // above this, the overlap can't show
 function drawMediaWarped(ctx, mapWin, H, corners, img, iw, ih, opacity, fitMode, ca, qa, mirrorX, mirrorY, mxPoint=1, myPoint=1){
   ctx.save();
   ctx.globalAlpha = opacity;
@@ -839,11 +870,29 @@ function drawMediaWarped(ctx, mapWin, H, corners, img, iw, ih, opacity, fitMode,
     }
     dst.push(drow); src.push(srow);
   }
+  // Translucent: build the whole mesh opaque off-screen, then blend once.
+  const translucent = opacity < MESH_OPAQUE;
+  let out = ctx, scratch = null;
+  if (translucent){
+    scratch = getMeshScratch(ctx.canvas.width, ctx.canvas.height);
+    out = scratch.ctx;
+    // Same transform, so the mesh lands on the same device pixels. The
+    // caller's clip stays on `ctx` and applies to the blit below, which is
+    // in device space, so clipping still works.
+    out.setTransform(ctx.getTransform());
+    out.globalAlpha = 1;
+    out.filter = "none";      // the filter applies once, on the blit
+  }
   for (let j=0;j<N;j++){
     for (let i=0;i<N;i++){
-      drawWarpedTriangle(ctx, img, src[j][i], src[j][i+1], src[j+1][i], dst[j][i], dst[j][i+1], dst[j+1][i]);
-      drawWarpedTriangle(ctx, img, src[j][i+1], src[j+1][i+1], src[j+1][i], dst[j][i+1], dst[j+1][i+1], dst[j+1][i]);
+      drawWarpedTriangle(out, img, src[j][i], src[j][i+1], src[j+1][i], dst[j][i], dst[j][i+1], dst[j+1][i]);
+      drawWarpedTriangle(out, img, src[j][i+1], src[j+1][i+1], src[j+1][i], dst[j][i+1], dst[j+1][i+1], dst[j+1][i]);
     }
+  }
+  if (translucent){
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.globalAlpha = opacity;
+    ctx.drawImage(scratch, 0, 0);
   }
   ctx.restore();
 }

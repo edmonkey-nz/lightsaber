@@ -6,6 +6,125 @@ and APIs between minor versions until a 1.0 release.
 
 ## [Unreleased]
 
+### Fixed — mesh seams on any shape below full opacity
+- A distorted shape draws as a ~72-triangle mesh, each triangle inflated by
+  1.5px so its neighbours can't leave gaps. At full opacity that overlap is
+  invisible (opaque pixels just redraw the same colour), but at **any**
+  opacity below 1 the band was alpha-composited two to four times and showed
+  as a bright grid across the shape. Measured on flat grey: at 50% opacity
+  the body read 64 while the seams reached **125**, nearly double; at 25% the
+  seams were over 3x too bright.
+- Same bug and same fix as the vector renderer already had (ARCHITECTURE.md's
+  "per-primitive opacity blended BEFORE compositing double-counts anti-seam
+  overlap"): the mesh is now drawn at full opacity into an off-screen buffer
+  and that finished layer is blended in **once**. Affects media, webcam and
+  text shapes, in the editor and the output windows.
+- The parallelogram fast path is untouched — it's a single `drawImage` with
+  nothing to overlap, so it keeps applying opacity directly.
+- Verified: the shape body is now flat to within 1-2 levels of rounding at
+  25%, 50%, 80% and 100%, at exactly the expected brightness, with clipping
+  and the editor's zoom/pan transform still correct.
+- **Cost**: roughly +0.15ms per translucent distorted layer at 1080p — one
+  extra full-canvas clear and blit. Against the ~8.8ms a distorted 1080p
+  video layer already costs, that's a couple of percent, and it's paid only
+  by shapes actually below full opacity.
+- Restricting the clear/blit to the shape's own bounding box was tried and
+  **rejected**: an interleaved A/B measured it slower in 3 of 4 cases (a
+  GPU-accelerated whole-canvas clear and blit beats a sub-rect `drawImage`
+  plus the device-space maths), so the simpler version stayed.
+
+### Changed — "Knockout" is now "Cutout", and it's an Input source (42)
+- It was reachable only as a *fill type* on an existing shape, which is
+  backwards: it isn't a fill, it's a kind of shape you add. It has its own
+  entry on the Input rail now, alongside video, webcam, text and scenes.
+- Renamed to **Cutout**. Not "mask": this app already calls a shape's own
+  silhouette a mask (the Mask/clipping pane), and two different things under
+  one word is worse than an unfamiliar one. "Cutout" says what it does —
+  a hole in the output, for killing light on a window or a doorway.
+- **The stored `source_type` is still `"knockout"`**, so existing canvases
+  load unchanged. Only the label moved.
+
+### Added
+- **"Draw custom polygon" is its own button** (43) rather than the last row
+  of the clip-shape dropdown. Drawing a mask by hand is a different kind of
+  action from picking a preset, and it was buried. The button toggles, so
+  it's both the way in and the way out.
+- **"Keep it true" on preset clip shapes** (44) — a preset is sized from the
+  shape's bounding box, so on a 2:1 shape "circle" came out an ellipse. Ticked,
+  the smaller half-axis is used for both and the shape is true. New per-shape
+  `clip_uniform`; absent on older canvases, which read as off.
+- **Hide shape borders** in the canvas toolbar (`square` icon, off by
+  default) — hides shape outlines, corner pins and mask handles for a clean
+  look at the picture. The **selected** shape keeps its own chrome, so you
+  can still see what you're editing; deselect for a completely clean frame.
+  Shapes stay draggable while hidden (hit-testing is independent of
+  drawing), which the tooltip says so it isn't a surprise.
+- **Z-index badge toggle** in the canvas toolbar (`front` icon, default on) —
+  useful while stacking shapes, clutter once the stack is settled. Kept
+  independent of the borders toggle, and of the frame guides, so each piece
+  of canvas chrome can be dropped on its own.
+- **Clicking outside the Input column shuts it** (46), so the canvas gets its
+  width back without a trip to the rail. Clicks inside a modal don't count:
+  a file or folder picker opened *from* that pane is logically still part of
+  it, and collapsing underneath you mid-pick is disorienting.
+
+### Changed — Input column is a rail + one pane
+- The Input sources (video/image, webcam, text, 3D scenes) were a stack of
+  accordions inside a collapsible column. They're now an always-visible icon
+  rail plus a single sliding pane, the same shape as the Panes column, with
+  the section's name as the pane heading and the active icon highlighted.
+- Clicking the **active** icon shuts the pane, giving the width back to the
+  canvas — that's this column's collapse, so the separate collapse/expand
+  buttons are gone. 343px open, 103px shut. (Panes deliberately can't close;
+  it has no equivalent screen-space job.)
+
+### Added
+- **Output frame guides toggle** in the canvas toolbar (`border-outer` icon),
+  default on — turns off the dashed crop/overlap guides when they're in the
+  way of judging the picture. A view preference, so it's per browser and
+  never touches the project.
+- **Vertical dividers in the canvas toolbar**, grouping it into document
+  actions / view tools / display toggles rather than one undifferentiated
+  strip of eight identical buttons.
+
+### Changed
+- **Shapes list rows no longer have a delete ✕.** A list you use for
+  *selection* shouldn't be able to destroy a shape on a mis-click; Shape
+  settings already has an unambiguous Delete button. The padlock moved to the
+  row's right edge, where it reads as a status badge rather than a control.
+
+### Added
+- **Test pattern per output, on the Output Preview tab** (41) — a checkbox
+  under each tile, so throwing the calibration grid on a projector is one
+  click from the screen you're already watching while aligning. Same engine
+  state as the Project tab's, so ticking either moves both.
+  Deliberately kept out of the tile rebuild signature: rebuilding a tile
+  recreates its `<iframe>`, which would reload that output's whole page every
+  time the grid was toggled.
+
+### Changed
+- Shape settings takes the sliders icon; the old Settings pane is now **3D
+  Scene Settings** with a 3D icon, since everything in it (motion, hue, scene
+  camera) drives the generated scene and is ignored by video/image/webcam/text
+  shapes — which the pane now says.
+- "Disable Visuals" removed from that pane. `set_visuals_disabled` still
+  exists in the engine; nothing is bound to it (Start/Stop covers it).
+- Input list reordered — Video/image files first, **3D Scenes** (renamed from
+  "Scene library") last, with the collapsed icon rail matching.
+- The pane column no longer collapses: clicking the active icon is a no-op
+  rather than closing it and leaving a bare strip of icons. Browsers whose
+  stored state has every pane closed fall back to Shape settings.
+
+### Fixed
+- **"Reset to original polygon" gave every shape the same stretched
+  rectangle.** It snapped to a hardcoded quad that renders at 3.16:1 on
+  screen regardless of content — the same wrong default that was fixed for
+  *new* shapes but never for reset. It now rebuilds from the content's own
+  aspect (media, webcam, text 1:1, scene) and keeps the shape where it is,
+  since reset means "undo my distortion", not "move it back to the middle".
+- **Reset mask** and **Reset distortion** added to the Mask/clipping pane as
+  separate buttons, so neither depends on which edit mode is active.
+
 ### Changed — Bootstrap Icons throughout (34)
 - Every emoji in the UI is now a **Bootstrap Icon** (v1.13.1, MIT), vendored
   as an inline SVG sprite. No CDN, no font file, nothing fetched at runtime.

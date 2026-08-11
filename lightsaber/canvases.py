@@ -148,6 +148,14 @@ class PolygonSpec:
     # the cutout, >1 grows it past the quad's own edges (still hard-clipped
     # by the quad/crop path wherever one applies).
     clip_scale: float = 1.0
+    # Keep a PRESET clip shape's own proportions instead of stretching it to
+    # the quad's bounding box (44). A preset is bbox-derived, so on a 2:1
+    # shape "circle" is really an ellipse — fine when you want the mask to
+    # follow the shape, wrong when you wanted a round porthole. On, the
+    # smaller half-axis is used for both, so the shape is true.
+    # Custom masks are unaffected: their points are already placed
+    # individually and have no proportions to preserve.
+    clip_uniform: bool = False
     # Paint order (3): 1-10, 10 = furthest back, 1 = furthest front. Lets a
     # "knockout" cutout shape (see source_type above) sit in front of the
     # shapes it should blank out.
@@ -204,6 +212,7 @@ class PolygonSpec:
             clip_shape=d.get("clip_shape"),
             clip_points=sanitize_clip_points(d.get("clip_points")),
             clip_scale=float(d.get("clip_scale", 1.0)),
+            clip_uniform=bool(d.get("clip_uniform", False)),
             locked=bool(d.get("locked", False)),
             z_index=max(1, min(10, int(d.get("z_index", 5)))),
             fit=d.get("fit", "stretch"),

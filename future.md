@@ -3,10 +3,7 @@ future enchancements
 2)DONE-  add a new section 'Scene settings' under the new 'global' section in column 3. Add the 'Save Soundscape settings' button here, add a 'Save Camera settings' and a 'Save all scene settings' and a 'Save as' button which allows provides a modal popup and to specify a new name and saves the current scene config into it. add a then remove the 'Save soundscape' button from the primary soundscape section. remove everything under the 'generate scene' button in the scene section in the last comlumn in the last row.
 3)DONE -  in the header area, change the indicator approach to this "Connections - [indicator light] Engine - [indicator light] Claude API" - so that the backend engine and API are simply shown.
 4)DONE add a oscilator mode (waveform options - sine etc, with effect) that can map to 2 options, a) the XXXXX a dropdown of objects/shapes inthe scene's json file - so that they could be scaled/morphed inde
-5) add a 'hue' override in the global section. this overrides the color of the output's scene
-7)DONE add a 'FPS" setting per project, still seems low in output (19fps)
-8) DONE when collasping the 'imput' sidebar, collapse all subsections inside it
-9) DONE add a 'lock' to a shape, )via shape settings) so that you can't easy edit it in the canvas, and show padlock icon in shapelist.
+that you can't easy edit it in the canvas, and show padlock icon in shapelist.
 10) DONE update shape buttons in shape list so that whole button is clickable, not just text inside button.
 11) DONE tidy up project pane, break sections into vertical panes.
 12) DONE improve 'not yet saved' inidactor, maybe needs better UX approach, as not very obious, maybe a sticky hovering thin panel at bottom right of window??
@@ -37,3 +34,17 @@ future enchancements
 38) DONE - add a H2 called 'Shape settings' above the last column, so its simlar to the 'shapes' title in the shapes list.
 39) DONE - add a dim overlay line on the canvas where the output crops are, so i can see where the 'cut' is set.
 40) DONE - 'text' shapes aren't drawn correcly when they span across two outputs. you can see this on the doublehappy768 - wide1 canvas, the 'hello' text appears incorrectly on the 2 outputs.
+41) DONE - add the 'test' image option per output as a checkbox on the 'output preview' panel, so its quick to setup/enable and dsiable.
+42) DONE - 'knockout' - feel that this shoudl be its own 'input' as its hidden in the shape options - also the name annoys me, its a mask of sorts, even if its not a mask on a shape, its a mask shape. suggest if we should change it to 'mask' or not. is this approach right?
+43) DONE - split out the option of 'custom ploygon' from the 'clip shape' dropdown, its pretty common function and needs to be obviois.
+44) DONE - on the 'clip/mask' pane when a clip shape is set (circle, hex etc) it uses the shapes ratio and streches the clip shape, so its often distorted. can we have an checkbox here which set its proportiaonlly to the shapes dimensions/ratio or excludes the dimensions so its truly round etc.?
+45) DONE - add another button in the cavnas header for 'show/hide z-index' of shapes in the canvas - use the 'front' BS icon.
+46) DONE - collapse the 'input' drawer if theres clicks out of that pane.
+47) bezier mask/clip/cutouts - how expensive are these and complicated to have as an option?? assess and ask before doing anything
+48) the handles on points on shapes within the canvas, as you zoom they get bigger, can they be propotioinal, ie: same size regardless of zoom depth?
+49) the 'fill type' dropdown list order should match the 'inputs' order.
+50) remove the 'focussed editing' button from the canvas.
+51) when creating a new canvas, do not make any shapes initally, let the user create them.
+52) when adding media, provide an option to choose from the 'media library'
+53) in the LFO: we need a min/max option or some sort of range adjuster, as when using a sine wave for opacity, we only want postive values, not negaitve values
+54) can you build some solid regresion testing scripts that can be run as i futher develop this project, and save them into a new 'test scripts' folder, this is so me, you and others can run them after new functionailty, and escpcailly for the render host when that progresses. these shoudl test performance, UX and other things you've been rtesting. make sure that the prompts can be useful for humans and AI when priidng feedback from running these.

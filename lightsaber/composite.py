@@ -541,6 +541,8 @@ class CompositeRenderer:
                 poly.locked = bool(value)
             elif key == "clip_points":
                 poly.clip_points = sanitize_clip_points(value)
+            elif key == "clip_uniform":
+                poly.clip_uniform = bool(value)
             elif key == "clip_scale":
                 poly.clip_scale = max(0.1, min(3.0, float(value)))
             elif key == "z_index":
@@ -795,6 +797,7 @@ class CompositeRenderer:
         return {
             "id": poly.id, "corners": poly.corners, "opacity": poly.opacity,
             "clip_shape": poly.clip_shape, "clip_scale": poly.clip_scale,
+            "clip_uniform": poly.clip_uniform,
             "clip_points": poly.clip_points,
             "source_type": poly.source_type, "z_index": poly.z_index, "media": poly.media,
             "webcam_device": poly.webcam_device, "text_content": poly.text_content,

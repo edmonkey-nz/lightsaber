@@ -50,28 +50,25 @@
      .canvas-3col, Canvas-tab-only, instead of a permanent top-level column
      beside .sidecol (8) — Project/Sequencer don't need it. */
   .toprow{display:flex;flex-direction:column;min-height:720px;border-bottom:1px solid var(--line)}
-  /* align-items:stretch (4, was :center) — center let #stage-full overflow
-     SYMMETRICALLY whenever its content (e.g. a long scene name in the
-     library) forced it wider than the actual column, rendering half the
-     overflow off past the left edge of the browser entirely. Stretch makes
-     #stage-full take exactly the column's own width, so content wraps
-     within it instead (helped along by .group's own min-width:0 above).
-     The collapsed rail below still wants centering for its narrow icon
-     column — body.col1-collapsed .stage re-asserts :center for that,
-     unaffected by this change (higher specificity, applies only then). */
-  .stage{flex:0 0 240px;padding:18px;display:flex;flex-direction:column;gap:14px;min-width:0;
-         align-items:stretch;position:relative}
-  /* Column 1 collapse (4) — an icon-only rail instead of the full Input
-     column, for people who want more room for Canvas/Shapes/drawers most
-     of the time. Just narrows this one flex item now (8) — canvas-col-main
-     (flex:1) absorbs whatever's freed automatically, same as before. */
-  body.col1-collapsed .stage{flex-basis:56px;padding:12px 6px;align-items:center}
-  #stage-collapse-btn{align-self:flex-end}
-  body.col1-collapsed #stage-full,
-  body.col1-collapsed #stage-collapse-btn{display:none}
-  #stage-rail{display:none;flex-direction:column;align-items:center;gap:12px;padding-top:2px}
-  body.col1-collapsed #stage-rail{display:flex}
-  #stage-rail button{width:36px;height:36px;font-size:16px;flex:0 0 auto}
+  /* Input column: a fixed icon rail plus one pane. The section is what
+     takes width from the canvas, so with the pane shut this column costs
+     ~66px instead of 240px — the screen-space win the old collapse button
+     provided, now folded into the icons themselves. */
+  .stage{flex:0 0 auto;padding:18px 0 18px 18px;display:flex;flex-direction:row;gap:0;
+         min-width:0;align-items:flex-start;position:relative}
+  .input-rail{flex:0 0 66px;display:flex;flex-direction:column;gap:6px;min-width:0;
+              padding-right:21px;border-right:1px solid var(--line)}
+  .input-rail-btn{width:44px;height:38px;display:flex;align-items:center;justify-content:center;
+                  background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+                  color:var(--dim);cursor:pointer;padding:0}
+  .input-rail-btn:hover{color:var(--ink);border-color:var(--cyan)}
+  .input-rail-btn.open{color:var(--cyan);border-color:var(--cyan)}
+  .input-pane{flex:0 0 240px;min-width:0;padding-left:18px}
+  .input-pane.shut{flex-basis:0;padding-left:0;overflow:hidden}
+  .input-section{width:100%}
+  /* With the pane shut the column edge IS the rail edge, so the rail's own
+     divider would sit a few px inside it as a second parallel line. */
+  .stage.input-shut .input-rail{border-right:none;padding-right:0}
   .sidecol{display:flex;flex-direction:column;gap:14px;min-width:0;padding:16px}
   /* Canvas tab 3-column layout (7): Input, then col1 canvas (flex:1,
      shrinks when a drawer opens), col2 shapes list (fixed width), then
@@ -100,8 +97,12 @@
   .canvas-col-drawers{flex:0 0 66px;display:flex;flex-direction:column;gap:6px;min-width:0;
                       padding-left:21px;margin-left:14px;border-left:1px solid var(--line)}
   /* Same type as .group h2 so the three column headings line up exactly. */
+  /* Same type as .group h2 so the three column headings line up exactly.
+     Clipped rather than allowed to overflow: this column is only as wide as
+     one icon, so a longer word would run into the next column's heading. */
   .rail-title{margin:0 0 2px;font-size:11px;font-weight:500;letter-spacing:.16em;
-              text-transform:uppercase;color:var(--dim);white-space:nowrap}
+              text-transform:uppercase;color:var(--dim);white-space:nowrap;
+              overflow:hidden;text-overflow:ellipsis}
   .drawer-handle-btn{width:100%;text-align:center;background:var(--panel2);
                       border:1px solid var(--line);border-radius:8px;color:var(--dim);
                       cursor:pointer;padding:9px 0;font-size:16px;line-height:1;
@@ -128,6 +129,10 @@
   .icon-btn .bi,.drawer-handle-btn .bi,.rail-icon .bi{width:1.1em;height:1.1em;vertical-align:-.16em}
   /* Icon + label buttons: a little air between the two. */
   .bi+span,.bi+b{margin-left:.45em}
+  /* Groups the canvas toolbar into document actions / view tools / display
+     toggles, so a row of eight same-sized icon buttons reads as three
+     intents instead of one undifferentiated strip. */
+  .tb-divider{width:1px;align-self:stretch;margin:2px 6px;background:var(--line);flex:0 0 auto}
   .disabled{opacity:.45;pointer-events:none}
   /* Focused editing (2) — only Canvas + Shape settings, maximized. Header
      stays hidden too (the exit control lives on #editor-fullscreen itself,
@@ -248,6 +253,7 @@
      rows overflowed 30px to the right, across the gutter and over the rail's
      divider. One column that simply fits is what this list wants anyway. */
   #shape-list{grid-template-columns:1fr}
+  .lib .item .lock{display:flex;align-items:center;color:var(--dim);flex:0 0 auto}
   .lib .item:hover{border-color:var(--cyan)}
   .lib .item.active{border-color:var(--cyan);background:rgba(51,224,208,.12)}
   .lib .item.active span:first-child{color:var(--cyan)}
@@ -422,6 +428,9 @@
     border:1px solid var(--line);overflow:hidden;background:#000}
   .output-preview-tile iframe{width:100%;height:100%;border:0;pointer-events:none}
   .output-preview-tile .label{font-size:12px;color:var(--dim);text-align:center}
+  .output-preview-tile .op-test-label{display:flex;align-items:center;justify-content:center;
+    gap:6px;font-size:12px;color:var(--dim);cursor:pointer;user-select:none}
+  .output-preview-tile .op-test-label:hover{color:var(--ink)}
 
   /* Output monitor rows (7) — one per configured output, dynamically built
      (see renderOutputMonitorRows) — same bordered-card language as
@@ -454,6 +463,8 @@
   <symbol id="bi-arrow-up" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5"/></symbol>
   <symbol id="bi-arrows-angle-expand" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M5.828 10.172a.5.5 0 0 0-.707 0l-4.096 4.096V11.5a.5.5 0 0 0-1 0v3.975a.5.5 0 0 0 .5.5H4.5a.5.5 0 0 0 0-1H1.732l4.096-4.096a.5.5 0 0 0 0-.707m4.344-4.344a.5.5 0 0 0 .707 0l4.096-4.096V4.5a.5.5 0 1 0 1 0V.525a.5.5 0 0 0-.5-.5H11.5a.5.5 0 0 0 0 1h2.768l-4.096 4.096a.5.5 0 0 0 0 .707"/></symbol>
   <symbol id="bi-arrows-fullscreen" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M5.828 10.172a.5.5 0 0 0-.707 0l-4.096 4.096V11.5a.5.5 0 0 0-1 0v3.975a.5.5 0 0 0 .5.5H4.5a.5.5 0 0 0 0-1H1.732l4.096-4.096a.5.5 0 0 0 0-.707m4.344 0a.5.5 0 0 1 .707 0l4.096 4.096V11.5a.5.5 0 1 1 1 0v3.975a.5.5 0 0 1-.5.5H11.5a.5.5 0 0 1 0-1h2.768l-4.096-4.096a.5.5 0 0 1 0-.707m0-4.344a.5.5 0 0 0 .707 0l4.096-4.096V4.5a.5.5 0 1 0 1 0V.525a.5.5 0 0 0-.5-.5H11.5a.5.5 0 0 0 0 1h2.768l-4.096 4.096a.5.5 0 0 0 0 .707m-4.344 0a.5.5 0 0 1-.707 0L1.025 1.732V4.5a.5.5 0 0 1-1 0V.525a.5.5 0 0 1 .5-.5H4.5a.5.5 0 0 1 0 1H1.732l4.096 4.096a.5.5 0 0 1 0 .707"/></symbol>
+  <symbol id="bi-badge-3d" viewBox="0 0 16 16"><path d="M4.52 8.368h.664c.646 0 1.055.378 1.06.9.008.537-.427.919-1.086.919-.598-.004-1.037-.325-1.068-.756H3c.03.914.791 1.688 2.153 1.688 1.24 0 2.285-.66 2.272-1.798-.013-.953-.747-1.38-1.292-1.432v-.062c.44-.07 1.125-.527 1.108-1.375-.013-.906-.8-1.57-2.053-1.565-1.31.005-2.043.734-2.074 1.67h1.103c.022-.391.383-.751.936-.751.532 0 .928.33.928.813.004.479-.383.835-.928.835h-.632v.914zm3.606-3.367V11h2.189C12.125 11 13 9.893 13 7.985c0-1.894-.861-2.984-2.685-2.984zm1.187.967h.844c1.112 0 1.621.686 1.621 2.04 0 1.353-.505 2.02-1.621 2.02h-.844z"/> <path d="M14 3a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM2 2a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/></symbol>
+  <symbol id="bi-border-outer" viewBox="0 0 16 16"><path d="M7.5 1.906v.938h1v-.938zm0 1.875v.938h1V3.78h-1zm0 1.875v.938h1v-.938zM1.906 8.5h.938v-1h-.938zm1.875 0h.938v-1H3.78v1zm1.875 0h.938v-1h-.938zm2.813 0v-.031H8.5V7.53h-.031V7.5H7.53v.031H7.5v.938h.031V8.5zm.937 0h.938v-1h-.938zm1.875 0h.938v-1h-.938zm1.875 0h.938v-1h-.938zM7.5 9.406v.938h1v-.938zm0 1.875v.938h1v-.938zm0 1.875v.938h1v-.938z"/> <path d="M0 0v16h16V0zm1 1h14v14H1z"/></symbol>
   <symbol id="bi-bounding-box" viewBox="0 0 16 16"><path d="M5 2V0H0v5h2v6H0v5h5v-2h6v2h5v-5h-2V5h2V0h-5v2zm6 1v2h2v6h-2v2H5v-2H3V5h2V3zm1-2h3v3h-3zm3 11v3h-3v-3zM4 15H1v-3h3zM1 4V1h3v3z"/></symbol>
   <symbol id="bi-camera-reels" viewBox="0 0 16 16"><path d="M6 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0M1 3a2 2 0 1 0 4 0 2 2 0 0 0-4 0"/> <path d="M9 6h.5a2 2 0 0 1 1.983 1.738l3.11-1.382A1 1 0 0 1 16 7.269v7.462a1 1 0 0 1-1.406.913l-3.111-1.382A2 2 0 0 1 9.5 16H2a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zm6 8.73V7.27l-3.5 1.555v4.35zM1 8v6a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1H2a1 1 0 0 0-1 1"/> <path d="M9 6a3 3 0 1 0 0-6 3 3 0 0 0 0 6M7 3a2 2 0 1 1 4 0 2 2 0 0 1-4 0"/></symbol>
   <symbol id="bi-camera-video" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M0 5a2 2 0 0 1 2-2h7.5a2 2 0 0 1 1.983 1.738l3.11-1.382A1 1 0 0 1 16 4.269v7.462a1 1 0 0 1-1.406.913l-3.111-1.382A2 2 0 0 1 9.5 13H2a2 2 0 0 1-2-2zm11.5 5.175 3.5 1.556V4.269l-3.5 1.556zM2 4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1z"/></symbol>
@@ -467,14 +478,15 @@
   <symbol id="bi-dash-lg" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M2 8a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11A.5.5 0 0 1 2 8"/></symbol>
   <symbol id="bi-display" viewBox="0 0 16 16"><path d="M0 4s0-2 2-2h12s2 0 2 2v6s0 2-2 2h-4q0 1 .25 1.5H11a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1h.75Q6 13 6 12H2s-2 0-2-2zm1.398-.855a.76.76 0 0 0-.254.302A1.5 1.5 0 0 0 1 4.01V10c0 .325.078.502.145.602q.105.156.302.254a1.5 1.5 0 0 0 .538.143L2.01 11H14c.325 0 .502-.078.602-.145a.76.76 0 0 0 .254-.302 1.5 1.5 0 0 0 .143-.538L15 9.99V4c0-.325-.078-.502-.145-.602a.76.76 0 0 0-.302-.254A1.5 1.5 0 0 0 13.99 3H2c-.325 0-.502.078-.602.145"/></symbol>
   <symbol id="bi-exclamation-triangle-fill" viewBox="0 0 16 16"><path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5m.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2"/></symbol>
+  <symbol id="bi-eraser-fill" viewBox="0 0 16 16"><path d="M8.086 2.207a2 2 0 0 1 2.828 0l3.879 3.879a2 2 0 0 1 0 2.828l-5.5 5.5A2 2 0 0 1 7.879 15H5.12a2 2 0 0 1-1.414-.586l-2.5-2.5a2 2 0 0 1 0-2.828zm.66 11.34L3.453 8.254 1.914 9.793a1 1 0 0 0 0 1.414l2.5 2.5a1 1 0 0 0 .707.293H7.88a1 1 0 0 0 .707-.293z"/></symbol>
   <symbol id="bi-film" viewBox="0 0 16 16"><path d="M0 1a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1zm4 0v6h8V1zm8 8H4v6h8zM1 1v2h2V1zm2 3H1v2h2zM1 7v2h2V7zm2 3H1v2h2zm-2 3v2h2v-2zM15 1h-2v2h2zm-2 3v2h2V4zm2 3h-2v2h2zm-2 3v2h2v-2zm2 3h-2v2h2z"/></symbol>
   <symbol id="bi-floppy" viewBox="0 0 16 16"><path d="M11 2H9v3h2z"/> <path d="M1.5 0h11.586a1.5 1.5 0 0 1 1.06.44l1.415 1.414A1.5 1.5 0 0 1 16 2.914V14.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 14.5v-13A1.5 1.5 0 0 1 1.5 0M1 1.5v13a.5.5 0 0 0 .5.5H2v-4.5A1.5 1.5 0 0 1 3.5 9h9a1.5 1.5 0 0 1 1.5 1.5V15h.5a.5.5 0 0 0 .5-.5V2.914a.5.5 0 0 0-.146-.353l-1.415-1.415A.5.5 0 0 0 13.086 1H13v4.5A1.5 1.5 0 0 1 11.5 7h-7A1.5 1.5 0 0 1 3 5.5V1H1.5a.5.5 0 0 0-.5.5m3 4a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 .5-.5V1H4zM3 15h10v-4.5a.5.5 0 0 0-.5-.5h-9a.5.5 0 0 0-.5.5z"/></symbol>
   <symbol id="bi-folder-fill" viewBox="0 0 16 16"><path d="M9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.825a2 2 0 0 1-1.991-1.819l-.637-7a2 2 0 0 1 .342-1.31L.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3m-8.322.12q.322-.119.684-.12h5.396l-.707-.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981z"/></symbol>
   <symbol id="bi-folder2-open" viewBox="0 0 16 16"><path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v.64c.57.265.94.876.856 1.546l-.64 5.124A2.5 2.5 0 0 1 12.733 15H3.266a2.5 2.5 0 0 1-2.481-2.19l-.64-5.124A1.5 1.5 0 0 1 1 6.14zM2 6h12v-.5a.5.5 0 0 0-.5-.5H9c-.964 0-1.71-.629-2.174-1.154C6.374 3.334 5.82 3 5.264 3H2.5a.5.5 0 0 0-.5.5zm-.367 1a.5.5 0 0 0-.496.562l.64 5.124A1.5 1.5 0 0 0 3.266 14h9.468a1.5 1.5 0 0 0 1.489-1.314l.64-5.124A.5.5 0 0 0 14.367 7z"/></symbol>
   <symbol id="bi-fonts" viewBox="0 0 16 16"><path d="M12.258 3h-8.51l-.083 2.46h.479c.26-1.544.758-1.783 2.693-1.845l.424-.013v7.827c0 .663-.144.82-1.3.923v.52h4.082v-.52c-1.162-.103-1.306-.26-1.306-.923V3.602l.431.013c1.934.062 2.434.301 2.693 1.846h.479z"/></symbol>
+  <symbol id="bi-front" viewBox="0 0 16 16"><path d="M0 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2H2a2 2 0 0 1-2-2zm5 10v2a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2v5a2 2 0 0 1-2 2z"/></symbol>
   <symbol id="bi-gear" viewBox="0 0 16 16"><path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/> <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"/></symbol>
   <symbol id="bi-hand-index" viewBox="0 0 16 16"><path d="M6.75 1a.75.75 0 0 1 .75.75V8a.5.5 0 0 0 1 0V5.467l.086-.004c.317-.012.637-.008.816.027.134.027.294.096.448.182.077.042.15.147.15.314V8a.5.5 0 1 0 1 0V6.435l.106-.01c.316-.024.584-.01.708.04.118.046.3.207.486.43.081.096.15.19.2.259V8.5a.5.5 0 0 0 1 0v-1h.342a1 1 0 0 1 .995 1.1l-.271 2.715a2.5 2.5 0 0 1-.317.991l-1.395 2.442a.5.5 0 0 1-.434.252H6.035a.5.5 0 0 1-.416-.223l-1.433-2.15a1.5 1.5 0 0 1-.243-.666l-.345-3.105a.5.5 0 0 1 .399-.546L5 8.11V9a.5.5 0 0 0 1 0V1.75A.75.75 0 0 1 6.75 1M8.5 4.466V1.75a1.75 1.75 0 1 0-3.5 0v5.34l-1.2.24a1.5 1.5 0 0 0-1.196 1.636l.345 3.106a2.5 2.5 0 0 0 .405 1.11l1.433 2.15A1.5 1.5 0 0 0 6.035 16h6.385a1.5 1.5 0 0 0 1.302-.756l1.395-2.441a3.5 3.5 0 0 0 .444-1.389l.271-2.715a2 2 0 0 0-1.99-2.199h-.581a5 5 0 0 0-.195-.248c-.191-.229-.51-.568-.88-.716-.364-.146-.846-.132-1.158-.108l-.132.012a1.26 1.26 0 0 0-.56-.642 2.6 2.6 0 0 0-.738-.288c-.31-.062-.739-.058-1.05-.046zm2.094 2.025"/></symbol>
-  <symbol id="bi-hexagon" viewBox="0 0 16 16"><path d="M14 4.577v6.846L8 15l-6-3.577V4.577L8 1zM8.5.134a1 1 0 0 0-1 0l-6 3.577a1 1 0 0 0-.5.866v6.846a1 1 0 0 0 .5.866l6 3.577a1 1 0 0 0 1 0l6-3.577a1 1 0 0 0 .5-.866V4.577a1 1 0 0 0-.5-.866z"/></symbol>
   <symbol id="bi-house-fill" viewBox="0 0 16 16"><path d="M8.707 1.5a1 1 0 0 0-1.414 0L.646 8.146a.5.5 0 0 0 .708.708L8 2.207l6.646 6.647a.5.5 0 0 0 .708-.708L13 5.793V2.5a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5v1.293z"/> <path d="m8 3.293 6 6V13.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 13.5V9.293z"/></symbol>
   <symbol id="bi-link-45deg" viewBox="0 0 16 16"><path d="M4.715 6.542 3.343 7.914a3 3 0 1 0 4.243 4.243l1.828-1.829A3 3 0 0 0 8.586 5.5L8 6.086a1 1 0 0 0-.154.199 2 2 0 0 1 .861 3.337L6.88 11.45a2 2 0 1 1-2.83-2.83l.793-.792a4 4 0 0 1-.128-1.287z"/> <path d="M6.586 4.672A3 3 0 0 0 7.414 9.5l.775-.776a2 2 0 0 1-.896-3.346L9.12 3.55a2 2 0 1 1 2.83 2.83l-.793.792c.112.42.155.855.128 1.287l1.372-1.372a3 3 0 1 0-4.243-4.243z"/></symbol>
   <symbol id="bi-lock-fill" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 0a4 4 0 0 1 4 4v2.05a2.5 2.5 0 0 1 2 2.45v5a2.5 2.5 0 0 1-2.5 2.5h-7A2.5 2.5 0 0 1 2 13.5v-5a2.5 2.5 0 0 1 2-2.45V4a4 4 0 0 1 4-4m0 1a3 3 0 0 0-3 3v2h6V4a3 3 0 0 0-3-3"/></symbol>
@@ -489,6 +501,7 @@
   <symbol id="bi-skip-start-fill" viewBox="0 0 16 16"><path d="M4 4a.5.5 0 0 1 1 0v3.248l6.267-3.636c.54-.313 1.232.066 1.232.696v7.384c0 .63-.692 1.01-1.232.697L5 8.753V12a.5.5 0 0 1-1 0z"/></symbol>
   <symbol id="bi-sliders" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M11.5 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M9.05 3a2.5 2.5 0 0 1 4.9 0H16v1h-2.05a2.5 2.5 0 0 1-4.9 0H0V3zM4.5 7a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M2.05 8a2.5 2.5 0 0 1 4.9 0H16v1H6.95a2.5 2.5 0 0 1-4.9 0H0V8zm9.45 4a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3m-2.45 1a2.5 2.5 0 0 1 4.9 0H16v1h-2.05a2.5 2.5 0 0 1-4.9 0H0v-1z"/></symbol>
   <symbol id="bi-snow" viewBox="0 0 16 16"><path d="M8 16a.5.5 0 0 1-.5-.5v-1.293l-.646.647a.5.5 0 0 1-.707-.708L7.5 12.793V8.866l-3.4 1.963-.496 1.85a.5.5 0 1 1-.966-.26l.237-.882-1.12.646a.5.5 0 0 1-.5-.866l1.12-.646-.884-.237a.5.5 0 1 1 .26-.966l1.848.495L7 8 3.6 6.037l-1.85.495a.5.5 0 0 1-.258-.966l.883-.237-1.12-.646a.5.5 0 1 1 .5-.866l1.12.646-.237-.883a.5.5 0 1 1 .966-.258l.495 1.849L7.5 7.134V3.207L6.147 1.854a.5.5 0 1 1 .707-.708l.646.647V.5a.5.5 0 1 1 1 0v1.293l.647-.647a.5.5 0 1 1 .707.708L8.5 3.207v3.927l3.4-1.963.496-1.85a.5.5 0 1 1 .966.26l-.236.882 1.12-.646a.5.5 0 0 1 .5.866l-1.12.646.883.237a.5.5 0 1 1-.26.966l-1.848-.495L9 8l3.4 1.963 1.849-.495a.5.5 0 0 1 .259.966l-.883.237 1.12.646a.5.5 0 0 1-.5.866l-1.12-.646.236.883a.5.5 0 1 1-.966.258l-.495-1.849-3.4-1.963v3.927l1.353 1.353a.5.5 0 0 1-.707.708l-.647-.647V15.5a.5.5 0 0 1-.5.5z"/></symbol>
+  <symbol id="bi-square" viewBox="0 0 16 16"><path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/></symbol>
   <symbol id="bi-stop-fill" viewBox="0 0 16 16"><path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5"/></symbol>
   <symbol id="bi-upload" viewBox="0 0 16 16"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/> <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708z"/></symbol>
   <symbol id="bi-x-lg" viewBox="0 0 16 16"><path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/></symbol>
@@ -541,7 +554,14 @@
         <span class="dirty-indicator" id="project-dirty-indicator"><span class="dirty-dot"></span>changes not saved</span>
       </div>
       <div class="hint">a project owns its own canvases and sequence — scenes and uploaded media stay shared across every project</div>
-
+<details class="accordion" id="acc-project-notes" open>
+        <summary>Notes</summary>
+        <div class="accordion-body">
+          <textarea id="project-notes" rows="6" placeholder="run sheet, venue contact, reminders…"
+            style="width:100%;resize:vertical;font:inherit;background:var(--panel2,#1b1e26);color:inherit;
+                   border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:6px"></textarea>
+        </div>
+      </details>
       <!-- Project tab (11): one accordion per concern instead of two long
            stacked walls of fields, same <details> pattern the Input column
            already uses. Output/Performance/Monitors/Notes are edited at
@@ -557,7 +577,7 @@
         </div>
       </details>
 
-      <details class="accordion" id="acc-project-perf">
+      <details class="accordion" id="acc-project-perf" open>
         <summary>Performance</summary>
         <div class="accordion-body">
           <div class="field"><label>frame rate</label>
@@ -567,7 +587,7 @@
         </div>
       </details>
 
-      <details class="accordion" id="acc-project-monitors">
+      <details class="accordion" id="acc-project-monitors" open>
         <summary>Output monitors</summary>
         <div class="accordion-body">
           <div class="hint">each output window (header buttons, and the Output Preview tab) shows this project's composite feed with its own physical-orientation correction. Lives on THIS project, so it travels with the project across browsers/machines instead of being stuck in one browser's storage.</div>
@@ -588,15 +608,7 @@
         </div>
       </details>
 
-      <details class="accordion" id="acc-project-notes">
-        <summary>Notes</summary>
-        <div class="accordion-body">
-          <textarea id="project-notes" rows="6" placeholder="run sheet, venue contact, reminders…"
-            style="width:100%;resize:vertical;font:inherit;background:var(--panel2,#1b1e26);color:inherit;
-                   border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:6px"></textarea>
-          <div class="hint">free text, just for you — nothing else in the app reads it. Saves with the project, same as output size (<svg class="bi" aria-hidden="true"><use href="#bi-floppy"/></svg> above).</div>
-        </div>
-      </details>
+      
     </div>
     </div>
 
@@ -685,37 +697,25 @@
     <div class="canvas-3col">
 
       <section class="stage">
-        <button id="stage-collapse-btn" class="icon-btn" title="Collapse this column for more screen space"><svg class="bi" aria-hidden="true"><use href="#bi-chevron-left"/></svg></button>
-        <div id="stage-full">
-
-        <div class="group" id="g-input" style="width:100%">
-          <h2>Input</h2>
-          <details class="accordion" id="acc-input-scenelib">
-            <summary>Scene library</summary>
-            <div class="accordion-body">
-              <button class="go" id="gen-open" style="width:100%">Generate scene…</button>
-              <div class="lib" id="lib"></div>
-            </div>
-          </details>
-          <details class="accordion" id="acc-input-webcam">
-            <summary>Webcam</summary>
-            <div class="accordion-body">
-              <div class="row"><button id="webcam-refresh" style="width:100%"><svg class="bi" aria-hidden="true"><use href="#bi-arrow-clockwise"/></svg><span>Request access / refresh devices</span></button></div>
-              <div class="lib" id="webcam-list"></div>
-              <div class="hint" id="webcam-hint">click "refresh" and allow camera access to list your devices — each gets its own "+" to add it as a shape, as a live feed for as long as it's used. Re-point at a different device from Shape settings to switch cameras.</div>
-            </div>
-          </details>
-          <details class="accordion" id="acc-input-text">
-            <summary>Text input</summary>
-            <div class="accordion-body">
-              <div class="row"><button id="text-add-btn" style="width:100%">+ Add text shape</button></div>
-              <div class="hint">adds a new shape showing live text — edit its content, colour and size from Shape settings once added</div>
-            </div>
-          </details>
-          <details class="accordion" id="acc-input-media">
-            <summary>video / image files</summary>
-            <div class="accordion-body">
-              <button class="go" id="media-link-btn" style="width:100%"><svg class="bi" aria-hidden="true"><use href="#bi-link-45deg"/></svg><span>Link a file…</span></button>
+        <!-- Input is a rail + one sliding pane (like the Panes column), not a
+             stack of accordions. The icons stay put so the four sources are
+             always one click away, and only the chosen one takes width from
+             the canvas. Clicking the ACTIVE icon closes the pane — that is
+             this column's "collapse", which is why there's no separate
+             collapse button any more. (Panes deliberately can't close: it
+             has no equivalent screen-space job.) -->
+        <div class="input-rail">
+          <h2 class="rail-title">Input</h2>
+          <button class="input-rail-btn" id="input-btn-media" data-section="media" title="Video / image files" aria-label="Video / image files"><svg class="bi" aria-hidden="true"><use href="#bi-film"/></svg></button>
+          <button class="input-rail-btn" id="input-btn-webcam" data-section="webcam" title="Webcam" aria-label="Webcam"><svg class="bi" aria-hidden="true"><use href="#bi-camera-video"/></svg></button>
+          <button class="input-rail-btn" id="input-btn-text" data-section="text" title="Text input" aria-label="Text input"><svg class="bi" aria-hidden="true"><use href="#bi-fonts"/></svg></button>
+          <button class="input-rail-btn" id="input-btn-scenelib" data-section="scenelib" title="3D Scenes" aria-label="3D Scenes"><svg class="bi" aria-hidden="true"><use href="#bi-camera-reels"/></svg></button>
+          <button class="input-rail-btn" id="input-btn-cutout" data-section="cutout" title="Cutout" aria-label="Cutout"><svg class="bi" aria-hidden="true"><use href="#bi-eraser-fill"/></svg></button>
+        </div>
+        <div class="input-pane" id="input-pane">
+        <div class="group input-section" id="input-sec-media" style="display:none">
+          <h2>Video / image files</h2>
+<button class="go" id="media-link-btn" style="width:100%"><svg class="bi" aria-hidden="true"><use href="#bi-link-45deg"/></svg><span>Link a file…</span></button>
               <div class="hint">references the file where it already lives — nothing is copied, so a 4GB video costs no extra disk. Needs a media root (Settings &gt; Media roots); the picker can add one.</div>
               <details class="accordion" id="acc-input-upload">
                 <summary>copy into the app instead</summary>
@@ -728,17 +728,29 @@
                   <div class="lib" id="media-list"></div>
                 </div>
               </details>
-            </div>
-          </details>
         </div>
+        <div class="group input-section" id="input-sec-webcam" style="display:none">
+          <h2>Webcam</h2>
+<div class="row"><button id="webcam-refresh" style="width:100%"><svg class="bi" aria-hidden="true"><use href="#bi-arrow-clockwise"/></svg><span>Request access / refresh devices</span></button></div>
+              <div class="lib" id="webcam-list"></div>
+              <div class="hint" id="webcam-hint">click "refresh" and allow camera access to list your devices — each gets its own "+" to add it as a shape, as a live feed for as long as it's used. Re-point at a different device from Shape settings to switch cameras.</div>
         </div>
-
-        <div id="stage-rail">
-          <button id="stage-expand-btn" class="icon-btn" title="Expand"><svg class="bi" aria-hidden="true"><use href="#bi-chevron-right"/></svg></button>
-          <button class="rail-icon icon-btn" data-target="acc-input-scenelib" title="Scene library"><svg class="bi" aria-hidden="true"><use href="#bi-camera-reels"/></svg></button>
-          <button class="rail-icon icon-btn" data-target="acc-input-webcam" title="Webcam"><svg class="bi" aria-hidden="true"><use href="#bi-camera-video"/></svg></button>
-          <button class="rail-icon icon-btn" data-target="acc-input-text" title="Text input"><svg class="bi" aria-hidden="true"><use href="#bi-fonts"/></svg></button>
-          <button class="rail-icon icon-btn" data-target="acc-input-media" title="Video / image files"><svg class="bi" aria-hidden="true"><use href="#bi-film"/></svg></button>
+        <div class="group input-section" id="input-sec-text" style="display:none">
+          <h2>Text input</h2>
+<div class="row"><button id="text-add-btn" style="width:100%">+ Add text shape</button></div>
+              <div class="hint">adds a new shape showing live text — edit its content, colour and size from Shape settings once added</div>
+        </div>
+        <div class="group input-section" id="input-sec-cutout" style="display:none">
+          <h2>Cutout</h2>
+          <div class="row"><button id="cutout-add-btn" style="width:100%"><svg class="bi" aria-hidden="true"><use href="#bi-eraser-fill"/></svg><span>+ Add cutout shape</span></button></div>
+          <div class="hint">a solid black shape that blocks whatever it overlaps — for killing light where you don't want it (a window, a doorway, the neighbour's wall). Unlike the other sources it holds no content: it's a hole in the output. Paint order decides what it hides, so give it a lower z-index than the shapes it should cover.</div>
+          <div class="hint">not a quad — double-click an edge to add a point, double-click a point to remove one. Different thing from Mask/clipping, which trims a single shape's own silhouette.</div>
+        </div>
+        <div class="group input-section" id="input-sec-scenelib" style="display:none">
+          <h2>3D Scenes</h2>
+<button class="go" id="gen-open" style="width:100%">Generate scene…</button>
+              <div class="lib" id="lib"></div>
+        </div>
         </div>
       </section>
 
@@ -755,9 +767,14 @@
             <span class="dirty-indicator" id="canvas-dirty-indicator"><span class="dirty-dot"></span>changes not saved</span>
           </div>
           <div class="row" style="flex:0 0 auto;align-items:center">
+            <span class="tb-divider" aria-hidden="true"></span>
             <button id="tool-select" class="amber" title="Select tool — drag shapes/corners"><svg class="bi" aria-hidden="true"><use href="#bi-cursor-fill"/></svg></button>
             <button id="tool-hand" title="Hand tool — drag to pan"><svg class="bi" aria-hidden="true"><use href="#bi-hand-index"/></svg></button>
             <button id="editor-reset-view" title="Reset zoom/pan"><svg class="bi" aria-hidden="true"><use href="#bi-arrow-counterclockwise"/></svg></button>
+            <span class="tb-divider" aria-hidden="true"></span>
+            <button id="toggle-frame-guides" class="amber" title="Show the output frame guides — where each projector's slice starts and stops"><svg class="bi" aria-hidden="true"><use href="#bi-border-outer"/></svg></button>
+            <button id="toggle-hide-borders" title="Hide shape outlines, corner pins and mask handles for a clean view — the selected shape still shows its own, so deselect for a completely clean canvas"><svg class="bi" aria-hidden="true"><use href="#bi-square"/></svg></button>
+            <button id="toggle-z-badges" class="amber" title="Show each shape's paint order (z-index) on the canvas"><svg class="bi" aria-hidden="true"><use href="#bi-front"/></svg></button>
             <button id="canvas-freeze-btn" title="Freeze shape playback — content stays visible, just stops animating"><svg class="bi" aria-hidden="true"><use href="#bi-snow"/></svg></button>
             <button id="editor-fullscreen" title="Focused editing (fullscreen)"><svg class="bi" aria-hidden="true"><use href="#bi-arrows-fullscreen"/></svg></button>
           </div>
@@ -792,13 +809,13 @@
              is the "overlapping line" it looked like. A heading of its own
              puts all three columns on the same baseline. -->
         <h2 class="rail-title">Panes</h2>
-        <button id="handle-shapesettings" class="drawer-handle-btn" data-drawer="shapesettings" title="Shape settings" aria-label="Shape settings"><svg class="bi" aria-hidden="true"><use href="#bi-hexagon"/></svg></button>
+        <button id="handle-shapesettings" class="drawer-handle-btn" data-drawer="shapesettings" title="Shape settings" aria-label="Shape settings"><svg class="bi" aria-hidden="true"><use href="#bi-sliders"/></svg></button>
         <button id="handle-playback" class="drawer-handle-btn" data-drawer="playback" title="Playback — video in/out, speed, loop mode" aria-label="Playback"><svg class="bi" aria-hidden="true"><use href="#bi-play-fill"/></svg></button>
         <button id="handle-mask" class="drawer-handle-btn" data-drawer="mask" title="Mask / clipping" aria-label="Mask and clipping"><svg class="bi" aria-hidden="true"><use href="#bi-scissors"/></svg></button>
         <button id="handle-colourize" class="drawer-handle-btn" data-drawer="colourize" title="Colourize" aria-label="Colourize"><svg class="bi" aria-hidden="true"><use href="#bi-palette-fill"/></svg></button>
         <button id="handle-transform" class="drawer-handle-btn" data-drawer="transform" title="Transform — flip and mirror" aria-label="Transform"><svg class="bi" aria-hidden="true"><use href="#bi-arrows-angle-expand"/></svg></button>
         <button id="handle-effectors" class="drawer-handle-btn" data-drawer="effectors" title="Effectors — LFO and audio modulation" aria-label="Effectors"><svg class="bi" aria-hidden="true"><use href="#bi-activity"/></svg></button>
-        <button id="handle-settings" class="drawer-handle-btn" data-drawer="settings" title="Settings — global, motion, shape camera" aria-label="Settings"><svg class="bi" aria-hidden="true"><use href="#bi-sliders"/></svg></button>
+        <button id="handle-settings" class="drawer-handle-btn" data-drawer="settings" title="3D Scene Settings — motion and scene camera" aria-label="3D Scene Settings"><svg class="bi" aria-hidden="true"><use href="#bi-badge-3d"/></svg></button>
       </div>
 
       <div id="content-shapesettings" class="drawer-content">
@@ -822,7 +839,7 @@
             <option value="media">Media</option>
             <option value="webcam">Webcam</option>
             <option value="text">Text</option>
-            <option value="knockout">Knockout</option>
+            <option value="knockout">Cutout</option>
           </select></div>
         <div class="field" id="poly-scene-field"><label>scene</label>
           <select id="poly-scene"></select></div>
@@ -939,14 +956,29 @@
               <option value="hexagon">hexagon</option>
               <option value="triangle">triangle</option>
               <option value="square">square</option>
-              <option value="custom">custom polygon…</option>
             </select></div>
           <div class="field" id="poly-clip-scale-field" style="display:none"><label>clip size</label>
             <input type="range" id="poly-clip-scale" min="0.1" max="3" step="0.01" value="1">
             <span class="val" id="v-polyclipscale">1.00</span></div>
+          <label class="field" id="poly-clip-uniform-field" style="display:none;gap:8px;font-size:13px">
+            <input type="checkbox" id="poly-clip-uniform">
+            <span>keep it true (don't stretch to the shape)</span></label>
+          <div class="hint" id="poly-clip-uniform-hint" style="display:none">a preset is sized from the shape's bounding box, so on a wide shape "circle" comes out an ellipse. Tick this for a truly round porthole regardless of the shape it sits in.</div>
+          <!-- (43) Custom polygon is a different KIND of thing from the
+               presets — you draw it by hand rather than pick it — and it was
+               buried as the last row of a dropdown. Its own button says so. -->
+          <div class="field" id="poly-clip-custom-field" style="margin-top:4px">
+            <label>custom</label>
+            <button id="poly-clip-custom-btn" style="flex:1" title="Draw your own mask outline on the canvas"><svg class="bi" aria-hidden="true"><use href="#bi-pencil"/></svg><span>Draw custom polygon</span></button>
+          </div>
           <div class="field" id="poly-editmode-field" style="display:none"><label>edit</label>
             <button id="poly-mode-warp" class="amber" title="Drag the four corner pins — distorts the shape and its mask together"><svg class="bi" aria-hidden="true"><use href="#bi-bounding-box"/></svg><span>Distort</span></button>
             <button id="poly-mode-mask" title="Drag the mask outline — reshapes the silhouette without moving the shape"><svg class="bi" aria-hidden="true"><use href="#bi-pencil"/></svg><span>Mask</span></button></div>
+          <div class="row" style="gap:6px;margin-top:10px">
+            <button id="mask-reset-mask" style="flex:1" title="Put the mask outline back to the shape's full quad"><svg class="bi" aria-hidden="true"><use href="#bi-arrow-counterclockwise"/></svg><span>Reset mask</span></button>
+            <button id="mask-reset-distort" style="flex:1" title="Undo the corner-pin distortion, keeping the shape where it is"><svg class="bi" aria-hidden="true"><use href="#bi-arrow-counterclockwise"/></svg><span>Reset distortion</span></button>
+          </div>
+          <div class="hint">"Reset mask" clears the silhouette back to the full quad; "Reset distortion" straightens the corner pins without moving the shape. Both are spelled out here because the button on Shape settings follows whichever mode you're in.</div>
           <div class="hint" id="poly-mask-hint" style="display:none">drag a point to reshape the silhouette · double-click an edge to add a point, a point to remove it (min. 3) · drag inside to move the whole mask · Esc back to Distort. The mask lives in the shape's own space, so distorting the corner pins warps the mask along with the content.</div>
         </div>
       </div>
@@ -1060,11 +1092,9 @@
       </div>
 
       <div id="content-settings" class="drawer-content" style="display:none">
-        <div class="group" id="g-global">
-          <h2>Global</h2>
-          <div class="global-buttons">
-            <button id="disable-visuals">Disable Visuals</button>
-          </div>
+        <div class="group" id="g-scene-settings-head">
+          <h2>3D Scene Settings</h2>
+          <div class="hint">everything in this pane drives the generated 3D scene filling the selected shape — flow, turbulence, hue and the scene's own camera. A shape holding video, an image, a webcam or text ignores all of it.</div>
         </div>
 
         <div class="group" id="g-motion">
@@ -1159,7 +1189,7 @@
     <div id="tab-output-preview" class="tab-panel" style="display:none">
     <div class="group" id="g-output-preview" style="width:100%">
       <h2>Output preview</h2>
-      <div class="hint">low-res live views of what each output window is actually showing — flip, keystone and test pattern all included (each tile IS that output's own render, not a screenshot of it), sized to match the project's own output resolution/aspect. Set up flip/keystone/test pattern in Project &gt; Output monitors.</div>
+      <div class="hint">low-res live views of what each output window is actually showing — flip, keystone and test pattern all included (each tile IS that output's own render, not a screenshot of it), sized to match the project's own output resolution/aspect. Tick "test pattern" under a tile to throw the calibration grid on that projector — the same switch as Project &gt; Output monitors, put here because it's what you reach for while aligning. Flip and keystone live in Project &gt; Output monitors.</div>
       <div id="output-preview-grid" style="display:flex;flex-wrap:wrap;gap:14px"></div>
     </div>
     </div>
@@ -1712,7 +1742,11 @@ function polygonBBoxPx(corners, rect){
     rx: Math.max(1,(Math.max(...xs)-Math.min(...xs))/2), ry: Math.max(1,(Math.max(...ys)-Math.min(...ys))/2),
   };
 }
-function clipShapePath(ctx, shape, cx, cy, rx, ry){
+// `uniform` (44) keeps a preset's own proportions instead of stretching it
+// to the quad's bounding box — the smaller half-axis is used for both, so a
+// circle really is round on a 2:1 shape rather than an ellipse.
+function clipShapePath(ctx, shape, cx, cy, rx, ry, uniform){
+  if (uniform){ const r = Math.min(rx, ry); rx = r; ry = r; }
   ctx.beginPath();
   if (shape === "circle") {
     ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2);
@@ -1777,7 +1811,7 @@ function polyClipPath(ctx, poly, corners, rect){
   if (hasCustomMask(poly)){ customMaskPath(ctx, poly, corners, rect); return; }
   const {cx, cy, rx, ry} = polygonBBoxPx(corners, rect);
   const s = poly.clip_scale ?? 1;
-  clipShapePath(ctx, poly.clip_shape, cx, cy, rx*s, ry*s);
+  clipShapePath(ctx, poly.clip_shape, cx, cy, rx*s, ry*s, !!poly.clip_uniform);
 }
 
 // Clip (4): hard-edged only — Canvas 2D's own clip() does exactly this, no
@@ -2100,6 +2134,38 @@ function autoFitShapeToContent(poly, contentAspect){
   poly.corners = corners;
   send({type: "poly_corners", id: poly.id, corners});
 }
+// What shape this polygon's CONTENT actually is, or null if nothing can say.
+// One place, so "reset to original" and the first-load auto-fit can't drift
+// apart — they're the same question asked at different moments.
+function contentAspectFor(poly){
+  if (!poly) return null;
+  const t = poly.source_type || "scene";
+  if (t === "media"){
+    const layer = _lastComposite.find(l => l.id === poly.id);
+    const ref = mediaRefFor(layer || poly);
+    if (!ref) return null;
+    const m = _mediaEls.get(ref.key + "|" + ((layer && layer.media_cfg) || ""));
+    return (m && m.ready) ? mediaAspect(m) : null;
+  }
+  if (t === "webcam"){
+    const s = _webcamStreams.get(poly.webcam_device || "__default__");
+    return (s && s.ready && s.video && s.video.videoWidth)
+      ? s.video.videoWidth / s.video.videoHeight : null;
+  }
+  if (t === "text") return 1;
+  if (t === "knockout") return null;          // arbitrary point list, no frame
+  const layer = _lastComposite.find(l => l.id === poly.id);
+  return layer && layer.aspect ? parseAspectRatio(layer.aspect) : null;
+}
+// The undistorted quad a shape SHOULD start from: its content's own shape,
+// falling back to 16:9. Centred on the canvas unless a centre is given.
+function originalQuadFor(poly, cx, cy){
+  const a = contentAspectFor(poly) || DEFAULT_SHAPE_ASPECT;
+  const hh = defaultHalfHeight(a);
+  cx = cx ?? 0; cy = cy ?? 0;
+  return [[cx - 0.5, cy + hh], [cx + 0.5, cy + hh],
+          [cx + 0.5, cy - hh], [cx - 0.5, cy - hh]];
+}
 // Reads the element cache without creating anything — drawPolyMedia has
 // already made the element by the time this runs.
 function autoFitFromMedia(poly, layer){
@@ -2269,6 +2335,33 @@ function drawWarpedTriangle(ctx, img, s0,s1,s2, d0,d1,d2){
 // effect, not a repositioning. Same mirror_x/mirror_y override vector
 // strokes already use (drawWarpedStrokes flips the point pre-warp instead,
 // since it has no separate "source image" to sample from).
+// Mesh compositing scratch. The anti-seam skirt makes each triangle overlap
+// its neighbours by ~1.5px; at full opacity that's invisible (opaque pixels
+// just redraw the same colour), but at ANY opacity below 1 the overlap band
+// gets alpha-composited two to four times and shows as a bright grid over
+// the shape. Measured on flat grey at 50%%: the band reached 125 where the
+// body was 64 — nearly double.
+//
+// Same bug, same fix as the vector renderer (ARCHITECTURE.md's "per-primitive
+// opacity blended BEFORE compositing double-counts anti-seam overlap"):
+// draw the mesh at FULL opacity into an offscreen buffer, then blend that
+// finished layer in once. The parallelogram fast path is a single drawImage
+// with nothing to overlap, so it keeps applying opacity directly.
+let _meshScratch = null;
+function getMeshScratch(w, h){
+  if (!_meshScratch){
+    _meshScratch = document.createElement("canvas");
+    _meshScratch.ctx = _meshScratch.getContext("2d");
+  }
+  if (_meshScratch.width !== w || _meshScratch.height !== h){
+    _meshScratch.width = w; _meshScratch.height = h;   // resizing already blanks it
+  } else {
+    _meshScratch.ctx.setTransform(1,0,0,1,0,0);
+    _meshScratch.ctx.clearRect(0, 0, w, h);
+  }
+  return _meshScratch;
+}
+const MESH_OPAQUE = 0.999;   // above this, the overlap can't show
 function drawMediaWarped(ctx, rect, H, corners, img, iw, ih, opacity, fitMode, ca, qa, mirrorX, mirrorY, mxPoint=1, myPoint=1){
   ctx.save();
   ctx.globalAlpha = opacity;
@@ -2307,11 +2400,29 @@ function drawMediaWarped(ctx, rect, H, corners, img, iw, ih, opacity, fitMode, c
     }
     dst.push(drow); src.push(srow);
   }
+  // Translucent: build the whole mesh opaque off-screen, then blend once.
+  const translucent = opacity < MESH_OPAQUE;
+  let out = ctx, scratch = null;
+  if (translucent){
+    scratch = getMeshScratch(ctx.canvas.width, ctx.canvas.height);
+    out = scratch.ctx;
+    // Same transform, so the mesh lands on the same device pixels. The
+    // caller's clip stays on `ctx` and applies to the blit below, which is
+    // in device space, so clipping still works.
+    out.setTransform(ctx.getTransform());
+    out.globalAlpha = 1;
+    out.filter = "none";      // the filter applies once, on the blit
+  }
   for (let j=0;j<N;j++){
     for (let i=0;i<N;i++){
-      drawWarpedTriangle(ctx, img, src[j][i], src[j][i+1], src[j+1][i], dst[j][i], dst[j][i+1], dst[j+1][i]);
-      drawWarpedTriangle(ctx, img, src[j][i+1], src[j+1][i+1], src[j+1][i], dst[j][i+1], dst[j+1][i+1], dst[j+1][i]);
+      drawWarpedTriangle(out, img, src[j][i], src[j][i+1], src[j+1][i], dst[j][i], dst[j][i+1], dst[j+1][i]);
+      drawWarpedTriangle(out, img, src[j][i+1], src[j+1][i+1], src[j+1][i], dst[j][i+1], dst[j+1][i+1], dst[j+1][i]);
     }
+  }
+  if (translucent){
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.globalAlpha = opacity;
+    ctx.drawImage(scratch, 0, 0);
   }
   ctx.restore();
 }
@@ -2533,7 +2644,7 @@ function applyMirrorFoldPost(ctx, poly, corners, rect, ov, srcCanvas){
   } else if (CLIP_PRESETS.includes(poly.clip_shape)){
     const s = poly.clip_scale ?? 1;
     const [dcx,dcy] = _viewToDevice(cx,cy,rect);
-    clipShapePath(ctx, poly.clip_shape, dcx, dcy, rx*s*_view.zoom, ry*s*_view.zoom);
+    clipShapePath(ctx, poly.clip_shape, dcx, dcy, rx*s*_view.zoom, ry*s*_view.zoom, !!poly.clip_uniform);
     ctx.clip();
   }
   if (foldX){
@@ -2718,6 +2829,17 @@ function paintCanvasEditor(){
   cvCtx.scale(_view.zoom, _view.zoom);
   cvCtx.translate(-(rect.x + rect.w/2), -(rect.y + rect.h/2));
   polys.forEach(poly => {
+    // Outlines, corner pins and mask handles all live in this block, so one
+    // guard here is the whole "clean canvas" toggle. Z-badges and crop guides
+    // are deliberately outside it — each has its own switch.
+    //
+    // The SELECTED shape keeps its chrome even while hiding: you still need
+    // to see what you're editing. Deselect (click bare canvas) for a
+    // completely clean frame.
+    if (_hideBorders && poly.id !== selectedPolyId){
+      if (_zBadges) drawZBadge(cvCtx, poly, rect);
+      return;
+    }
     const isKnockout = poly.source_type === "knockout";
     const isMedia = poly.source_type === "media";
     const isText = poly.source_type === "text";
@@ -2769,7 +2891,7 @@ function paintCanvasEditor(){
       }
     }
     cvCtx.restore();
-    drawZBadge(cvCtx, poly, rect);
+    if (_zBadges) drawZBadge(cvCtx, poly, rect);
   });
   drawOutputCropGuides(cvCtx, rect);
   cvCtx.restore();   // matches the view-transform save() above
@@ -2785,8 +2907,34 @@ function paintCanvasEditor(){
 // Deliberately quiet: a dashed hairline plus a small number, no fill. This
 // is a reference mark on top of live content, so it has to stay readable
 // without competing with the picture underneath.
+// A view preference, not project data — it belongs to how you're working
+// right now, so it lives in localStorage and never touches the project.
+// Defaults on: the guides are the whole reason you can see where a seam
+// falls while composing.
+// Hiding shape chrome (outlines, corner pins, mask handles) is the ACTION,
+// so the button lights up when it's doing something — off by default, since
+// showing the geometry is the normal editing state. Own storage key rather
+// than inverting the old one, so a browser holding the previous value can't
+// come back reading backwards.
+//
+// Shapes stay draggable while hidden: hit-testing is independent of drawing.
+let _hideBorders = localStorage.getItem("pw_hide_borders") === "1";
+function setHideBorders(on){
+  _hideBorders = !!on;
+  try { localStorage.setItem("pw_hide_borders", on ? "1" : "0"); } catch (e) {}
+  $("toggle-hide-borders").classList.toggle("amber", _hideBorders);
+  paintCanvasEditor();
+}
+let _frameGuides = localStorage.getItem("pw_frame_guides") !== "0";
+function setFrameGuides(on){
+  _frameGuides = !!on;
+  try { localStorage.setItem("pw_frame_guides", on ? "1" : "0"); } catch (e) {}
+  $("toggle-frame-guides").classList.toggle("amber", _frameGuides);
+  paintCanvasEditor();
+}
 function drawOutputCropGuides(ctx, rect){
   const s = _lastState;
+  if (!_frameGuides) return;
   if (!s || !s.viewports_enabled) return;
   const outs = s.outputs || [];
   if (outs.length < 2) return;     // one output showing everything has no seam
@@ -3006,33 +3154,56 @@ document.addEventListener("fullscreenchange", () => {
   if (!document.fullscreenElement && _editorFocused) setEditorFocused(false);
 });
 
-// Column 1 collapse (4) — an icon-only rail instead of Project/Input, for
-// more room elsewhere; persisted across reloads (a layout preference, same
-// spirit as the per-output flip/keystone settings already using
-// localStorage rather than server state — this is purely this browser's
-// own screen-space choice, not creative content). Canvas/column 3 widen via
-// CSS alone (see body.col1-collapsed .toprow) — nothing to resize here.
-function setCol1Collapsed(on){
-  document.body.classList.toggle("col1-collapsed", on);
-  // Collapsing the column collapses everything inside it (8) — otherwise
-  // re-expanding dumps you back into whatever stack of open accordions you
-  // left behind, which is usually the reason the column got collapsed. The
-  // rail icons below deliberately re-open just the one you clicked.
-  if (on) document.querySelectorAll("#g-input details.accordion").forEach(d => d.open = false);
-  try { localStorage.setItem("pw_col1_collapsed", on ? "1" : "0"); } catch (e) {}
+// Input sections — a rail of icons plus one open pane, the same shape as the
+// Panes column on the right. Which one is open is a layout preference, so it
+// lives in localStorage rather than on the project.
+//
+// The one deliberate difference from Panes: clicking the ACTIVE icon here
+// shuts the pane. That's this column's collapse — the canvas gets the width
+// back — which is the job the old collapse button did. Panes has no
+// equivalent need, so there it's a no-op.
+const INPUT_SECTIONS = ["media", "webcam", "text", "scenelib", "cutout"];
+let _inputSection = localStorage.getItem("pw_input_section");
+if (!INPUT_SECTIONS.includes(_inputSection) && _inputSection !== "") _inputSection = "media";
+function setInputSection(name, refresh = true){
+  _inputSection = name;
+  INPUT_SECTIONS.forEach(k => {
+    $("input-sec-" + k).style.display = (k === name) ? "flex" : "none";
+    $("input-btn-" + k).classList.toggle("open", k === name);
+  });
+  $("input-pane").classList.toggle("shut", !name);
+  document.querySelector(".stage").classList.toggle("input-shut", !name);
+  try { localStorage.setItem("pw_input_section", name || ""); } catch (e) {}
+  // The canvas widget's own box changes when this column resizes.
+  requestAnimationFrame(resizeEditorCanvas);
+  if (refresh) refreshInputSection(name);
 }
-$("stage-collapse-btn").onclick = () => setCol1Collapsed(true);
-$("stage-expand-btn").onclick = () => setCol1Collapsed(false);
-// Rail icons (4) double as shortcuts — expand AND jump straight to that
-// Input accordion, not just a bare "un-collapse".
-document.querySelectorAll("#stage-rail .rail-icon").forEach(btn => {
-  btn.onclick = () => {
-    setCol1Collapsed(false);
-    const acc = $(btn.dataset.target);
-    if (acc) acc.open = true;
-  };
+// Split out because these live further down the file and close over `let`
+// bindings declared after this point — calling them during the initial
+// setInputSection below would hit the temporal dead zone and take the whole
+// script down with it. Layout is applied now; data loads on the next tick.
+function refreshInputSection(name){
+  if (name === "media") refreshMediaList();
+  if (name === "webcam" && !_camDevices.length) refreshWebcamDevices(false);
+}
+INPUT_SECTIONS.forEach(k => {
+  $("input-btn-" + k).onclick = () => setInputSection(_inputSection === k ? "" : k);
 });
-setCol1Collapsed(localStorage.getItem("pw_col1_collapsed") === "1");
+setInputSection(_inputSection, false);
+setTimeout(() => refreshInputSection(_inputSection), 0);
+// Click anywhere outside the Input column shuts it (46), so the canvas gets
+// its width back without a deliberate trip to the rail. Uses pointerdown on
+// the capture phase so it still fires for handlers that stop propagation,
+// and ignores clicks inside any MODAL — a file picker or folder browser
+// opened FROM this pane is logically still part of it, and closing the pane
+// underneath while you're using one is disorienting.
+document.addEventListener("pointerdown", e => {
+  if (!_inputSection) return;
+  const stage = document.querySelector(".stage");
+  if (!stage || stage.contains(e.target)) return;
+  if (e.target.closest(".modal-backdrop")) return;
+  setInputSection("");
+}, true);
 
 // Canvas/Sequencer tabs (1) — column 2. Only one tab-panel visible at a
 // time; #cv-edit's own ResizeObserver (see resizeEditorCanvas) picks up
@@ -3080,12 +3251,21 @@ function setDrawerOpen(name, on){
   requestAnimationFrame(resizeEditorCanvas);
 }
 DRAWER_NAMES.forEach(name => {
-  $("handle-" + name).onclick = () =>
-    setDrawerOpen(name, $("content-" + name).style.display === "none");
+  // Always opens, never toggles shut. Clicking the already-active icon used
+  // to close it, which collapsed the whole column and left you looking at a
+  // bare strip of icons with no way to tell that was a mode rather than a
+  // fault. They behave as radio buttons now: one pane is always showing.
+  $("handle-" + name).onclick = () => setDrawerOpen(name, true);
   const stored = localStorage.getItem("pw_drawer_" + name + "_open");
   const initialOpen = stored === null ? !!DRAWER_DEFAULT_OPEN[name] : stored === "1";
   setDrawerOpen(name, initialOpen);
 });
+// A browser that closed the active pane before the change above has every
+// drawer stored as "0", which would restore to an empty column and look
+// broken. One pane is always showing, so fall back to the default.
+if (!DRAWER_NAMES.some(n => $("content-" + n).style.display !== "none")){
+  setDrawerOpen("shapesettings", true);
+}
 
 // Toolbar (4) — Select is the normal corner/body drag behaviour; Hand is a
 // persistent version of the spacebar-drag pan below, for trackpad users who
@@ -3477,12 +3657,23 @@ function renderPolyInspector(){
     $("poly-opacity").value = poly.opacity;
     $("v-polyopacity").textContent = poly.opacity.toFixed(2);
   }
-  if (document.activeElement !== $("poly-clip-shape")) $("poly-clip-shape").value = poly.clip_shape || "";
+  // "custom" is no longer one of the dropdown's options (43) — it has its own
+  // button — so a custom mask shows the dropdown as "none" rather than
+  // selecting something that isn't there.
+  const customMask = hasCustomMask(poly);
+  if (document.activeElement !== $("poly-clip-shape"))
+    $("poly-clip-shape").value = customMask ? "" : (poly.clip_shape || "");
   // Clip size scales a PRESET about the quad's bounding box — meaningless
   // for a custom mask, whose points are already positioned individually.
-  const customMask = hasCustomMask(poly);
-  $("poly-clip-scale-field").style.display =
-    (poly.clip_shape && !customMask) ? "flex" : "none";
+  const presetClip = !!poly.clip_shape && !customMask;
+  $("poly-clip-scale-field").style.display = presetClip ? "flex" : "none";
+  $("poly-clip-uniform-field").style.display = presetClip ? "flex" : "none";
+  $("poly-clip-uniform-hint").style.display = presetClip ? "block" : "none";
+  if (document.activeElement !== $("poly-clip-uniform"))
+    $("poly-clip-uniform").checked = !!poly.clip_uniform;
+  $("poly-clip-custom-btn").classList.toggle("amber", customMask);
+  $("poly-clip-custom-btn").querySelector("span").textContent =
+    customMask ? "Editing custom polygon" : "Draw custom polygon";
   $("poly-editmode-field").style.display = customMask ? "flex" : "none";
   const inMask = maskModeActive(poly);
   $("poly-mask-hint").style.display = inMask ? "block" : "none";
@@ -3529,23 +3720,22 @@ function renderShapeList(){
       el.className = "item";
       el.dataset.id = poly.id;
       const name = poly.label || poly.scene || ("shape " + (i+1));
-      el.innerHTML = `<span>${poly.locked ? bi("lock-fill") + " " : ""}${name}</span><span class="x" title="Delete shape">${bi("x-lg")}</span>`;
+      // Padlock trails the name on the right edge, where it reads as a
+      // status badge for the row rather than something you might click.
+      // No delete affordance here on purpose: a single mis-click on a list
+      // you're using for SELECTION shouldn't be able to destroy a shape, and
+      // Shape settings already has an unambiguous Delete button.
+      el.innerHTML = `<span>${name}</span>` +
+        (poly.locked ? `<span class="lock" title="Locked — can't be dragged on the canvas">${bi("lock-fill")}</span>` : "");
       if (poly.locked) el.title = "Locked — can't be selected or dragged on the canvas";
       // Whole row is the click target (10), not just the text span — the
       // row is button-shaped and padded, so clicking its padding used to do
-      // nothing. The ✕ stops propagation so it still deletes rather than
-      // selecting. A locked shape can still be selected FROM HERE on
-      // purpose: the list is how you reach its settings to unlock it, and
-      // the lock is only meant to stop stray canvas drags.
+      // nothing. A locked shape can still be selected FROM HERE on purpose:
+      // the list is how you reach its settings to unlock it, and the lock is
+      // only meant to stop stray canvas drags.
       el.onclick = () => {
         selectedPolyId = poly.id;
         renderPolyInspector(); updatePolyControlsGate(); paintCanvasEditor();
-      };
-      el.querySelector(".x").onclick = ev => {
-        ev.stopPropagation();
-        if (!confirm("Delete this shape?")) return;
-        if (selectedPolyId === poly.id) selectedPolyId = null;
-        send({type:"poly_delete", id:poly.id});
       };
       box.appendChild(el);
     });
@@ -3635,6 +3825,37 @@ $("poly-clip-shape").onchange = () => {
   }
   renderPolyInspector();
 };
+$("poly-clip-uniform").onchange = () => {
+  if (!selectedPolyId) return;
+  const poly = polyById(selectedPolyId);
+  if (poly) poly.clip_uniform = $("poly-clip-uniform").checked;   // optimistic, same as clip_shape
+  send({type:"poly_set", id:selectedPolyId, key:"clip_uniform", value:$("poly-clip-uniform").checked});
+  paintCanvasEditor();
+};
+// Custom polygon, promoted out of the dropdown (43). Toggles: pressing it
+// again on a shape that already has one clears the mask, so the button is
+// both the way in and the way out.
+$("poly-clip-custom-btn").onclick = () => {
+  if (!selectedPolyId) return;
+  const poly = polyById(selectedPolyId);
+  if (!poly) return;
+  if (hasCustomMask(poly)){
+    poly.clip_shape = "";
+    send({type:"poly_set", id:selectedPolyId, key:"clip_shape", value:null});
+    setEditMode("warp");
+  } else {
+    // Same optimistic local write as the dropdown path below, and for the
+    // same reason: setEditMode's validity check reads the LOCAL shape, so
+    // waiting for the broadcast would flip straight back to Distort.
+    poly.clip_shape = "custom";
+    if (!(Array.isArray(poly.clip_points) && poly.clip_points.length >= 3)){
+      poly.clip_points = DEFAULT_CLIP_POINTS.map(p => [...p]);
+    }
+    send({type:"poly_set", id:selectedPolyId, key:"clip_shape", value:"custom"});
+    setEditMode("mask");
+  }
+  renderPolyInspector(); paintCanvasEditor();
+};
 // Clip Shape size (6): scales the clip shape about its own centre —
 // independent of the quad's own corners (clipShapePath's cx/cy/rx/ry).
 $("poly-clip-scale").oninput = () => {
@@ -3646,22 +3867,42 @@ $("poly-clip-scale").oninput = () => {
 // discarding whatever corner-dragging/distortion has been done since. Only
 // the quad geometry resets — scene/media/fill-type/overrides are untouched.
 const DEFAULT_CORNERS = [[-0.5, 0.28125], [0.5, 0.28125], [0.5, -0.28125], [-0.5, -0.28125]];
+// Reset the shape's own geometry back to an undistorted quad SHAPED LIKE ITS
+// CONTENT, in place. It used to snap to DEFAULT_CORNERS — a hardcoded 16:9 in
+// canvas units, which isn't 16:9 on screen at all (see defaultHalfHeight) and
+// takes no notice of what the shape is filled with. So resetting a 4:3 clip
+// or a line of text handed back the same stretched rectangle every time.
+//
+// Position is kept: reset is "undo my distortion", not "move it back to the
+// middle", which would lose the placement work as well.
+function resetPolyDistortion(poly){
+  if (!poly) return;
+  const c = poly.corners;
+  const cx = (c[0][0] + c[1][0] + c[2][0] + c[3][0]) / 4;
+  const cy = (c[0][1] + c[1][1] + c[2][1] + c[3][1]) / 4;
+  const corners = originalQuadFor(poly, cx, cy);
+  poly.corners = corners;
+  send({type: "poly_corners", id: poly.id, corners});
+  paintCanvasEditor();
+}
+function resetPolyMask(poly){
+  if (!poly) return;
+  poly.clip_points = DEFAULT_CLIP_POINTS.map(p => [...p]);
+  send({type: "poly_set", id: poly.id, key: "clip_points", value: poly.clip_points});
+  paintCanvasEditor();
+}
 $("poly-reset-btn").onclick = () => {
   if (!selectedPolyId) return;
   const poly = polyById(selectedPolyId);
   // Follows the active edit mode (8) — in Mask mode the thing you've been
   // dragging is the silhouette, so that's what "reset" has to mean, or the
-  // button would silently throw away the wrong geometry.
-  if (maskModeActive(poly)){
-    poly.clip_points = DEFAULT_CLIP_POINTS.map(p => [...p]);
-    send({type:"poly_set", id:selectedPolyId, key:"clip_points", value:poly.clip_points});
-    paintCanvasEditor();
-    return;
-  }
-  if (poly) poly.corners = DEFAULT_CORNERS.map(c => [...c]);
-  send({type:"poly_corners", id:selectedPolyId, corners: DEFAULT_CORNERS.map(c => [...c])});
-  paintCanvasEditor();
+  // button would silently throw away the wrong geometry. The Mask pane has
+  // both actions spelled out separately if you'd rather not rely on mode.
+  if (maskModeActive(poly)) resetPolyMask(poly);
+  else resetPolyDistortion(poly);
 };
+$("mask-reset-mask").onclick = () => resetPolyMask(polyById(selectedPolyId));
+$("mask-reset-distort").onclick = () => resetPolyDistortion(polyById(selectedPolyId));
 $("poly-delete").onclick = () => {
   if (selectedPolyId && confirm("Delete this shape?")) { send({type:"poly_delete", id:selectedPolyId}); selectedPolyId = null; }
 };
@@ -3991,11 +4232,20 @@ function syncOutputMonitorRows(outs, tp){
       (_lastState && _lastState.viewports_enabled && cfg.duplicate_of == null) ? "flex" : "none";
   });
 }
+// The Output Preview tiles' own test-pattern boxes (41) — same engine state
+// as the Project tab's, so ticking either moves both.
+function syncPreviewTestFlags(tp){
+  document.querySelectorAll("#output-preview-grid .op-test").forEach(el => {
+    if (document.activeElement === el) return;
+    el.checked = !!tp[+el.dataset.index];
+  });
+}
 function applyOutputConfigs(s){
   const outs = s.outputs || [];
   const tp = s.test_pattern || [];
   renderOutputMonitorRows(outs);
   syncOutputMonitorRows(outs, tp);
+  syncPreviewTestFlags(tp);
   if (document.activeElement !== $("output-count")) $("output-count").value = outs.length;
   if (document.activeElement !== $("viewports-enabled")) $("viewports-enabled").checked = !!s.viewports_enabled;
   if (document.activeElement !== $("show-fps")) $("show-fps").checked = !!s.show_fps;
@@ -4085,7 +4335,15 @@ function renderOutputPreview(count, projW, projH, state){
     tile.className = "output-preview-tile";
     tile.innerHTML = `<div class="frame" style="width:${OUTPUT_PREVIEW_W}px;height:${tileH}px">
         <iframe src="/output?out=${i}&preview=1" tabindex="-1"></iframe></div>
-      <div class="label">Output ${i} · ${srcW}×${srcH}</div>`;
+      <div class="label">Output ${i} · ${srcW}×${srcH}</div>
+      <label class="op-test-label" title="Show the calibration grid on this output instead of the live feed. Live-only — never saved, and resets when the engine restarts.">
+        <input type="checkbox" class="op-test" data-index="${i - 1}"> test pattern</label>`;
+    // Deliberately NOT wired through the tile rebuild: test_pattern flips
+    // often, and rebuilding a tile recreates its <iframe>, which reloads that
+    // output window's whole page. State is pushed in by syncPreviewTestFlags
+    // instead, and the signature above ignores it entirely.
+    tile.querySelector(".op-test").onchange = e =>
+      send({type: "set_test_pattern", index: i - 1, value: e.target.checked});
     grid.appendChild(tile);
   }
 }
@@ -4096,6 +4354,23 @@ function renderOutputPreview(count, projW, projH, state){
 // saved into the canvas itself. Icon-only toggle button (state reflected via
 // the "amber" class, same convention as tool-select/editor-fullscreen) next
 // to Reset zoom/pan, rather than a labelled checkbox off on its own row.
+$("toggle-hide-borders").onclick = () => setHideBorders(!_hideBorders);
+setHideBorders(_hideBorders);
+$("toggle-frame-guides").onclick = () => setFrameGuides(!_frameGuides);
+setFrameGuides(_frameGuides);   // reflect the stored state on the button
+
+// Paint-order badges (45) — useful while stacking shapes, clutter once the
+// stack is settled. Same per-browser view preference as the frame guides.
+let _zBadges = localStorage.getItem("pw_z_badges") !== "0";
+function setZBadges(on){
+  _zBadges = !!on;
+  try { localStorage.setItem("pw_z_badges", on ? "1" : "0"); } catch (e) {}
+  $("toggle-z-badges").classList.toggle("amber", _zBadges);
+  paintCanvasEditor();
+}
+$("toggle-z-badges").onclick = () => setZBadges(!_zBadges);
+setZBadges(_zBadges);
+
 $("canvas-freeze-btn").onclick = () =>
   send({type:"set_frozen", value: !$("canvas-freeze-btn").classList.contains("amber")});
 
@@ -4708,9 +4983,7 @@ $("media-upload-btn").onclick = async () => {
     $("media-upload-btn").disabled = false;
   }
 };
-$("acc-input-media").addEventListener("toggle", () => {
-  if ($("acc-input-media").open) refreshMediaList();
-});
+// (media list refresh now happens in setInputSection)
 refreshMediaList();
 
 // Webcam input (2) — device labels are only populated by the browser AFTER
@@ -4766,14 +5039,23 @@ async function refreshWebcamDevices(requestAccess){
     : `no cameras found — click "refresh" and allow camera access`;
 }
 $("webcam-refresh").onclick = () => refreshWebcamDevices(true);
-$("acc-input-webcam").addEventListener("toggle", () => {
-  if ($("acc-input-webcam").open && !_camDevices.length) refreshWebcamDevices(false);
-});
+// (webcam device enumeration now happens in setInputSection)
 
 // Text input (3) — no per-instance config needed up front (unlike media's
 // file picker or webcam's device picker): add a blank text shape, then edit
 // its content/colour/size from Shape settings, same "add first, configure
 // after" flow media/knockout already use via the fill-type dropdown.
+// (42) Cutout used to be reachable only as a "fill type" on an existing
+// shape, which is backwards — it isn't a fill, it's a kind of shape you add.
+// The stored source_type stays "knockout" so existing canvases keep working;
+// only the label changed. "Mask" was rejected as the name: this app already
+// calls a shape's own silhouette a mask (Mask/clipping), and two different
+// things under one word is worse than an unfamiliar one.
+$("cutout-add-btn").onclick = () => {
+  _pendingSelectNewPoly = true;
+  _pendingNewPolyDefaults = {source_type: "knockout"};
+  send({type: "poly_add"});
+};
 $("text-add-btn").onclick = () => {
   _pendingSelectNewPoly = true;
   _pendingNewPolyDefaults = {source_type: "text", text_content: "Hello"};
@@ -4904,16 +5186,10 @@ $("master-toggle").onclick = () => {
   const nowActive = $("master-toggle").dataset.active === "1";
   send({type:"set_active", value: !nowActive});
 };
-// Disable Visuals: a gracefully-fading gate — separate from Start/Stop,
-// which is instant.
-function updateDisableButtons(s){
-  const vb = $("disable-visuals");
-  vb.textContent = s.visuals_disabled ? "Enable Visuals" : "Disable Visuals";
-  vb.className = s.visuals_disabled ? "amber" : "";
-}
-$("disable-visuals").onclick = () => {
-  send({type:"set_visuals_disabled", value: !_lastState?.visuals_disabled, fade: 2.0});
-};
+// "Disable Visuals" used to live in this pane. Removed with the button — the
+// engine still supports set_visuals_disabled, there is just no control bound
+// to it now (Start/Stop covers the same ground without a 2s fade).
+function updateDisableButtons(s){}
 
 // Output windows: separate, chrome-less browser windows for a projector or
 // second screen, driven by the same websocket composite feed the control UI
