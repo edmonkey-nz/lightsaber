@@ -6,6 +6,49 @@ and APIs between minor versions until a 1.0 release.
 
 ## [Unreleased]
 
+### Changed — LFO routes have a range, not just a depth (53)
+- An LFO is bipolar (-1..1), so a bare "depth" always straddled zero: a sine
+  on opacity spent half its cycle trying to go negative and just clamped.
+  `offset` was in the model and wired server-side but **had no UI control at
+  all**, so the half of the maths that fixes this was unreachable.
+- Routes now show **range: min → max** — what this route contributes at the
+  source's lowest and highest point. `0 → 1` on opacity fades fully off and
+  back; `-1 → 1` is the old behaviour.
+- Plus **+ / ± / −** buttons that keep the magnitude already dialled in and
+  only change which side of zero it uses — the common edit ("same amount, but
+  positive only") without redoing the numbers.
+- **No schema change**: still stored as depth+offset, just presented in the
+  basis people think in, so existing canvases are untouched. The conversion
+  is source-aware, since an LFO is -1..1 while an audio band is 0..1 —
+  verified both (a 0→1 LFO range stores depth 0.5/offset 0.5; a 0.2→0.9 audio
+  range stores depth 0.7/offset 0.2).
+- Fixed along the way: the handler read the route's source from the closure
+  captured when the card was built, so changing a route's source and then
+  editing its range used the *previous* source's mapping. It resolves the
+  source live now.
+
+### Changed
+- **Canvas chrome is a constant size on screen, whatever the zoom** (48).
+  Handles, outlines, dash patterns, crop guides and z-index badges are all
+  drawn inside the view transform, so a 6px handle became 24px at 4x — you
+  zoom in for finer control and the grab targets got coarser, eventually
+  swallowing the shape. Every one of those is a screen measurement now.
+  Hit-testing already worked in the same pre-transform space, so grab radii
+  track the drawn ones automatically.
+- **Fill-type dropdown follows the Input rail order** (49): media, webcam,
+  text, 3D scene, cutout — so "what can fill a shape" reads the same in both
+  places.
+- **A new canvas starts empty** (51). It used to arrive with one blank scene
+  polygon, which is a guess about intent: the first thing you do is pick a
+  source, so the placeholder had to be repurposed or deleted either way.
+- **"Choose from media library…" in the Input pane** (52) — everything the
+  install already knows about, linked or uploaded, without re-finding the
+  path on disk. Adds the shape exactly as the Media tab's own button does,
+  so a linked asset stays a link and an uploaded copy stays a copy.
+- **Removed "focused editing" and "reset zoom/pan"** from the canvas toolbar
+  (50). Zoom/pan resets by scrolling back out, and the Input pane now
+  collapses on its own for screen space.
+
 ### Fixed — mesh seams on any shape below full opacity
 - A distorted shape draws as a ~72-triangle mesh, each triangle inflated by
   1.5px so its neighbours can't leave gaps. At full opacity that overlap is

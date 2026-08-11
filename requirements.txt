@@ -1,10 +1,16 @@
-# core (required)
+# Runtime dependencies. All required — this list is what a frozen build
+# (PyInstaller et al, via GitHub Actions for Windows/macOS/Ubuntu) bundles,
+# and a frozen app can't ask the user to pip install anything afterwards.
 numpy>=1.24
 aiohttp>=3.9
 
-# optional — install to unlock features:
-#   anthropic      Claude scene director (else a local keyword mapping is used;
-#                  needs messages.stream() for the live progress bar, so >=0.34)
+# Claude scene director. Needs messages.stream() for the live progress bar,
+# hence the floor. Was optional while the only install path was "clone the
+# repo and pip install"; as a shipped executable it has to be in the bundle
+# whether or not a given user ever sets an API key.
 #
-# pip install anthropic
-#   anthropic>=0.34.0
+# Note this is a dependency, not a requirement to USE Claude: with no API key
+# the director falls back to a local keyword mapping (see
+# director/claude_director.py), and that stays true. The library being
+# present is what lets the app offer the choice at runtime.
+anthropic>=0.34

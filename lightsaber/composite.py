@@ -282,8 +282,12 @@ class CompositeRenderer:
 
     # canvas editing (queued) --------------------------------------------
     def new_canvas(self):
+        # Starts EMPTY (51). It used to arrive with one blank scene polygon,
+        # which is a guess about intent: the first thing you do is pick a
+        # source, and a placeholder shape has to be repurposed or deleted
+        # first either way. The Input rail is how a shape gets added.
         self._enqueue(lambda: setattr(
-            self.canvases, "current", CanvasSpec(name="untitled", polygons=[PolygonSpec()])))
+            self.canvases, "current", CanvasSpec(name="untitled", polygons=[])))
 
     def set_project_resolution(self, width: int, height: int):
         # Lives on the project (see projects.py's ProjectSpec) — every

@@ -132,23 +132,9 @@
   /* Groups the canvas toolbar into document actions / view tools / display
      toggles, so a row of eight same-sized icon buttons reads as three
      intents instead of one undifferentiated strip. */
+  .fx-route-pol{flex:0 0 auto;padding:4px 7px;font-size:12px;line-height:1}
   .tb-divider{width:1px;align-self:stretch;margin:2px 6px;background:var(--line);flex:0 0 auto}
   .disabled{opacity:.45;pointer-events:none}
-  /* Focused editing (2) — only Canvas + Shape settings, maximized. Header
-     stays hidden too (the exit control lives on #editor-fullscreen itself,
-     inside #g-canvas, which stays visible). */
-  body.editor-focused header,
-  body.editor-focused .stage,
-  body.editor-focused .filtercol,
-  body.editor-focused #acc-perf { display:none }
-  /* 30% shorter than the old 88vh (3) — leaves room to actually see/use
-     Shapes + Shape settings alongside the canvas in focused mode, now that
-     both live in .sidecol (which stays visible here) instead of being
-     squeezed below the fold. */
-  /* min-height stays LOW here on purpose (not 62vh) — the base rule's
-     resize:vertical still applies in focused mode, and a min-height equal
-     to the target height would clamp it right back up, same bug as before. */
-  body.editor-focused #cv-edit{ height:62vh; min-height:300px }
   .spinner{display:inline-block;width:13px;height:13px;border:2px solid rgba(4,33,31,.35);
            border-top-color:#04211f;border-radius:50%;animation:spin .7s linear infinite;
            vertical-align:middle}
@@ -384,7 +370,6 @@
   #save-bar button{font-size:12px;padding:4px 10px}
   /* Focused editing hides the panels the bar's buttons act on, so hide the
      bar with them rather than leave dead controls floating over the canvas. */
-  body.editor-focused #save-bar{display:none}
 
   .media-tab-split{display:grid;grid-template-columns:minmax(220px,320px) 1fr;gap:16px;align-items:start}
   @media (max-width:1100px){ .media-tab-split{grid-template-columns:1fr} }
@@ -717,6 +702,9 @@
           <h2>Video / image files</h2>
 <button class="go" id="media-link-btn" style="width:100%"><svg class="bi" aria-hidden="true"><use href="#bi-link-45deg"/></svg><span>Link a file…</span></button>
               <div class="hint">references the file where it already lives — nothing is copied, so a 4GB video costs no extra disk. Needs a media root (Settings &gt; Media roots); the picker can add one.</div>
+              <button id="media-from-library-btn" style="width:100%;margin-top:6px"><svg class="bi" aria-hidden="true"><use href="#bi-folder-fill"/></svg><span>Choose from media library…</span></button>
+              <div class="hint">everything this install already knows about — files you've linked and copies you've uploaded — without going hunting for the path again</div>
+              <div class="lib" id="input-library-list" style="grid-template-columns:1fr;max-height:34vh;overflow:auto;display:none"></div>
               <details class="accordion" id="acc-input-upload">
                 <summary>copy into the app instead</summary>
                 <div class="accordion-body">
@@ -770,13 +758,11 @@
             <span class="tb-divider" aria-hidden="true"></span>
             <button id="tool-select" class="amber" title="Select tool — drag shapes/corners"><svg class="bi" aria-hidden="true"><use href="#bi-cursor-fill"/></svg></button>
             <button id="tool-hand" title="Hand tool — drag to pan"><svg class="bi" aria-hidden="true"><use href="#bi-hand-index"/></svg></button>
-            <button id="editor-reset-view" title="Reset zoom/pan"><svg class="bi" aria-hidden="true"><use href="#bi-arrow-counterclockwise"/></svg></button>
             <span class="tb-divider" aria-hidden="true"></span>
             <button id="toggle-frame-guides" class="amber" title="Show the output frame guides — where each projector's slice starts and stops"><svg class="bi" aria-hidden="true"><use href="#bi-border-outer"/></svg></button>
             <button id="toggle-hide-borders" title="Hide shape outlines, corner pins and mask handles for a clean view — the selected shape still shows its own, so deselect for a completely clean canvas"><svg class="bi" aria-hidden="true"><use href="#bi-square"/></svg></button>
             <button id="toggle-z-badges" class="amber" title="Show each shape's paint order (z-index) on the canvas"><svg class="bi" aria-hidden="true"><use href="#bi-front"/></svg></button>
             <button id="canvas-freeze-btn" title="Freeze shape playback — content stays visible, just stops animating"><svg class="bi" aria-hidden="true"><use href="#bi-snow"/></svg></button>
-            <button id="editor-fullscreen" title="Focused editing (fullscreen)"><svg class="bi" aria-hidden="true"><use href="#bi-arrows-fullscreen"/></svg></button>
           </div>
         </div>
         <div class="hint">scroll to zoom · hold space (or Hand tool) + drag to pan</div>
@@ -834,11 +820,13 @@
         <label style="display:flex;align-items:center;gap:6px;font-size:13px">
           <input type="checkbox" id="poly-locked"> <svg class="bi" aria-hidden="true"><use href="#bi-lock-fill"/></svg><span>lock on canvas</span></label>
         <div class="field"><label>fill type</label>
+          <!-- (49) Same order as the Input rail, so "what can fill a shape"
+               reads identically in both places. -->
           <select id="poly-source-type">
-            <option value="scene">Scene</option>
             <option value="media">Media</option>
             <option value="webcam">Webcam</option>
             <option value="text">Text</option>
+            <option value="scene">3D Scene</option>
             <option value="knockout">Cutout</option>
           </select></div>
         <div class="field" id="poly-scene-field"><label>scene</label>
@@ -1871,13 +1859,14 @@ function drawZBadge(ctx, poly, rect){
   const minX = Math.min(...pts.map(p=>p[0])), minY = Math.min(...pts.map(p=>p[1]));
   const label = String(poly.z_index ?? 5);
   ctx.save();
-  ctx.font = "11px " + CSS_VAR("--mono");
+  const z = _view.zoom || 1;                 // screen-space, same as the handles (48)
+  ctx.font = (11/z) + "px " + CSS_VAR("--mono");
   const tw = ctx.measureText(label).width;
   ctx.fillStyle = "rgba(0,0,0,.7)";
-  ctx.fillRect(minX+4, minY+4, tw+8, 16);
+  ctx.fillRect(minX+4/z, minY+4/z, tw+8/z, 16/z);
   ctx.fillStyle = "#e7eaf0";
   ctx.textBaseline = "middle";
-  ctx.fillText(label, minX+8, minY+12);
+  ctx.fillText(label, minX+8/z, minY+12/z);
   ctx.restore();
 }
 
@@ -2711,7 +2700,7 @@ function paintCanvasEditor(){
   // gain — matches the real output's own "dip to black", not a dip to the
   // grid backdrop showing through.
   cvCtx.fillStyle = "#000"; cvCtx.fillRect(rect.x, rect.y, rect.w, rect.h);
-  cvCtx.strokeStyle = "rgba(51,224,208,.35)"; cvCtx.lineWidth = 1;
+  cvCtx.strokeStyle = "rgba(51,224,208,.35)"; cvCtx.lineWidth = 1/(_view.zoom||1);
   cvCtx.strokeRect(rect.x+0.5, rect.y+0.5, rect.w-1, rect.h-1);
   cvCtx.restore();
 
@@ -2850,10 +2839,10 @@ function paintCanvasEditor(){
       : isKnockout ? "rgba(255,120,120,.5)"
       : (isMedia ? !mediaRefFor(poly) || (poly.media_link && layer && layer.media_link_ok === false)
          : isText ? !poly.text_content : layer && layer.missing) ? COLOR_AMBER : "rgba(255,255,255,.25)";
-    cvCtx.lineWidth = poly.id === selectedPolyId ? 2 : 1;
+    cvCtx.lineWidth = (poly.id === selectedPolyId ? 2 : 1) / (_view.zoom || 1);
     // Locked shapes (9) draw dashed — a passive "this one won't respond to
     // dragging" cue that costs no extra chrome on the canvas.
-    if (isLocked(poly)) cvCtx.setLineDash([6,4]);
+    if (isLocked(poly)) cvCtx.setLineDash([6/(_view.zoom||1), 4/(_view.zoom||1)]);
     cvCtx.beginPath();
     poly.corners.forEach((c,i) => { const [px,py]=normToPx(c[0],c[1],rect); i?cvCtx.lineTo(px,py):cvCtx.moveTo(px,py); });
     cvCtx.closePath(); cvCtx.stroke();
@@ -2866,8 +2855,8 @@ function paintCanvasEditor(){
       cvCtx.save();
       cvCtx.strokeStyle = maskMode ? COLOR_AMBER
         : selected ? "rgba(242,166,35,.55)" : "rgba(242,166,35,.3)";
-      cvCtx.lineWidth = maskMode ? 2 : 1;
-      if (!maskMode) cvCtx.setLineDash([4,3]);
+      cvCtx.lineWidth = (maskMode ? 2 : 1) / (_view.zoom || 1);
+      if (!maskMode) cvCtx.setLineDash([4/(_view.zoom||1), 3/(_view.zoom||1)]);
       customMaskPath(cvCtx, poly, poly.corners, rect);
       cvCtx.stroke();
       cvCtx.restore();
@@ -2875,10 +2864,20 @@ function paintCanvasEditor(){
     if (selected && !isLocked(poly)){
       // Corner pins: full-size dots in Warp mode, small hollow rings in
       // Mask mode (still visible, but clearly not what you're dragging).
+      //
+      // Divided by the zoom (48) because this whole pass runs inside the
+      // view transform: without it a handle drawn at 6px becomes 24px at 4x
+      // zoom, which is exactly backwards — you zoom in for finer control and
+      // the grab targets get coarser, eventually swallowing the shape. Every
+      // radius and line width here is a SCREEN measurement, so each is
+      // pre-divided to survive the transform. Hit-testing already works in
+      // this same pre-transform space, so the grab radius tracks the drawn
+      // one automatically.
+      const z = _view.zoom || 1;
       poly.corners.forEach(c => {
         const [px,py]=normToPx(c[0],c[1],rect);
-        cvCtx.beginPath(); cvCtx.arc(px,py, maskMode ? 3.5 : 6, 0, Math.PI*2);
-        if (maskMode){ cvCtx.strokeStyle = "rgba(51,224,208,.5)"; cvCtx.lineWidth = 1.5; cvCtx.stroke(); }
+        cvCtx.beginPath(); cvCtx.arc(px,py, (maskMode ? 3.5 : 6)/z, 0, Math.PI*2);
+        if (maskMode){ cvCtx.strokeStyle = "rgba(51,224,208,.5)"; cvCtx.lineWidth = 1.5/z; cvCtx.stroke(); }
         else { cvCtx.fillStyle = COLOR_CYAN; cvCtx.fill(); }
       });
       if (maskMode){
@@ -2886,7 +2885,7 @@ function paintCanvasEditor(){
         cvCtx.fillStyle = COLOR_AMBER;
         polyClipPoints(poly).forEach(p => {
           const [px,py] = maskPointPx(p[0], p[1], Hm, rect);
-          cvCtx.beginPath(); cvCtx.arc(px,py,6,0,Math.PI*2); cvCtx.fill();
+          cvCtx.beginPath(); cvCtx.arc(px,py,6/z,0,Math.PI*2); cvCtx.fill();
         });
       }
     }
@@ -2939,10 +2938,12 @@ function drawOutputCropGuides(ctx, rect){
   const outs = s.outputs || [];
   if (outs.length < 2) return;     // one output showing everything has no seam
   ctx.save();
-  ctx.setLineDash([5, 5]);
-  ctx.lineWidth = 1;
+  // Screen measurements, so pre-divided by the zoom the caller applied (48).
+  const z = _view.zoom || 1;
+  ctx.setLineDash([5/z, 5/z]);
+  ctx.lineWidth = 1/z;
   ctx.strokeStyle = "rgba(255,255,255,.34)";
-  ctx.font = "11px ui-monospace, \"SF Mono\", Menlo, Consolas, monospace";
+  ctx.font = `${11/z}px ui-monospace, "SF Mono", Menlo, Consolas, monospace`;
   ctx.textBaseline = "top";
   const f = Math.max(0, Math.min(0.5, s.edge_overlap || 0));
   outs.forEach((o, i) => {
@@ -2978,9 +2979,9 @@ function drawOutputCropGuides(ctx, rect){
     const label = String(i + 1);
     const tw = ctx.measureText(label).width;
     ctx.fillStyle = "rgba(0,0,0,.55)";
-    ctx.fillRect(Math.min(x0, x1) + 3, Math.min(y0, y1) + 3, tw + 8, 15);
+    ctx.fillRect(Math.min(x0, x1) + 3/z, Math.min(y0, y1) + 3/z, tw + 8/z, 15/z);
     ctx.fillStyle = "rgba(255,255,255,.72)";
-    ctx.fillText(label, Math.min(x0, x1) + 7, Math.min(y0, y1) + 5);
+    ctx.fillText(label, Math.min(x0, x1) + 7/z, Math.min(y0, y1) + 5/z);
   });
   ctx.restore();
 }
@@ -3128,31 +3129,10 @@ cvEdit.addEventListener("wheel", e => {
   _view.zoom = newZoom;
   paintCanvasEditor();
 }, {passive:false});
-$("editor-reset-view").onclick = () => { _view.zoom = 1; _view.panX = 0; _view.panY = 0; paintCanvasEditor(); };
 
-// Focused editing (2) — CSS-only "just Canvas + Shape settings" layout,
-// plus a best-effort real Fullscreen API request (silently ignored if the
-// browser/context refuses it — the CSS layout is what actually matters).
-// #cv-edit's own box changes size when this toggles (its height rule swaps
-// between 700px and 88vh — see CSS), so the backing buffer + artboard
-// letterbox need recomputing, same as any other resize (3).
-let _editorFocused = false;
-function setEditorFocused(on){
-  _editorFocused = on;
-  document.body.classList.toggle("editor-focused", on);
-  const btn = $("editor-fullscreen");
-  btn.classList.toggle("amber", on);
-  btn.title = on ? "Exit focused editing" : "Focused editing (fullscreen)";
-  if (on) document.documentElement.requestFullscreen?.().catch(()=>{});
-  else if (document.fullscreenElement) document.exitFullscreen?.().catch(()=>{});
-  requestAnimationFrame(resizeEditorCanvas);
-}
-$("editor-fullscreen").onclick = () => setEditorFocused(!_editorFocused);
-// Esc (or any other way out of native fullscreen) should drop the focused
-// layout too, not leave it stuck showing only Canvas with a normal window.
-document.addEventListener("fullscreenchange", () => {
-  if (!document.fullscreenElement && _editorFocused) setEditorFocused(false);
-});
+// Focused editing and "reset zoom/pan" were removed (50): zoom/pan
+// resets by scrolling back out, and the Input pane now collapses on its
+// own for screen space, so neither button earned its toolbar slot.
 
 // Input sections — a rail of icons plus one open pane, the same shape as the
 // Panes column on the right. Which one is open is a layout preference, so it
@@ -4352,7 +4332,7 @@ function renderOutputPreview(count, projW, projH, state){
 // unlike the main Start/Stop, which blanks everything. Engine-wide (there's
 // one compositor rendering whatever canvas is currently open/playing), not
 // saved into the canvas itself. Icon-only toggle button (state reflected via
-// the "amber" class, same convention as tool-select/editor-fullscreen) next
+// the "amber" class, same convention as tool-select) next
 // to Reset zoom/pan, rather than a labelled checkbox off on its own row.
 $("toggle-hide-borders").onclick = () => setHideBorders(!_hideBorders);
 setHideBorders(_hideBorders);
@@ -4606,6 +4586,15 @@ const FX_NOTE_DIVS = ["1/1","1/2","1/4","1/8","1/8T","1/16"];
 // Fixed audio pseudo-sources (1) — always selectable directly as a route's
 // source, matching effectors.py's AUDIO_PSEUDO_SOURCE_IDS; no source card
 // needed to route straight off the mic's 3 EQ bands or master level.
+// An LFO swings -1..1; an audio band only ever reports 0..1. That changes
+// how a route's depth/offset map onto the range the user sees, so the range
+// UI has to know which kind of source it's fed by (53).
+function routeSourceIsBipolar(route, fx){
+  const id = route.source_id || "";
+  if (id.startsWith("__audio")) return false;
+  const src = (fx.sources || []).find(x => x.id === id);
+  return !src || src.type !== "audio";
+}
 const FX_AUDIO_PSEUDO_SOURCES = [
   {id: "__audio_low__", name: "Audio: low"},
   {id: "__audio_mid__", name: "Audio: mid"},
@@ -4741,8 +4730,13 @@ function renderEffectors(s){
           </select>
         </div>
         <div class="row" style="align-items:center">
-          <label style="flex:0 0 40px;font-size:11px;color:var(--dim)">depth</label>
-          <input type="number" class="fx-route-depth" min="-360" max="360" step="0.5" style="flex:1" title="Multiplies the source's -1..1 output — scale to whatever the target param's own range is (e.g. ~180 for hue, ~0.5-1 for opacity)">
+          <label style="flex:0 0 40px;font-size:11px;color:var(--dim)">range</label>
+          <input type="number" class="fx-route-min" min="-360" max="360" step="0.05" style="flex:1" title="What this route contributes at the source's LOWEST point">
+          <span style="color:var(--dim);font-size:11px">→</span>
+          <input type="number" class="fx-route-max" min="-360" max="360" step="0.05" style="flex:1" title="What this route contributes at the source's HIGHEST point">
+          <button class="fx-route-pol" data-pol="pos" title="Positive only — the source sweeps 0 up to the top of the range">+</button>
+          <button class="fx-route-pol" data-pol="bi" title="Both ways — the source swings equally either side of zero">±</button>
+          <button class="fx-route-pol" data-pol="neg" title="Negative only — the source sweeps 0 down to the bottom of the range">−</button>
           <select class="fx-route-curve" style="flex:0 0 auto">
             <option value="linear">linear</option>
             <option value="exponential">exp</option>
@@ -4755,11 +4749,55 @@ function renderEffectors(s){
           </select>
           <span class="x" title="Remove route" style="cursor:pointer;color:var(--dim)">${bi("x-lg")}</span>
         </div>
+        <div class="hint" style="margin-top:2px">range is what this route CONTRIBUTES at the source's lowest and highest point — so 0 → 1 on opacity fades fully off and back, while −1 → 1 would spend half the cycle clamped at zero. + / ± / − keep the amount and just change which side of zero it uses.</div>
       `;
       card.querySelector(".fx-route-source").onchange = e => send({type:"effector_route_set", id:route.id, key:"source_id", value:e.target.value});
       card.querySelector(".fx-route-target").onchange = e => send({type:"effector_route_set", id:route.id, key:"target_poly", value:e.target.value});
       card.querySelector(".fx-route-param").onchange = e => send({type:"effector_route_set", id:route.id, key:"target_param", value:e.target.value});
-      card.querySelector(".fx-route-depth").onchange = e => send({type:"effector_route_set", id:route.id, key:"depth", value:+e.target.value});
+      // Range, not depth (53). An LFO is bipolar (-1..1), so a bare "depth"
+      // always straddled zero — the reason a sine on opacity spent half its
+      // cycle trying to go negative and just clamped. `offset` could fix it
+      // but had no control at all, so the useful half of the maths was
+      // unreachable from the UI.
+      //
+      // Stored as depth+offset exactly as before (no schema change, existing
+      // canvases untouched); the two numbers are just presented in the basis
+      // people actually think in. The conversion depends on the SOURCE's
+      // natural range, which is why it's done here rather than server-side:
+      // an LFO is -1..1, an audio band is 0..1.
+      // Resolved at click time, not from the closure: cards persist across
+      // broadcasts (only their values re-sync), so a route whose SOURCE was
+      // changed after the card was built would otherwise still be judged by
+      // the source it had then — and an LFO and an audio band map a range
+      // onto depth/offset differently.
+      const liveBipolar = () => {
+        const live = (_lastState && _lastState.canvas && _lastState.canvas.effectors) || fx;
+        const r = (live.routes || []).find(x => x.id === route.id) || route;
+        return routeSourceIsBipolar(r, live);
+      };
+      const applyRange = (lo, hi) => {
+        const bip = liveBipolar();
+        const depth  = bip ? (hi - lo) / 2 : (hi - lo);
+        const offset = bip ? (hi + lo) / 2 : lo;
+        send({type:"effector_route_set", id:route.id, key:"depth", value:depth});
+        send({type:"effector_route_set", id:route.id, key:"offset", value:offset});
+      };
+      const readRange = () => [ +card.querySelector(".fx-route-min").value,
+                                +card.querySelector(".fx-route-max").value ];
+      card.querySelector(".fx-route-min").onchange = () => { const [lo,hi]=readRange(); applyRange(lo,hi); };
+      card.querySelector(".fx-route-max").onchange = () => { const [lo,hi]=readRange(); applyRange(lo,hi); };
+      // Polarity buttons keep whatever magnitude is already dialled in and
+      // only change which side of zero it lives on — the common edit ("same
+      // amount, but positive only") without redoing the numbers.
+      card.querySelectorAll(".fx-route-pol").forEach(btn => {
+        btn.onclick = () => {
+          const [lo,hi] = readRange();
+          const mag = Math.max(Math.abs(lo), Math.abs(hi)) || 1;
+          if (btn.dataset.pol === "pos") applyRange(0, mag);
+          else if (btn.dataset.pol === "neg") applyRange(-mag, 0);
+          else applyRange(-mag, mag);
+        };
+      });
       card.querySelector(".fx-route-curve").onchange = e => send({type:"effector_route_set", id:route.id, key:"curve", value:e.target.value});
       card.querySelector(".fx-route-mode").onchange = e => send({type:"effector_route_set", id:route.id, key:"mode", value:e.target.value});
       card.querySelector(".x").onclick = () => send({type:"effector_route_remove", id:route.id});
@@ -4772,7 +4810,13 @@ function renderEffectors(s){
     if (document.activeElement !== card.querySelector(".fx-route-source")) card.querySelector(".fx-route-source").value = route.source_id;
     if (document.activeElement !== card.querySelector(".fx-route-target")) card.querySelector(".fx-route-target").value = route.target_poly;
     if (document.activeElement !== card.querySelector(".fx-route-param")) card.querySelector(".fx-route-param").value = route.target_param;
-    if (document.activeElement !== card.querySelector(".fx-route-depth")) card.querySelector(".fx-route-depth").value = route.depth;
+    // depth+offset -> the min/max the UI shows, inverse of applyRange above
+    const bip = routeSourceIsBipolar(route, fx);
+    const lo = bip ? route.offset - route.depth : route.offset;
+    const hi = bip ? route.offset + route.depth : route.offset + route.depth;
+    const minEl = card.querySelector(".fx-route-min"), maxEl = card.querySelector(".fx-route-max");
+    if (document.activeElement !== minEl) minEl.value = +lo.toFixed(3);
+    if (document.activeElement !== maxEl) maxEl.value = +hi.toFixed(3);
     if (document.activeElement !== card.querySelector(".fx-route-curve")) card.querySelector(".fx-route-curve").value = route.curve;
     if (document.activeElement !== card.querySelector(".fx-route-mode")) card.querySelector(".fx-route-mode").value = route.mode;
   });
@@ -5600,6 +5644,45 @@ $("media-trim-clear").onclick = async () => {
   await loadMediaMeta();
   await loadAssets(true);
   renderPolyInspector();
+};
+// (52) The same library the Media tab lists, reachable from the Input pane —
+// adding a clip you already have shouldn't mean re-finding it on disk. Adds
+// the shape exactly the way the Media tab's own button does, so a linked
+// asset stays a link and an uploaded copy stays a copy.
+function addMediaShapeFromAsset(a){
+  if (!a) return;
+  _pendingSelectNewPoly = true;
+  _pendingNewPolyDefaults = a.kind === "link"
+    ? {source_type:"media", media_link:a.link}
+    : {source_type:"media", media:a.name};
+  send({type:"poly_add"});
+}
+function renderInputLibrary(){
+  const box = $("input-library-list");
+  box.innerHTML = "";
+  if (!_assets.length){
+    box.innerHTML = '<div class="hint">nothing in the library yet — link a file or upload a copy first</div>';
+    return;
+  }
+  _assets.forEach(a => {
+    const el = document.createElement("div");
+    el.className = "item";
+    el.innerHTML = `<span>${bi(a.kind === "link" ? "link-45deg" : "folder-fill")} ${a.name}</span>` +
+      (a.exists === false ? `<span class="missing">${bi("exclamation-triangle-fill")}</span>` : "");
+    el.title = a.exists === false
+      ? "file not found — it may have moved or the drive is unplugged"
+      : (a.path || a.name);
+    el.onclick = () => { addMediaShapeFromAsset(a); box.style.display = "none"; };
+    box.appendChild(el);
+  });
+}
+$("media-from-library-btn").onclick = async () => {
+  const box = $("input-library-list");
+  if (box.style.display !== "none"){ box.style.display = "none"; return; }
+  box.style.display = "grid";
+  box.innerHTML = '<div class="hint">loading…</div>';
+  await loadAssets(true);
+  renderInputLibrary();
 };
 $("media-add-to-canvas").onclick = () => {
   const a = selectedAsset(); if (!a) return;

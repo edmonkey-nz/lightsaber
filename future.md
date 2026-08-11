@@ -41,10 +41,11 @@ that you can't easy edit it in the canvas, and show padlock icon in shapelist.
 45) DONE - add another button in the cavnas header for 'show/hide z-index' of shapes in the canvas - use the 'front' BS icon.
 46) DONE - collapse the 'input' drawer if theres clicks out of that pane.
 47) bezier mask/clip/cutouts - how expensive are these and complicated to have as an option?? assess and ask before doing anything
-48) the handles on points on shapes within the canvas, as you zoom they get bigger, can they be propotioinal, ie: same size regardless of zoom depth?
-49) the 'fill type' dropdown list order should match the 'inputs' order.
-50) remove the 'focussed editing' button from the canvas.
-51) when creating a new canvas, do not make any shapes initally, let the user create them.
-52) when adding media, provide an option to choose from the 'media library'
-53) in the LFO: we need a min/max option or some sort of range adjuster, as when using a sine wave for opacity, we only want postive values, not negaitve values
-54) can you build some solid regresion testing scripts that can be run as i futher develop this project, and save them into a new 'test scripts' folder, this is so me, you and others can run them after new functionailty, and escpcailly for the render host when that progresses. these shoudl test performance, UX and other things you've been rtesting. make sure that the prompts can be useful for humans and AI when priidng feedback from running these.
+48) DONE - the handles on points on shapes within the canvas, as you zoom they get bigger, can they be propotioinal, ie: same size regardless of zoom depth?
+49) DONE - the 'fill type' dropdown list order should match the 'inputs' order.
+50) DONE - remove the 'focussed editing'  and 'reset zoom/pan' buttons from the canvas.
+51) DONE - when creating a new canvas, do not make any shapes initally, let the user create them.
+52) DONE - when adding media, provide an option to choose from the 'media library'
+53) DONE - in the LFO: we need a min/max option or some sort of range adjuster, as when using a sine wave for opacity, we only want postive values, not negaitve values
+54) if appropiate - can you build some solid regresion testing scripts that can be run as i futher develop this project, and save them into a new 'test scripts' folder, this is so me, you and others can run them after new functionailty, and escpcailly for the render host when that progresses. these shoudl test performance, UX and other things you've been rtesting. make sure that the prompts can be useful for humans and AI when priidng feedback from running these.
+55) for sliders than have a 'normal' halfway or '1' point (eg rotate,mirror, speed, brightness etc) make a snap point there when dragging, or a very small 'reset' icon at the end of the slider

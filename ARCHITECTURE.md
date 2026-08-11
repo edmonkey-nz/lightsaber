@@ -514,6 +514,21 @@ apply.
   of the FBO resolve. Worth a one-line note near §5's diagram, since the
   reason it's safe isn't obvious from the diagram alone.
 
+  **It then happened a second time, in a different renderer.** The media /
+  webcam / text path warps through its own ~72-triangle mesh with the same
+  1.5px anti-seam skirt, and had the same `globalAlpha = opacity` set once
+  before drawing all of them — so every shape below full opacity showed a
+  bright grid. Measured on flat grey: at 50% the body read 64 while the
+  seam band reached **125**, nearly double; at 25% the seams were over 3×
+  too bright. Fixed identically (mesh drawn opaque into a scratch, blended
+  in once), and the body is now flat to 1–2 levels of rounding at 25/50/80%.
+  The lesson to carry across: **this is not a one-off bug, it is what
+  "overlapping primitives + per-primitive alpha" always does**, and any
+  renderer that inflates geometry to hide seams will reproduce it the
+  moment a group opacity is introduced. In the GL version the FBO makes it
+  structurally impossible — but only if opacity is applied at the FBO
+  resolve, never inside the scene draw.
+
 - **The test-pattern/calibration overlay (§9 item 4, "no test grid yet") has
   a working, reusable design, even though it's Canvas2D not GL.**
   `output.html`'s `drawTestPattern` draws a border, grid, corner-to-corner
@@ -605,6 +620,34 @@ apply.
   never draws content per output at all — but that is a *consequence* of
   resolving the scene into one FBO first, not a free-standing property, and
   it is lost the moment any content work moves after the per-output split.
+
+- **What is and isn't cheap on a GPU-accelerated 2D path — measured, and
+  one intuition that turned out backwards.** Canvas2D here is genuinely GPU
+  accelerated (confirmed ANGLE / `radeonsi`), which changes where the cost
+  actually sits and is worth knowing before hand-optimising anything in the
+  GL renderer:
+  1. **Full-surface operations are close to free.** Fixing the opacity bug
+     above adds one whole-canvas clear plus one whole-canvas blit per
+     translucent layer: **~0.15ms at 1080p**, about 2% of the ~8.8ms a
+     distorted 1080p video layer already costs.
+  2. **Restricting that clear/blit to the shape's own bounding box made it
+     SLOWER.** Interleaved A/B, three runs each, verified pixel-identical
+     first: 0.88× / 0.95× / 0.88× at 1920×1080 and 4096×1024, against 1.06×
+     in the one case it helped. A whole-surface clear and blit is a path the
+     driver does extremely well; a sub-rect `drawImage` plus device-space
+     bbox maths is not. **Don't hand-optimise region updates on a GPU path** —
+     measure before assuming smaller means faster. The optimisation was
+     written, verified correct, measured, and then deleted.
+  3. **The wall is draw-call count, not fill rate.** A distorted shape costs
+     ~4.5ms/layer for the mesh alone because it is 72 separate
+     clip + transform + `drawImage` calls; the pixels themselves are cheap.
+     That is the number a shader removes — one textured quad with a
+     projective transform, no mesh, no per-triangle clip. **This, not
+     compositing throughput, is the concrete argument for the GL render
+     host**, and it means the win there should be large rather than
+     incremental. It also means micro-optimising the Canvas2D path is close
+     to pointless: nothing short of removing the per-triangle draw calls
+     moves that floor.
 
 - **A server-authoritative playhead is the right model, and the render host
   gets it for free — but "authoritative" must not mean "seek to correct".**

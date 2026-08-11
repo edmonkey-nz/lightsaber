@@ -30,9 +30,11 @@ Python backend + web browser for interface runs on a single computer for simple 
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt      # numpy + aiohttp
-pip install anthropic                # optional — only for generating scenes
+python -m pip install -r requirements.txt
 ```
+
+A Claude API key is optional — without one, scene generation falls back to a
+local keyword mapping and everything else works unchanged.
 
 ## Run
 
