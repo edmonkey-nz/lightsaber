@@ -119,6 +119,15 @@
   }
   .filtercol{border-left:1px solid var(--line);background:var(--panel);padding:16px;
              display:flex;flex-direction:column;gap:18px;min-width:0}
+  /* Bootstrap Icons (34) — sized in em so an icon tracks whatever font-size
+     its button has, and filled with currentColor so it picks up hover/active
+     colour with no extra rules. pointer-events:none keeps clicks on the
+     button rather than the glyph. */
+  .bi{width:1em;height:1em;fill:currentColor;vertical-align:-.125em;
+      flex:0 0 auto;pointer-events:none}
+  .icon-btn .bi,.drawer-handle-btn .bi,.rail-icon .bi{width:1.1em;height:1.1em;vertical-align:-.16em}
+  /* Icon + label buttons: a little air between the two. */
+  .bi+span,.bi+b{margin-left:.45em}
   .disabled{opacity:.45;pointer-events:none}
   /* Focused editing (2) — only Canvas + Shape settings, maximized. Header
      stays hidden too (the exit control lives on #editor-fullscreen itself,
@@ -425,11 +434,71 @@
 </style>
 </head>
 <body>
+<!-- Bootstrap Icons v1.13.1 (MIT) - https://github.com/twbs/icons
+     Only the icons this UI actually uses, inlined. Deliberately a subset and
+     deliberately inline: the full sprite is 1.1MB and the icon font plus its
+     CSS ~220KB, against ~17KB for these. An external file is not an option
+     either - cross-document <use href="icons.svg#id"> does not work in
+     Chrome or Safari.
+
+     TO ADD ONE: copy the SVG from https://icons.getbootstrap.com, then paste
+     its inner markup here as
+         <symbol id="bi-NAME" viewBox="0 0 16 16">...paths...</symbol>
+     and reference it as <use href="#bi-NAME"/>, or bi("NAME") from JS.
+     Symbols inherit currentColor, so an icon takes the colour of whatever
+     button it sits in. -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="bi-activity" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M6 2a.5.5 0 0 1 .47.33L10 12.036l1.53-4.208A.5.5 0 0 1 12 7.5h3.5a.5.5 0 0 1 0 1h-3.15l-1.88 5.17a.5.5 0 0 1-.94 0L6 3.964 4.47 8.171A.5.5 0 0 1 4 8.5H.5a.5.5 0 0 1 0-1h3.15l1.88-5.17A.5.5 0 0 1 6 2"/></symbol>
+  <symbol id="bi-arrow-clockwise" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/> <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></symbol>
+  <symbol id="bi-arrow-counterclockwise" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2z"/> <path d="M8 4.466V.534a.25.25 0 0 0-.41-.192L5.23 2.308a.25.25 0 0 0 0 .384l2.36 1.966A.25.25 0 0 0 8 4.466"/></symbol>
+  <symbol id="bi-arrow-up" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5"/></symbol>
+  <symbol id="bi-arrows-angle-expand" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M5.828 10.172a.5.5 0 0 0-.707 0l-4.096 4.096V11.5a.5.5 0 0 0-1 0v3.975a.5.5 0 0 0 .5.5H4.5a.5.5 0 0 0 0-1H1.732l4.096-4.096a.5.5 0 0 0 0-.707m4.344-4.344a.5.5 0 0 0 .707 0l4.096-4.096V4.5a.5.5 0 1 0 1 0V.525a.5.5 0 0 0-.5-.5H11.5a.5.5 0 0 0 0 1h2.768l-4.096 4.096a.5.5 0 0 0 0 .707"/></symbol>
+  <symbol id="bi-arrows-fullscreen" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M5.828 10.172a.5.5 0 0 0-.707 0l-4.096 4.096V11.5a.5.5 0 0 0-1 0v3.975a.5.5 0 0 0 .5.5H4.5a.5.5 0 0 0 0-1H1.732l4.096-4.096a.5.5 0 0 0 0-.707m4.344 0a.5.5 0 0 1 .707 0l4.096 4.096V11.5a.5.5 0 1 1 1 0v3.975a.5.5 0 0 1-.5.5H11.5a.5.5 0 0 1 0-1h2.768l-4.096-4.096a.5.5 0 0 1 0-.707m0-4.344a.5.5 0 0 0 .707 0l4.096-4.096V4.5a.5.5 0 1 0 1 0V.525a.5.5 0 0 0-.5-.5H11.5a.5.5 0 0 0 0 1h2.768l-4.096 4.096a.5.5 0 0 0 0 .707m-4.344 0a.5.5 0 0 1-.707 0L1.025 1.732V4.5a.5.5 0 0 1-1 0V.525a.5.5 0 0 1 .5-.5H4.5a.5.5 0 0 1 0 1H1.732l4.096 4.096a.5.5 0 0 1 0 .707"/></symbol>
+  <symbol id="bi-bounding-box" viewBox="0 0 16 16"><path d="M5 2V0H0v5h2v6H0v5h5v-2h6v2h5v-5h-2V5h2V0h-5v2zm6 1v2h2v6h-2v2H5v-2H3V5h2V3zm1-2h3v3h-3zm3 11v3h-3v-3zM4 15H1v-3h3zM1 4V1h3v3z"/></symbol>
+  <symbol id="bi-camera-reels" viewBox="0 0 16 16"><path d="M6 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0M1 3a2 2 0 1 0 4 0 2 2 0 0 0-4 0"/> <path d="M9 6h.5a2 2 0 0 1 1.983 1.738l3.11-1.382A1 1 0 0 1 16 7.269v7.462a1 1 0 0 1-1.406.913l-3.111-1.382A2 2 0 0 1 9.5 16H2a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zm6 8.73V7.27l-3.5 1.555v4.35zM1 8v6a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1H2a1 1 0 0 0-1 1"/> <path d="M9 6a3 3 0 1 0 0-6 3 3 0 0 0 0 6M7 3a2 2 0 1 1 4 0 2 2 0 0 1-4 0"/></symbol>
+  <symbol id="bi-camera-video" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M0 5a2 2 0 0 1 2-2h7.5a2 2 0 0 1 1.983 1.738l3.11-1.382A1 1 0 0 1 16 4.269v7.462a1 1 0 0 1-1.406.913l-3.111-1.382A2 2 0 0 1 9.5 13H2a2 2 0 0 1-2-2zm11.5 5.175 3.5 1.556V4.269l-3.5 1.556zM2 4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1z"/></symbol>
+  <symbol id="bi-check-lg" viewBox="0 0 16 16"><path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425z"/></symbol>
+  <symbol id="bi-chevron-bar-left" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M11.854 3.646a.5.5 0 0 1 0 .708L8.207 8l3.647 3.646a.5.5 0 0 1-.708.708l-4-4a.5.5 0 0 1 0-.708l4-4a.5.5 0 0 1 .708 0M4.5 1a.5.5 0 0 0-.5.5v13a.5.5 0 0 0 1 0v-13a.5.5 0 0 0-.5-.5"/></symbol>
+  <symbol id="bi-chevron-bar-right" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M4.146 3.646a.5.5 0 0 0 0 .708L7.793 8l-3.647 3.646a.5.5 0 0 0 .708.708l4-4a.5.5 0 0 0 0-.708l-4-4a.5.5 0 0 0-.708 0M11.5 1a.5.5 0 0 1 .5.5v13a.5.5 0 0 1-1 0v-13a.5.5 0 0 1 .5-.5"/></symbol>
+  <symbol id="bi-chevron-left" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0"/></symbol>
+  <symbol id="bi-chevron-right" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708"/></symbol>
+  <symbol id="bi-copy" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1z"/></symbol>
+  <symbol id="bi-cursor-fill" viewBox="0 0 16 16"><path d="M14.082 2.182a.5.5 0 0 1 .103.557L8.528 15.467a.5.5 0 0 1-.917-.007L5.57 10.694.803 8.652a.5.5 0 0 1-.006-.916l12.728-5.657a.5.5 0 0 1 .556.103z"/></symbol>
+  <symbol id="bi-dash-lg" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M2 8a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11A.5.5 0 0 1 2 8"/></symbol>
+  <symbol id="bi-display" viewBox="0 0 16 16"><path d="M0 4s0-2 2-2h12s2 0 2 2v6s0 2-2 2h-4q0 1 .25 1.5H11a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1h.75Q6 13 6 12H2s-2 0-2-2zm1.398-.855a.76.76 0 0 0-.254.302A1.5 1.5 0 0 0 1 4.01V10c0 .325.078.502.145.602q.105.156.302.254a1.5 1.5 0 0 0 .538.143L2.01 11H14c.325 0 .502-.078.602-.145a.76.76 0 0 0 .254-.302 1.5 1.5 0 0 0 .143-.538L15 9.99V4c0-.325-.078-.502-.145-.602a.76.76 0 0 0-.302-.254A1.5 1.5 0 0 0 13.99 3H2c-.325 0-.502.078-.602.145"/></symbol>
+  <symbol id="bi-exclamation-triangle-fill" viewBox="0 0 16 16"><path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5m.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2"/></symbol>
+  <symbol id="bi-film" viewBox="0 0 16 16"><path d="M0 1a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1zm4 0v6h8V1zm8 8H4v6h8zM1 1v2h2V1zm2 3H1v2h2zM1 7v2h2V7zm2 3H1v2h2zm-2 3v2h2v-2zM15 1h-2v2h2zm-2 3v2h2V4zm2 3h-2v2h2zm-2 3v2h2v-2zm2 3h-2v2h2z"/></symbol>
+  <symbol id="bi-floppy" viewBox="0 0 16 16"><path d="M11 2H9v3h2z"/> <path d="M1.5 0h11.586a1.5 1.5 0 0 1 1.06.44l1.415 1.414A1.5 1.5 0 0 1 16 2.914V14.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 14.5v-13A1.5 1.5 0 0 1 1.5 0M1 1.5v13a.5.5 0 0 0 .5.5H2v-4.5A1.5 1.5 0 0 1 3.5 9h9a1.5 1.5 0 0 1 1.5 1.5V15h.5a.5.5 0 0 0 .5-.5V2.914a.5.5 0 0 0-.146-.353l-1.415-1.415A.5.5 0 0 0 13.086 1H13v4.5A1.5 1.5 0 0 1 11.5 7h-7A1.5 1.5 0 0 1 3 5.5V1H1.5a.5.5 0 0 0-.5.5m3 4a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 .5-.5V1H4zM3 15h10v-4.5a.5.5 0 0 0-.5-.5h-9a.5.5 0 0 0-.5.5z"/></symbol>
+  <symbol id="bi-folder-fill" viewBox="0 0 16 16"><path d="M9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.825a2 2 0 0 1-1.991-1.819l-.637-7a2 2 0 0 1 .342-1.31L.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3m-8.322.12q.322-.119.684-.12h5.396l-.707-.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981z"/></symbol>
+  <symbol id="bi-folder2-open" viewBox="0 0 16 16"><path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v.64c.57.265.94.876.856 1.546l-.64 5.124A2.5 2.5 0 0 1 12.733 15H3.266a2.5 2.5 0 0 1-2.481-2.19l-.64-5.124A1.5 1.5 0 0 1 1 6.14zM2 6h12v-.5a.5.5 0 0 0-.5-.5H9c-.964 0-1.71-.629-2.174-1.154C6.374 3.334 5.82 3 5.264 3H2.5a.5.5 0 0 0-.5.5zm-.367 1a.5.5 0 0 0-.496.562l.64 5.124A1.5 1.5 0 0 0 3.266 14h9.468a1.5 1.5 0 0 0 1.489-1.314l.64-5.124A.5.5 0 0 0 14.367 7z"/></symbol>
+  <symbol id="bi-fonts" viewBox="0 0 16 16"><path d="M12.258 3h-8.51l-.083 2.46h.479c.26-1.544.758-1.783 2.693-1.845l.424-.013v7.827c0 .663-.144.82-1.3.923v.52h4.082v-.52c-1.162-.103-1.306-.26-1.306-.923V3.602l.431.013c1.934.062 2.434.301 2.693 1.846h.479z"/></symbol>
+  <symbol id="bi-gear" viewBox="0 0 16 16"><path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0"/> <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z"/></symbol>
+  <symbol id="bi-hand-index" viewBox="0 0 16 16"><path d="M6.75 1a.75.75 0 0 1 .75.75V8a.5.5 0 0 0 1 0V5.467l.086-.004c.317-.012.637-.008.816.027.134.027.294.096.448.182.077.042.15.147.15.314V8a.5.5 0 1 0 1 0V6.435l.106-.01c.316-.024.584-.01.708.04.118.046.3.207.486.43.081.096.15.19.2.259V8.5a.5.5 0 0 0 1 0v-1h.342a1 1 0 0 1 .995 1.1l-.271 2.715a2.5 2.5 0 0 1-.317.991l-1.395 2.442a.5.5 0 0 1-.434.252H6.035a.5.5 0 0 1-.416-.223l-1.433-2.15a1.5 1.5 0 0 1-.243-.666l-.345-3.105a.5.5 0 0 1 .399-.546L5 8.11V9a.5.5 0 0 0 1 0V1.75A.75.75 0 0 1 6.75 1M8.5 4.466V1.75a1.75 1.75 0 1 0-3.5 0v5.34l-1.2.24a1.5 1.5 0 0 0-1.196 1.636l.345 3.106a2.5 2.5 0 0 0 .405 1.11l1.433 2.15A1.5 1.5 0 0 0 6.035 16h6.385a1.5 1.5 0 0 0 1.302-.756l1.395-2.441a3.5 3.5 0 0 0 .444-1.389l.271-2.715a2 2 0 0 0-1.99-2.199h-.581a5 5 0 0 0-.195-.248c-.191-.229-.51-.568-.88-.716-.364-.146-.846-.132-1.158-.108l-.132.012a1.26 1.26 0 0 0-.56-.642 2.6 2.6 0 0 0-.738-.288c-.31-.062-.739-.058-1.05-.046zm2.094 2.025"/></symbol>
+  <symbol id="bi-hexagon" viewBox="0 0 16 16"><path d="M14 4.577v6.846L8 15l-6-3.577V4.577L8 1zM8.5.134a1 1 0 0 0-1 0l-6 3.577a1 1 0 0 0-.5.866v6.846a1 1 0 0 0 .5.866l6 3.577a1 1 0 0 0 1 0l6-3.577a1 1 0 0 0 .5-.866V4.577a1 1 0 0 0-.5-.866z"/></symbol>
+  <symbol id="bi-house-fill" viewBox="0 0 16 16"><path d="M8.707 1.5a1 1 0 0 0-1.414 0L.646 8.146a.5.5 0 0 0 .708.708L8 2.207l6.646 6.647a.5.5 0 0 0 .708-.708L13 5.793V2.5a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5v1.293z"/> <path d="m8 3.293 6 6V13.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 13.5V9.293z"/></symbol>
+  <symbol id="bi-link-45deg" viewBox="0 0 16 16"><path d="M4.715 6.542 3.343 7.914a3 3 0 1 0 4.243 4.243l1.828-1.829A3 3 0 0 0 8.586 5.5L8 6.086a1 1 0 0 0-.154.199 2 2 0 0 1 .861 3.337L6.88 11.45a2 2 0 1 1-2.83-2.83l.793-.792a4 4 0 0 1-.128-1.287z"/> <path d="M6.586 4.672A3 3 0 0 0 7.414 9.5l.775-.776a2 2 0 0 1-.896-3.346L9.12 3.55a2 2 0 1 1 2.83 2.83l-.793.792c.112.42.155.855.128 1.287l1.372-1.372a3 3 0 1 0-4.243-4.243z"/></symbol>
+  <symbol id="bi-lock-fill" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 0a4 4 0 0 1 4 4v2.05a2.5 2.5 0 0 1 2 2.45v5a2.5 2.5 0 0 1-2.5 2.5h-7A2.5 2.5 0 0 1 2 13.5v-5a2.5 2.5 0 0 1 2-2.45V4a4 4 0 0 1 4-4m0 1a3 3 0 0 0-3 3v2h6V4a3 3 0 0 0-3-3"/></symbol>
+  <symbol id="bi-palette-fill" viewBox="0 0 16 16"><path d="M12.433 10.07C14.133 10.585 16 11.15 16 8a8 8 0 1 0-8 8c1.996 0 1.826-1.504 1.649-3.08-.124-1.101-.252-2.237.351-2.92.465-.527 1.42-.237 2.433.07M8 5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3m4.5 3a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3M5 6.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0m.5 6.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3"/></symbol>
+  <symbol id="bi-pause-fill" viewBox="0 0 16 16"><path d="M5.5 3.5A1.5 1.5 0 0 1 7 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5m5 0A1.5 1.5 0 0 1 12 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5"/></symbol>
+  <symbol id="bi-pencil" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325"/></symbol>
+  <symbol id="bi-play-fill" viewBox="0 0 16 16"><path d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393"/></symbol>
+  <symbol id="bi-plus-lg" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/></symbol>
+  <symbol id="bi-question-lg" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M4.475 5.458c-.284 0-.514-.237-.47-.517C4.28 3.24 5.576 2 7.825 2c2.25 0 3.767 1.36 3.767 3.215 0 1.344-.665 2.288-1.79 2.973-1.1.659-1.414 1.118-1.414 2.01v.03a.5.5 0 0 1-.5.5h-.77a.5.5 0 0 1-.5-.495l-.003-.2c-.043-1.221.477-2.001 1.645-2.712 1.03-.632 1.397-1.135 1.397-2.028 0-.979-.758-1.698-1.926-1.698-1.009 0-1.71.529-1.938 1.402-.066.254-.278.461-.54.461h-.777ZM7.496 14c.622 0 1.095-.474 1.095-1.09 0-.618-.473-1.092-1.095-1.092-.606 0-1.087.474-1.087 1.091S6.89 14 7.496 14"/></symbol>
+  <symbol id="bi-scissors" viewBox="0 0 16 16"><path d="M3.5 3.5c-.614-.884-.074-1.962.858-2.5L8 7.226 11.642 1c.932.538 1.472 1.616.858 2.5L8.81 8.61l1.556 2.661a2.5 2.5 0 1 1-.794.637L8 9.73l-1.572 2.177a2.5 2.5 0 1 1-.794-.637L7.19 8.61zm2.5 10a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0m7 0a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0"/></symbol>
+  <symbol id="bi-skip-end-fill" viewBox="0 0 16 16"><path d="M12.5 4a.5.5 0 0 0-1 0v3.248L5.233 3.612C4.693 3.3 4 3.678 4 4.308v7.384c0 .63.692 1.01 1.233.697L11.5 8.753V12a.5.5 0 0 0 1 0z"/></symbol>
+  <symbol id="bi-skip-start-fill" viewBox="0 0 16 16"><path d="M4 4a.5.5 0 0 1 1 0v3.248l6.267-3.636c.54-.313 1.232.066 1.232.696v7.384c0 .63-.692 1.01-1.232.697L5 8.753V12a.5.5 0 0 1-1 0z"/></symbol>
+  <symbol id="bi-sliders" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M11.5 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M9.05 3a2.5 2.5 0 0 1 4.9 0H16v1h-2.05a2.5 2.5 0 0 1-4.9 0H0V3zM4.5 7a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M2.05 8a2.5 2.5 0 0 1 4.9 0H16v1H6.95a2.5 2.5 0 0 1-4.9 0H0V8zm9.45 4a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3m-2.45 1a2.5 2.5 0 0 1 4.9 0H16v1h-2.05a2.5 2.5 0 0 1-4.9 0H0v-1z"/></symbol>
+  <symbol id="bi-snow" viewBox="0 0 16 16"><path d="M8 16a.5.5 0 0 1-.5-.5v-1.293l-.646.647a.5.5 0 0 1-.707-.708L7.5 12.793V8.866l-3.4 1.963-.496 1.85a.5.5 0 1 1-.966-.26l.237-.882-1.12.646a.5.5 0 0 1-.5-.866l1.12-.646-.884-.237a.5.5 0 1 1 .26-.966l1.848.495L7 8 3.6 6.037l-1.85.495a.5.5 0 0 1-.258-.966l.883-.237-1.12-.646a.5.5 0 1 1 .5-.866l1.12.646-.237-.883a.5.5 0 1 1 .966-.258l.495 1.849L7.5 7.134V3.207L6.147 1.854a.5.5 0 1 1 .707-.708l.646.647V.5a.5.5 0 1 1 1 0v1.293l.647-.647a.5.5 0 1 1 .707.708L8.5 3.207v3.927l3.4-1.963.496-1.85a.5.5 0 1 1 .966.26l-.236.882 1.12-.646a.5.5 0 0 1 .5.866l-1.12.646.883.237a.5.5 0 1 1-.26.966l-1.848-.495L9 8l3.4 1.963 1.849-.495a.5.5 0 0 1 .259.966l-.883.237 1.12.646a.5.5 0 0 1-.5.866l-1.12-.646.236.883a.5.5 0 1 1-.966.258l-.495-1.849-3.4-1.963v3.927l1.353 1.353a.5.5 0 0 1-.707.708l-.647-.647V15.5a.5.5 0 0 1-.5.5z"/></symbol>
+  <symbol id="bi-stop-fill" viewBox="0 0 16 16"><path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5"/></symbol>
+  <symbol id="bi-upload" viewBox="0 0 16 16"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/> <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708z"/></symbol>
+  <symbol id="bi-x-lg" viewBox="0 0 16 16"><path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/></symbol>
+</svg>
+
 <header>
   <img class="logo" src="/static/lightsaber.png" alt="">
   <h1>LIGHTSABER</h1>
-  <button class="icon-btn" id="settings-open" title="Settings">⚙</button>
-  <button class="icon-btn" id="about-open" title="About Lightsaber">?</button>
+  <button class="icon-btn" id="settings-open" title="Settings"><svg class="bi" aria-hidden="true"><use href="#bi-gear"/></svg></button>
+  <button class="icon-btn" id="about-open" title="About Lightsaber"><svg class="bi" aria-hidden="true"><use href="#bi-question-lg"/></svg></button>
   <div class="api-status">
     <span>Status:</span>
     <span class="statusdot" id="engine-dot" title="backend engine websocket"></span>
@@ -444,10 +513,10 @@
   <div class="seq-header-indicator" title="Sequencer transport — the same play/pause as the Sequencer tab">
     <span class="statusdot seq-led" id="seq-led"></span>
     <span>Sequencer</span>
-    <button class="icon-btn" id="seq-header-toggle" title="Play/pause the sequencer">⏵</button>
+    <button class="icon-btn" id="seq-header-toggle" title="Play/pause the sequencer"><svg class="bi" aria-hidden="true"><use href="#bi-play-fill"/></svg></button>
   </div>
   <div id="output-toggle-list" style="display:flex;gap:8px"></div>
-  <button class="go" id="master-toggle" style="min-width:100px">▶ Start</button>
+  <button class="go" id="master-toggle" style="min-width:100px"><svg class="bi" aria-hidden="true"><use href="#bi-play-fill"/></svg><span>Start</span></button>
 </header>
 <main>
  <div class="toprow">
@@ -465,10 +534,10 @@
       <h2>Project</h2>
       <div class="row">
         <select id="project-select" style="flex:1"></select>
-        <button id="project-new" title="New project">✚</button>
-        <button id="project-save" title="Save">💾</button>
-        <button id="project-save-as" title="Save as…">💾+</button>
-        <button id="project-delete" title="Delete project">✕</button>
+        <button id="project-new" title="New project"><svg class="bi" aria-hidden="true"><use href="#bi-plus-lg"/></svg></button>
+        <button id="project-save" title="Save"><svg class="bi" aria-hidden="true"><use href="#bi-floppy"/></svg></button>
+        <button id="project-save-as" title="Save as…"><svg class="bi" aria-hidden="true"><use href="#bi-copy"/></svg></button>
+        <button id="project-delete" title="Delete project"><svg class="bi" aria-hidden="true"><use href="#bi-x-lg"/></svg></button>
         <span class="dirty-indicator" id="project-dirty-indicator"><span class="dirty-dot"></span>changes not saved</span>
       </div>
       <div class="hint">a project owns its own canvases and sequence — scenes and uploaded media stay shared across every project</div>
@@ -515,7 +584,7 @@
             <input type="checkbox" id="show-fps"> show output FPS</label>
           <div class="hint">a small counter in the corner of every output window — the actual end-to-end delivery rate reaching that window, not a claimed/target rate.</div>
           <div id="output-monitors-list" style="display:flex;flex-direction:column;gap:10px;margin-top:6px"></div>
-          <div class="hint">changes here apply live to any open output window, but only persist once you hit 💾 Save above — except "test pattern", a live-only calibration aid that never saves and resets when the engine restarts.</div>
+          <div class="hint">changes here apply live to any open output window, but only persist once you hit <svg class="bi" aria-hidden="true"><use href="#bi-floppy"/></svg> Save above — except "test pattern", a live-only calibration aid that never saves and resets when the engine restarts.</div>
         </div>
       </details>
 
@@ -525,7 +594,7 @@
           <textarea id="project-notes" rows="6" placeholder="run sheet, venue contact, reminders…"
             style="width:100%;resize:vertical;font:inherit;background:var(--panel2,#1b1e26);color:inherit;
                    border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:6px"></textarea>
-          <div class="hint">free text, just for you — nothing else in the app reads it. Saves with the project, same as output size (💾 above).</div>
+          <div class="hint">free text, just for you — nothing else in the app reads it. Saves with the project, same as output size (<svg class="bi" aria-hidden="true"><use href="#bi-floppy"/></svg> above).</div>
         </div>
       </details>
     </div>
@@ -536,17 +605,17 @@
     <div class="group" style="width:100%">
       <h2>Media</h2>
       <div class="row">
-        <button class="go" id="media-tab-link">🔗 Link a file…</button>
-        <button id="media-tab-upload">⬆ Upload a copy…</button>
+        <button class="go" id="media-tab-link"><svg class="bi" aria-hidden="true"><use href="#bi-link-45deg"/></svg><span>Link a file…</span></button>
+        <button id="media-tab-upload"><svg class="bi" aria-hidden="true"><use href="#bi-upload"/></svg><span>Upload a copy…</span></button>
         <!-- (31) Uploads straight from this tab. The button used to jump to
              the Canvas tab and focus() a file input buried in two closed
              accordions, which opens no picker and looks like nothing
              happened. -->
         <input type="file" id="media-tab-file" multiple accept="image/*,video/*" style="display:none">
-        <button id="media-tab-refresh" title="Rescan">⟲</button>
+        <button id="media-tab-refresh" title="Rescan"><svg class="bi" aria-hidden="true"><use href="#bi-arrow-counterclockwise"/></svg></button>
         <span class="hint" id="media-tab-summary" style="margin-left:auto"></span>
       </div>
-      <div class="hint">every file this project can draw from — linked files (🔗, referenced where they live) and uploaded copies (📁, inside the app). Trimming here sets the file's DEFAULT in/out; every shape that hasn't overridden it follows.</div>
+      <div class="hint">every file this project can draw from — linked files (<svg class="bi" aria-hidden="true"><use href="#bi-link-45deg"/></svg>, referenced where they live) and uploaded copies (<svg class="bi" aria-hidden="true"><use href="#bi-folder-fill"/></svg>, inside the app). Trimming here sets the file's DEFAULT in/out; every shape that hasn't overridden it follows.</div>
       <div class="media-tab-split">
         <div class="lib" id="media-asset-list" style="grid-template-columns:1fr;align-content:start;max-height:70vh;overflow:auto"></div>
         <div id="media-detail">
@@ -562,9 +631,9 @@
             <img id="media-preview-img" alt="" style="display:none;width:100%;max-height:44vh;
                  object-fit:contain;background:#000;border:1px solid var(--line);border-radius:6px">
             <div class="row" style="align-items:center;gap:6px;margin-top:6px">
-              <button id="media-preview-play">▶</button>
-              <button id="media-preview-in" title="Jump to the in point">⇤</button>
-              <button id="media-preview-out" title="Jump to the out point">⇥</button>
+              <button id="media-preview-play"><svg class="bi" aria-hidden="true"><use href="#bi-play-fill"/></svg></button>
+              <button id="media-preview-in" title="Jump to the in point"><svg class="bi" aria-hidden="true"><use href="#bi-chevron-bar-left"/></svg></button>
+              <button id="media-preview-out" title="Jump to the out point"><svg class="bi" aria-hidden="true"><use href="#bi-chevron-bar-right"/></svg></button>
               <span class="hint" id="media-preview-time" style="margin-left:auto"></span>
             </div>
 
@@ -589,13 +658,13 @@
             <div id="media-trim-section">
               <div class="field"><label>in</label>
                 <input type="text" id="media-in" style="flex:1;min-width:0;font-size:11px">
-                <button id="media-in-set" title="Set in to the preview playhead">⇤ set</button></div>
+                <button id="media-in-set" title="Set in to the preview playhead"><svg class="bi" aria-hidden="true"><use href="#bi-chevron-bar-left"/></svg><span>set</span></button></div>
               <div class="field"><label>out</label>
                 <input type="text" id="media-out" style="flex:1;min-width:0;font-size:11px" placeholder="end">
-                <button id="media-out-set" title="Set out to the preview playhead">set ⇥</button></div>
+                <button id="media-out-set" title="Set out to the preview playhead"><span>set</span><svg class="bi" aria-hidden="true"><use href="#bi-chevron-bar-right"/></svg></button></div>
               <div class="row" style="gap:6px">
                 <button class="go" id="media-trim-save" style="flex:1">Save as this file's default trim</button>
-                <button id="media-trim-clear" title="Clear the default trim (back to the whole file)">⟲</button>
+                <button id="media-trim-clear" title="Clear the default trim (back to the whole file)"><svg class="bi" aria-hidden="true"><use href="#bi-arrow-counterclockwise"/></svg></button>
               </div>
               <div class="hint" id="media-trim-status"></div>
             </div>
@@ -604,8 +673,8 @@
             <div class="lib" id="media-usedby" style="grid-template-columns:1fr"></div>
             <div class="row" style="gap:6px;margin-top:8px">
               <button id="media-add-to-canvas" style="flex:1">+ Add to current canvas</button>
-              <button id="media-relink" title="Point this link at a different file">🔗 Relink</button>
-              <button id="media-delete" title="Delete the uploaded copy">✕</button>
+              <button id="media-relink" title="Point this link at a different file"><svg class="bi" aria-hidden="true"><use href="#bi-link-45deg"/></svg><span>Relink</span></button>
+              <button id="media-delete" title="Delete the uploaded copy"><svg class="bi" aria-hidden="true"><use href="#bi-x-lg"/></svg></button>
             </div>
           </div>
         </div>
@@ -616,7 +685,7 @@
     <div class="canvas-3col">
 
       <section class="stage">
-        <button id="stage-collapse-btn" class="icon-btn" title="Collapse this column for more screen space">⏴</button>
+        <button id="stage-collapse-btn" class="icon-btn" title="Collapse this column for more screen space"><svg class="bi" aria-hidden="true"><use href="#bi-chevron-left"/></svg></button>
         <div id="stage-full">
 
         <div class="group" id="g-input" style="width:100%">
@@ -631,7 +700,7 @@
           <details class="accordion" id="acc-input-webcam">
             <summary>Webcam</summary>
             <div class="accordion-body">
-              <div class="row"><button id="webcam-refresh" style="width:100%">🔄 Request access / refresh devices</button></div>
+              <div class="row"><button id="webcam-refresh" style="width:100%"><svg class="bi" aria-hidden="true"><use href="#bi-arrow-clockwise"/></svg><span>Request access / refresh devices</span></button></div>
               <div class="lib" id="webcam-list"></div>
               <div class="hint" id="webcam-hint">click "refresh" and allow camera access to list your devices — each gets its own "+" to add it as a shape, as a live feed for as long as it's used. Re-point at a different device from Shape settings to switch cameras.</div>
             </div>
@@ -646,7 +715,7 @@
           <details class="accordion" id="acc-input-media">
             <summary>video / image files</summary>
             <div class="accordion-body">
-              <button class="go" id="media-link-btn" style="width:100%">🔗 Link a file…</button>
+              <button class="go" id="media-link-btn" style="width:100%"><svg class="bi" aria-hidden="true"><use href="#bi-link-45deg"/></svg><span>Link a file…</span></button>
               <div class="hint">references the file where it already lives — nothing is copied, so a 4GB video costs no extra disk. Needs a media root (Settings &gt; Media roots); the picker can add one.</div>
               <details class="accordion" id="acc-input-upload">
                 <summary>copy into the app instead</summary>
@@ -665,11 +734,11 @@
         </div>
 
         <div id="stage-rail">
-          <button id="stage-expand-btn" class="icon-btn" title="Expand">⏵</button>
-          <button class="rail-icon icon-btn" data-target="acc-input-scenelib" title="Scene library">🎬</button>
-          <button class="rail-icon icon-btn" data-target="acc-input-webcam" title="Webcam">📷</button>
-          <button class="rail-icon icon-btn" data-target="acc-input-text" title="Text input">🔤</button>
-          <button class="rail-icon icon-btn" data-target="acc-input-media" title="Video / image files">🎞</button>
+          <button id="stage-expand-btn" class="icon-btn" title="Expand"><svg class="bi" aria-hidden="true"><use href="#bi-chevron-right"/></svg></button>
+          <button class="rail-icon icon-btn" data-target="acc-input-scenelib" title="Scene library"><svg class="bi" aria-hidden="true"><use href="#bi-camera-reels"/></svg></button>
+          <button class="rail-icon icon-btn" data-target="acc-input-webcam" title="Webcam"><svg class="bi" aria-hidden="true"><use href="#bi-camera-video"/></svg></button>
+          <button class="rail-icon icon-btn" data-target="acc-input-text" title="Text input"><svg class="bi" aria-hidden="true"><use href="#bi-fonts"/></svg></button>
+          <button class="rail-icon icon-btn" data-target="acc-input-media" title="Video / image files"><svg class="bi" aria-hidden="true"><use href="#bi-film"/></svg></button>
         </div>
       </section>
 
@@ -679,18 +748,18 @@
         <div class="canvas-toolbar-row">
           <div class="row" style="flex:1;min-width:0">
             <select id="canvas-select" style="flex:1"></select>
-            <button id="canvas-new" title="New canvas">✚</button>
-            <button id="canvas-save" title="Save">💾</button>
-            <button id="canvas-save-as" title="Save as…">💾+</button>
-            <button id="canvas-delete" title="Delete canvas">✕</button>
+            <button id="canvas-new" title="New canvas"><svg class="bi" aria-hidden="true"><use href="#bi-plus-lg"/></svg></button>
+            <button id="canvas-save" title="Save"><svg class="bi" aria-hidden="true"><use href="#bi-floppy"/></svg></button>
+            <button id="canvas-save-as" title="Save as…"><svg class="bi" aria-hidden="true"><use href="#bi-copy"/></svg></button>
+            <button id="canvas-delete" title="Delete canvas"><svg class="bi" aria-hidden="true"><use href="#bi-x-lg"/></svg></button>
             <span class="dirty-indicator" id="canvas-dirty-indicator"><span class="dirty-dot"></span>changes not saved</span>
           </div>
           <div class="row" style="flex:0 0 auto;align-items:center">
-            <button id="tool-select" class="amber" title="Select tool — drag shapes/corners">⇖</button>
-            <button id="tool-hand" title="Hand tool — drag to pan">✋</button>
-            <button id="editor-reset-view" title="Reset zoom/pan">⟲</button>
-            <button id="canvas-freeze-btn" title="Freeze shape playback — content stays visible, just stops animating">❄</button>
-            <button id="editor-fullscreen" title="Focused editing (fullscreen)">⛶</button>
+            <button id="tool-select" class="amber" title="Select tool — drag shapes/corners"><svg class="bi" aria-hidden="true"><use href="#bi-cursor-fill"/></svg></button>
+            <button id="tool-hand" title="Hand tool — drag to pan"><svg class="bi" aria-hidden="true"><use href="#bi-hand-index"/></svg></button>
+            <button id="editor-reset-view" title="Reset zoom/pan"><svg class="bi" aria-hidden="true"><use href="#bi-arrow-counterclockwise"/></svg></button>
+            <button id="canvas-freeze-btn" title="Freeze shape playback — content stays visible, just stops animating"><svg class="bi" aria-hidden="true"><use href="#bi-snow"/></svg></button>
+            <button id="editor-fullscreen" title="Focused editing (fullscreen)"><svg class="bi" aria-hidden="true"><use href="#bi-arrows-fullscreen"/></svg></button>
           </div>
         </div>
         <div class="hint">scroll to zoom · hold space (or Hand tool) + drag to pan</div>
@@ -706,7 +775,7 @@
         <div class="row" style="margin-top:8px">
           <button id="poly-add-btn" style="width:100%">+ Add shape</button>
         </div>
-        <div class="hint">click a shape to select it on the canvas · 🔒 marks a locked shape (Shape settings &gt; lock)</div>
+        <div class="hint">click a shape to select it on the canvas · <svg class="bi" aria-hidden="true"><use href="#bi-lock-fill"/></svg> marks a locked shape (Shape settings &gt; lock)</div>
       </div>
       </div>
 
@@ -723,13 +792,13 @@
              is the "overlapping line" it looked like. A heading of its own
              puts all three columns on the same baseline. -->
         <h2 class="rail-title">Panes</h2>
-        <button id="handle-shapesettings" class="drawer-handle-btn" data-drawer="shapesettings" title="Shape settings" aria-label="Shape settings">⬡</button>
-        <button id="handle-playback" class="drawer-handle-btn" data-drawer="playback" title="Playback — video in/out, speed, loop mode" aria-label="Playback">⏵</button>
-        <button id="handle-mask" class="drawer-handle-btn" data-drawer="mask" title="Mask / clipping" aria-label="Mask and clipping">✂</button>
-        <button id="handle-colourize" class="drawer-handle-btn" data-drawer="colourize" title="Colourize" aria-label="Colourize">🎨</button>
-        <button id="handle-transform" class="drawer-handle-btn" data-drawer="transform" title="Transform — flip and mirror" aria-label="Transform">⤢</button>
-        <button id="handle-effectors" class="drawer-handle-btn" data-drawer="effectors" title="Effectors — LFO and audio modulation" aria-label="Effectors">∿</button>
-        <button id="handle-settings" class="drawer-handle-btn" data-drawer="settings" title="Settings — global, motion, shape camera" aria-label="Settings">⚙</button>
+        <button id="handle-shapesettings" class="drawer-handle-btn" data-drawer="shapesettings" title="Shape settings" aria-label="Shape settings"><svg class="bi" aria-hidden="true"><use href="#bi-hexagon"/></svg></button>
+        <button id="handle-playback" class="drawer-handle-btn" data-drawer="playback" title="Playback — video in/out, speed, loop mode" aria-label="Playback"><svg class="bi" aria-hidden="true"><use href="#bi-play-fill"/></svg></button>
+        <button id="handle-mask" class="drawer-handle-btn" data-drawer="mask" title="Mask / clipping" aria-label="Mask and clipping"><svg class="bi" aria-hidden="true"><use href="#bi-scissors"/></svg></button>
+        <button id="handle-colourize" class="drawer-handle-btn" data-drawer="colourize" title="Colourize" aria-label="Colourize"><svg class="bi" aria-hidden="true"><use href="#bi-palette-fill"/></svg></button>
+        <button id="handle-transform" class="drawer-handle-btn" data-drawer="transform" title="Transform — flip and mirror" aria-label="Transform"><svg class="bi" aria-hidden="true"><use href="#bi-arrows-angle-expand"/></svg></button>
+        <button id="handle-effectors" class="drawer-handle-btn" data-drawer="effectors" title="Effectors — LFO and audio modulation" aria-label="Effectors"><svg class="bi" aria-hidden="true"><use href="#bi-activity"/></svg></button>
+        <button id="handle-settings" class="drawer-handle-btn" data-drawer="settings" title="Settings — global, motion, shape camera" aria-label="Settings"><svg class="bi" aria-hidden="true"><use href="#bi-sliders"/></svg></button>
       </div>
 
       <div id="content-shapesettings" class="drawer-content">
@@ -746,7 +815,7 @@
         <div class="field"><label>name</label>
           <input type="text" id="poly-label" placeholder="e.g. Left panel"></div>
         <label style="display:flex;align-items:center;gap:6px;font-size:13px">
-          <input type="checkbox" id="poly-locked"> 🔒 lock on canvas</label>
+          <input type="checkbox" id="poly-locked"> <svg class="bi" aria-hidden="true"><use href="#bi-lock-fill"/></svg><span>lock on canvas</span></label>
         <div class="field"><label>fill type</label>
           <select id="poly-source-type">
             <option value="scene">Scene</option>
@@ -758,8 +827,8 @@
         <div class="field" id="poly-scene-field"><label>scene</label>
           <select id="poly-scene"></select></div>
         <div class="field" id="poly-media-source-field" style="display:none"><label>source</label>
-          <button id="poly-media-src-link" class="amber" title="Reference a file where it already lives — nothing is copied">🔗 Linked file</button>
-          <button id="poly-media-src-lib" title="Use a file copied into the app's own media library">📁 Library</button></div>
+          <button id="poly-media-src-link" class="amber" title="Reference a file where it already lives — nothing is copied"><svg class="bi" aria-hidden="true"><use href="#bi-link-45deg"/></svg><span>Linked file</span></button>
+          <button id="poly-media-src-lib" title="Use a file copied into the app's own media library"><svg class="bi" aria-hidden="true"><use href="#bi-folder-fill"/></svg><span>Library</span></button></div>
         <div class="field" id="poly-media-field" style="display:none"><label>media</label>
           <select id="poly-media"></select></div>
         <div id="poly-media-link-field" style="display:none">
@@ -767,9 +836,9 @@
             <input type="text" id="poly-media-link-path" readonly
                    style="flex:1;min-width:0;font-size:11px" placeholder="no file linked yet"></div>
           <div class="row" style="gap:6px">
-            <button id="poly-media-link-browse" style="flex:1">🔗 Replace…</button>
+            <button id="poly-media-link-browse" style="flex:1"><svg class="bi" aria-hidden="true"><use href="#bi-link-45deg"/></svg><span>Replace…</span></button>
             <button id="poly-media-link-copy" title="Copy the full path">⧉</button>
-            <button id="poly-media-link-clear" title="Unlink this file">✕</button>
+            <button id="poly-media-link-clear" title="Unlink this file"><svg class="bi" aria-hidden="true"><use href="#bi-x-lg"/></svg></button>
           </div>
           <div class="hint" id="poly-media-link-status"></div>
         </div>
@@ -800,8 +869,8 @@
           <input type="range" id="poly-zindex" min="1" max="10" step="1" value="5">
           <span class="val" id="v-polyzindex">5</span></div>
         <div class="hint">paint order — 10 is furthest back, 1 is furthest front (in front of everything else)</div>
-        <button id="poly-reset-btn" title="Reset this shape's corners back to its original, undistorted quad">⟲ Reset to original polygon</button>
-        <button id="poly-delete" title="Delete this shape">✕ Delete shape</button>
+        <button id="poly-reset-btn" title="Reset this shape's corners back to its original, undistorted quad"><svg class="bi" aria-hidden="true"><use href="#bi-arrow-counterclockwise"/></svg><span>Reset to original polygon</span></button>
+        <button id="poly-delete" title="Delete this shape"><svg class="bi" aria-hidden="true"><use href="#bi-x-lg"/></svg><span>Delete shape</span></button>
       </div>
       </div>
 
@@ -823,13 +892,13 @@
             </select></div>
           <div class="field"><label>in</label>
             <input type="text" id="poly-media-in" placeholder="0:00.000" style="flex:1;min-width:0;font-size:11px">
-            <button id="poly-media-in-set" title="Set the in point to where this shape is playing right now">⇤</button>
-            <button id="poly-media-in-less" title="Back 1 second">−</button>
+            <button id="poly-media-in-set" title="Set the in point to where this shape is playing right now"><svg class="bi" aria-hidden="true"><use href="#bi-chevron-bar-left"/></svg></button>
+            <button id="poly-media-in-less" title="Back 1 second"><svg class="bi" aria-hidden="true"><use href="#bi-dash-lg"/></svg></button>
             <button id="poly-media-in-more" title="Forward 1 second">+</button></div>
           <div class="field"><label>out</label>
             <input type="text" id="poly-media-out" placeholder="end" style="flex:1;min-width:0;font-size:11px">
-            <button id="poly-media-out-set" title="Set the out point to where this shape is playing right now">⇥</button>
-            <button id="poly-media-out-less" title="Back 1 second">−</button>
+            <button id="poly-media-out-set" title="Set the out point to where this shape is playing right now"><svg class="bi" aria-hidden="true"><use href="#bi-chevron-bar-right"/></svg></button>
+            <button id="poly-media-out-less" title="Back 1 second"><svg class="bi" aria-hidden="true"><use href="#bi-dash-lg"/></svg></button>
             <button id="poly-media-out-more" title="Forward 1 second">+</button></div>
           <div id="poly-media-scrub" title="Trimmed region within the whole file — click to set the in point"
                style="position:relative;height:16px;border:1px solid rgba(255,255,255,.14);border-radius:3px;
@@ -847,7 +916,7 @@
           <div class="hint">offset shifts this instance's start point within the trimmed region — two shapes on the same clip can run deliberately out of step</div>
           <div class="row" style="gap:6px">
             <button id="poly-media-save-default" style="flex:1" title="Store this in/out as the file's own default, for every shape that hasn't set its own">Set as file default</button>
-            <button id="poly-media-reset-trim" title="Go back to inheriting the file's default trim">⟲</button>
+            <button id="poly-media-reset-trim" title="Go back to inheriting the file's default trim"><svg class="bi" aria-hidden="true"><use href="#bi-arrow-counterclockwise"/></svg></button>
           </div>
           <div class="hint" id="poly-media-inherit"></div>
         </div>
@@ -876,8 +945,8 @@
             <input type="range" id="poly-clip-scale" min="0.1" max="3" step="0.01" value="1">
             <span class="val" id="v-polyclipscale">1.00</span></div>
           <div class="field" id="poly-editmode-field" style="display:none"><label>edit</label>
-            <button id="poly-mode-warp" class="amber" title="Drag the four corner pins — distorts the shape and its mask together">◳ Distort</button>
-            <button id="poly-mode-mask" title="Drag the mask outline — reshapes the silhouette without moving the shape">✎ Mask</button></div>
+            <button id="poly-mode-warp" class="amber" title="Drag the four corner pins — distorts the shape and its mask together"><svg class="bi" aria-hidden="true"><use href="#bi-bounding-box"/></svg><span>Distort</span></button>
+            <button id="poly-mode-mask" title="Drag the mask outline — reshapes the silhouette without moving the shape"><svg class="bi" aria-hidden="true"><use href="#bi-pencil"/></svg><span>Mask</span></button></div>
           <div class="hint" id="poly-mask-hint" style="display:none">drag a point to reshape the silhouette · double-click an edge to add a point, a point to remove it (min. 3) · drag inside to move the whole mask · Esc back to Distort. The mask lives in the shape's own space, so distorting the corner pins warps the mask along with the content.</div>
         </div>
       </div>
@@ -973,8 +1042,8 @@
         <div class="fx-subhead">Audio input</div>
         <div class="row">
           <select id="audio-device" style="flex:1"></select>
-          <button id="audio-refresh" title="Request access / refresh devices">🔄</button>
-          <button id="audio-toggle">▶ Start</button>
+          <button id="audio-refresh" title="Request access / refresh devices"><svg class="bi" aria-hidden="true"><use href="#bi-arrow-clockwise"/></svg></button>
+          <button id="audio-toggle"><svg class="bi" aria-hidden="true"><use href="#bi-play-fill"/></svg><span>Start</span></button>
         </div>
         <div class="hint" id="audio-hint">click refresh and allow mic access, pick a device, then Start — "Audio: low/mid/high/master" are selectable directly as a route's source below, no source card needed</div>
         <div class="row" style="gap:6px">
@@ -1060,7 +1129,7 @@
     <div class="seq-layout">
       <div class="group seq-main" id="g-sequencer">
         <h2>Sequencer</h2>
-        <div class="hint">plays saved canvases in order — this is the output for the monitor windows (🖵 Output 1/2). Only runs while the master ▶ Start is engaged; it holds its own play/pause on top of that.</div>
+        <div class="hint">plays saved canvases in order — this is the output for the monitor windows (<svg class="bi" aria-hidden="true"><use href="#bi-display"/></svg> Output 1/2). Only runs while the master ▶ Start is engaged; it holds its own play/pause on top of that.</div>
         <div class="row"><button id="seq-add-current">+ Add current canvas</button></div>
         <div class="hint">adds whichever canvas is currently open in the Canvas tab as a new step at the end of the list — switch canvases first, then add. Drag a step's ⠿ handle to reorder, ✕ to remove. Each row: pick its canvas, then "display" (how long it stays on screen) and "fade in" (how long it takes to fade in when it starts — fades the previous step out through black first, then this one in; 0 = instant cut).</div>
         <div id="seq-list" style="display:flex;flex-direction:column;gap:6px"></div>
@@ -1069,9 +1138,9 @@
       <div class="group seq-transport" id="g-seq-transport">
         <h2>Transport</h2>
         <div class="seq-transport-main">
-          <button id="seq-prev" class="seq-transport-btn seq-transport-side" title="Previous step">⏮</button>
-          <button id="seq-playpause" class="seq-transport-btn seq-transport-main-btn" title="Play/pause">⏵</button>
-          <button id="seq-next" class="seq-transport-btn seq-transport-side" title="Next step">⏭</button>
+          <button id="seq-prev" class="seq-transport-btn seq-transport-side" title="Previous step"><svg class="bi" aria-hidden="true"><use href="#bi-skip-start-fill"/></svg></button>
+          <button id="seq-playpause" class="seq-transport-btn seq-transport-main-btn" title="Play/pause"><svg class="bi" aria-hidden="true"><use href="#bi-play-fill"/></svg></button>
+          <button id="seq-next" class="seq-transport-btn seq-transport-side" title="Next step"><svg class="bi" aria-hidden="true"><use href="#bi-skip-end-fill"/></svg></button>
         </div>
         <label class="seq-loop-row">
           <input type="checkbox" id="seq-loop" checked> loop</label>
@@ -1193,7 +1262,7 @@
       <label class="flabel">Media folders</label>
       <div class="hint">folders on this computer that Lightsaber may read video and images from, without copying them</div>
       <div class="lib" id="media-roots-list" style="grid-template-columns:1fr"></div>
-      <button id="settings-addroot">✚ Add media folder</button>
+      <button id="settings-addroot"><svg class="bi" aria-hidden="true"><use href="#bi-plus-lg"/></svg><span>Add media folder</span></button>
       <div class="hint">folders that linked media may be referenced from. This server listens on all interfaces by default, so ONLY files under a registered root are ever served — keep them as narrow as you can. The root's <i>name</i> is what projects store, so the same project resolves on another machine that defines a root of the same name.</div>
     </div>
   </div>
@@ -1221,7 +1290,7 @@
     <div class="hint">references the file where it already lives — nothing is copied into the app. Only folders registered as media roots can be browsed or served; add one below if the list is empty.</div>
     <div class="field"><label>root</label>
       <select id="medialink-root" style="flex:1"></select>
-      <button id="medialink-addroot" title="Register another folder as a media root">✚ root</button></div>
+      <button id="medialink-addroot" title="Register another folder as a media root"><svg class="bi" aria-hidden="true"><use href="#bi-plus-lg"/></svg><span>root</span></button></div>
     <div id="medialink-crumbs" class="hint" style="word-break:break-all"></div>
     <div id="medialink-listing" class="lib" style="grid-template-columns:1fr;max-height:300px;overflow:auto"></div>
     <div class="hint" id="medialink-status"></div>
@@ -1238,7 +1307,7 @@
     <label class="flabel" for="addroot-path">folder</label>
     <div class="row" style="gap:6px">
       <input type="text" id="addroot-path" placeholder="/home/you/Videos" style="flex:1;min-width:0">
-      <button id="addroot-browse" title="Browse folders on this computer">📂 Browse…</button>
+      <button id="addroot-browse" title="Browse folders on this computer"><svg class="bi" aria-hidden="true"><use href="#bi-folder2-open"/></svg><span>Browse…</span></button>
     </div>
     <label class="flabel" for="addroot-name">short name</label>
     <input type="text" id="addroot-name" placeholder="e.g. videos">
@@ -1260,8 +1329,8 @@
       <button class="modal-close" id="folderpick-close">&times;</button>
     </div>
     <div class="row" style="gap:6px;align-items:center">
-      <button id="folderpick-up" title="Up one level">↑</button>
-      <button id="folderpick-home" title="Home folder">⌂</button>
+      <button id="folderpick-up" title="Up one level"><svg class="bi" aria-hidden="true"><use href="#bi-arrow-up"/></svg></button>
+      <button id="folderpick-home" title="Home folder"><svg class="bi" aria-hidden="true"><use href="#bi-house-fill"/></svg></button>
       <span class="hint" id="folderpick-path" style="flex:1;word-break:break-all"></span>
     </div>
     <div class="lib" id="folderpick-list" style="grid-template-columns:1fr;max-height:44vh;overflow:auto"></div>
@@ -1273,12 +1342,15 @@
 <div id="save-bar">
   <span class="dirty-dot"></span>
   <span id="save-bar-text">unsaved changes</span>
-  <button id="save-bar-canvas" title="Save the current canvas">💾 Canvas</button>
-  <button id="save-bar-project" title="Save the current project">💾 Project</button>
+  <button id="save-bar-canvas" title="Save the current canvas"><svg class="bi" aria-hidden="true"><use href="#bi-floppy"/></svg><span>Canvas</span></button>
+  <button id="save-bar-project" title="Save the current project"><svg class="bi" aria-hidden="true"><use href="#bi-floppy"/></svg><span>Project</span></button>
 </div>
 <script>
 const ws = new WebSocket(`ws://${location.host}/ws`);
 const $ = id => document.getElementById(id);
+// Bootstrap Icons (34), as markup — for the many lists/rows built via
+// innerHTML. Static markup uses the same <svg><use> form written out longhand.
+function bi(name, cls){ return `<svg class="bi${cls ? " " + cls : ""}" aria-hidden="true"><use href="#bi-${name}"/></svg>`; }
 const send = o => ws.readyState === 1 && ws.send(JSON.stringify(o));
 
 // Canvas thumbnails (3) — a low-res JPEG of the editor's OWN already-
@@ -1337,7 +1409,7 @@ ws.onmessage = e => {
   }
   else if (m.type === "api_result") {
     const s = $("apistatus");
-    s.textContent = (m.ok ? "✔ " : "✖ ") + m.detail;
+    s.innerHTML = bi(m.ok ? "check-lg" : "x-lg") + " " + m.detail.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
     s.style.color = m.ok ? "var(--cyan)" : "var(--amber)";
   }
 };
@@ -1347,7 +1419,7 @@ function paintState(s){
   $("meta").textContent = `v${s.version} · ${s.project || "no project"}`;
   const mt = $("master-toggle");
   mt.dataset.active = s.active ? "1" : "0";
-  mt.textContent = s.active ? "■ Stop" : "▶ Start";
+  mt.innerHTML = s.active ? bi("stop-fill") + "<span>Stop</span>" : bi("play-fill") + "<span>Start</span>";
   mt.className = s.active ? "amber" : "go";
   $("claude-dot").classList.toggle("on", !!s.director_online);
   if (!$("d-model").dataset.init && s.director_choice) {
@@ -1377,7 +1449,7 @@ function paintState(s){
       const el = document.createElement("div");
       el.className = "item";
       el.dataset.name = name;
-      el.innerHTML = `<span>${name}</span><span class="plus" title="Add to active canvas">+</span><span class="x">✕</span>`;
+      el.innerHTML = `<span>${name}</span><span class="plus" title="Add to active canvas">+</span><span class="x">${bi("x-lg")}</span>`;
       // No single active scene to "load" any more (2) — click assigns this
       // scene to the selected shape, or adds a new shape with it if nothing's
       // selected (same as "+", just the more discoverable default action).
@@ -3365,10 +3437,10 @@ function renderPolyInspector(){
       st.textContent = "nothing linked yet — Replace… picks a file from a media root";
       st.style.color = "";
     } else if (layer.media_link_ok === false){
-      st.textContent = "⚠ file not found — the drive may be unplugged, or it moved. Replace… to relink.";
+      st.innerHTML = bi("exclamation-triangle-fill") + " file not found — the drive may be unplugged, or it moved. Replace… to relink.";
       st.style.color = "var(--amber)";
     } else {
-      st.textContent = "✓ found · stored as " + poly.media_link;
+      st.textContent = "found · stored as " + poly.media_link;
       st.style.color = "";
     }
   }
@@ -3416,7 +3488,7 @@ function renderPolyInspector(){
   $("poly-mask-hint").style.display = inMask ? "block" : "none";
   $("poly-mode-warp").classList.toggle("amber", !inMask);
   $("poly-mode-mask").classList.toggle("amber", inMask);
-  $("poly-reset-btn").textContent = inMask ? "⟲ Reset mask to full shape" : "⟲ Reset to original polygon";
+  $("poly-reset-btn").innerHTML = bi("arrow-counterclockwise") + "<span>" + (inMask ? "Reset mask to full shape" : "Reset to original polygon") + "</span>";
   if (document.activeElement !== $("poly-clip-scale")){
     $("poly-clip-scale").value = poly.clip_scale ?? 1;
     $("v-polyclipscale").textContent = (poly.clip_scale ?? 1).toFixed(2);
@@ -3457,7 +3529,7 @@ function renderShapeList(){
       el.className = "item";
       el.dataset.id = poly.id;
       const name = poly.label || poly.scene || ("shape " + (i+1));
-      el.innerHTML = `<span>${poly.locked ? "🔒 " : ""}${name}</span><span class="x" title="Delete shape">✕</span>`;
+      el.innerHTML = `<span>${poly.locked ? bi("lock-fill") + " " : ""}${name}</span><span class="x" title="Delete shape">${bi("x-lg")}</span>`;
       if (poly.locked) el.title = "Locked — can't be selected or dragged on the canvas";
       // Whole row is the click target (10), not just the text span — the
       // row is button-shaped and padded, so clicking its padding used to do
@@ -4233,7 +4305,8 @@ function renderSequencer(s){
     });
   }
   list.querySelectorAll(".seq-step").forEach(row => row.classList.toggle("active", row.dataset.id === seq.step_id));
-  $("seq-playpause").textContent = seq.playing ? "⏸" : "⏵";
+  $("seq-playpause").innerHTML = bi(seq.playing ? "pause-fill" : "play-fill");
+  $("seq-playpause").dataset.playing = seq.playing ? "1" : "0";
   $("seq-playpause").classList.toggle("playing", seq.playing);
   if (document.activeElement !== $("seq-loop")) $("seq-loop").checked = seq.loop;
   const step = seq.steps.find(st => st.id === seq.step_id);
@@ -4245,7 +4318,8 @@ function renderSequencer(s){
   // sequencer running" and "stop it" don't require being on the Sequencer
   // tab at all.
   $("seq-led").classList.toggle("playing", seq.playing);
-  $("seq-header-toggle").textContent = seq.playing ? "⏸" : "⏵";
+  $("seq-header-toggle").innerHTML = bi(seq.playing ? "pause-fill" : "play-fill");
+  $("seq-header-toggle").dataset.playing = seq.playing ? "1" : "0";
 }
 
 // Effectors (3) — a modulation matrix (see effectors.py): LFO sources drive
@@ -4284,7 +4358,7 @@ function renderEffectors(s){
             <option value="audio">Audio</option>
           </select>
           <input type="text" class="fx-name" style="flex:1;font-size:12px" maxlength="60">
-          <span class="x" title="Remove source (and any routes using it)" style="cursor:pointer;color:var(--dim)">✕</span>
+          <span class="x" title="Remove source (and any routes using it)" style="cursor:pointer;color:var(--dim)">${bi("x-lg")}</span>
         </div>
         <div class="fx-lfo-fields">
           <div class="row">
@@ -4404,7 +4478,7 @@ function renderEffectors(s){
             <option value="multiply">mult</option>
             <option value="replace">replace</option>
           </select>
-          <span class="x" title="Remove route" style="cursor:pointer;color:var(--dim)">✕</span>
+          <span class="x" title="Remove route" style="cursor:pointer;color:var(--dim)">${bi("x-lg")}</span>
         </div>
       `;
       card.querySelector(".fx-route-source").onchange = e => send({type:"effector_route_set", id:route.id, key:"source_id", value:e.target.value});
@@ -4507,14 +4581,14 @@ async function startAudioCapture(){
   _audioAnalyser.fftSize = 2048;
   _audioAnalyser.smoothingTimeConstant = 0;   // we do our own attack/release below
   src.connect(_audioAnalyser);
-  $("audio-toggle").textContent = "⏹ Stop"; $("audio-toggle").classList.add("amber");
+  $("audio-toggle").innerHTML = bi("stop-fill") + "<span>Stop</span>"; $("audio-toggle").classList.add("amber");
 }
 function stopAudioCapture(){
   if (_audioStream) _audioStream.getTracks().forEach(t => t.stop());
   if (_audioCtx) _audioCtx.close().catch(() => {});
   _audioCtx = null; _audioAnalyser = null; _audioStream = null;
   _audioBands.low = _audioBands.mid = _audioBands.high = 0;
-  $("audio-toggle").textContent = "▶ Start"; $("audio-toggle").classList.remove("amber");
+  $("audio-toggle").innerHTML = bi("play-fill") + "<span>Start</span>"; $("audio-toggle").classList.remove("amber");
 }
 $("audio-toggle").onclick = () => _audioCtx ? stopAudioCapture() : startAudioCapture();
 
@@ -4581,11 +4655,11 @@ $("seq-add-current").onclick = () => {
 };
 $("seq-prev").onclick = () => send({type:"seq_prev"});
 $("seq-next").onclick = () => send({type:"seq_next"});
-$("seq-playpause").onclick = () => send({type: $("seq-playpause").textContent === "⏸" ? "seq_pause" : "seq_play"});
+$("seq-playpause").onclick = () => send({type: $("seq-playpause").dataset.playing === "1" ? "seq_pause" : "seq_play"});
 $("seq-loop").onchange = () => send({type:"seq_loop", value:$("seq-loop").checked});
 // Header mini play/stop (3) — same toggle as the big transport button, just
 // reachable without switching to the Sequencer tab first.
-$("seq-header-toggle").onclick = () => send({type: $("seq-header-toggle").textContent === "⏸" ? "seq_pause" : "seq_play"});
+$("seq-header-toggle").onclick = () => send({type: $("seq-header-toggle").dataset.playing === "1" ? "seq_pause" : "seq_play"});
 
 // Media upload widget (Input > Local video/image files) — plain HTTP to
 // /media/*, not the websocket (file bodies don't belong on the state-
@@ -4600,7 +4674,7 @@ async function refreshMediaList(){
   files.forEach(f => {
     const el = document.createElement("div");
     el.className = "item";
-    el.innerHTML = `<span>${f.name}</span><span class="x">✕</span>`;
+    el.innerHTML = `<span>${f.name}</span><span class="x">${bi("x-lg")}</span>`;
     el.querySelector("span:first-child").onclick = () => window.open(f.url, "_blank");
     el.querySelector(".x").onclick = async ev => {
       ev.stopPropagation();
@@ -4855,7 +4929,7 @@ function updateOutputBtn(id){
   const open = outputWins[id] && !outputWins[id].closed;
   const btn = $("output-toggle-" + id);
   if (!btn) return;
-  btn.textContent = open ? `🖵 Close Output ${id}` : `🖵 Output ${id}`;
+  btn.innerHTML = bi("display") + `<span>${open ? "Close " : ""}Output ${id}</span>`;
   btn.className = open ? "amber" : "";
 }
 function toggleOutputWin(id){
@@ -4878,7 +4952,7 @@ function renderOutputLaunchButtons(count){
     btn.title = id === 1
       ? "Open a chrome-less output window to drag onto a projector or second screen"
       : `A ${id === 2 ? "second" : "further"} output window — independently correctable, or its own canvas slice with viewports on (Project tab)`;
-    btn.textContent = `🖵 Output ${id}`;
+    btn.innerHTML = bi("display") + `<span>Output ${id}</span>`;
     btn.onclick = () => toggleOutputWin(id);
     list.appendChild(btn);
     updateOutputBtn(id);
@@ -5023,9 +5097,9 @@ function renderAssetList(){
   _assets.forEach(a => {
     const el = document.createElement("div");
     el.className = "item" + (a.key === _assetSel ? " active" : "");
-    const icon = a.kind === "link" ? "🔗" : "📁";
+    const icon = bi(a.kind === "link" ? "link-45deg" : "folder-fill");
     const bits = [];
-    if (!a.exists) bits.push('<span class="missing">⚠ missing</span>');
+    if (!a.exists) bits.push('<span class="missing">' + bi("exclamation-triangle-fill") + ' missing</span>');
     if (a.duration) bits.push(fmtTime(a.duration));
     if (a.size) bits.push(fmtSize(a.size));
     if (a.used_by.length) bits.push(`used ${a.used_by.length}×`);
@@ -5042,7 +5116,7 @@ function renderAssetDetail(){
   $("media-detail-empty").style.display = a ? "none" : "block";
   $("media-detail-body").style.display = a ? "block" : "none";
   if (!a) return;
-  $("media-detail-name").textContent = (a.kind === "link" ? "🔗 " : "📁 ") + a.name;
+  $("media-detail-name").innerHTML = bi(a.kind === "link" ? "link-45deg" : "folder-fill") + " " + a.name;
   $("media-detail-path").textContent = a.exists
     ? (a.path || "") : "⚠ not found: " + (a.path || a.link || a.name);
   const isVid = isVideoName(a.name);
@@ -5208,8 +5282,8 @@ $("media-preview").addEventListener("loadedmetadata", () => {
 });
 $("media-preview-play").onclick = () => {
   const v = $("media-preview");
-  if (v.paused){ v.play().catch(()=>{}); $("media-preview-play").textContent = "⏸"; }
-  else { v.pause(); $("media-preview-play").textContent = "▶"; }
+  if (v.paused){ v.play().catch(()=>{}); $("media-preview-play").innerHTML = bi("pause-fill"); }
+  else { v.pause(); $("media-preview-play").innerHTML = bi("play-fill"); }
 };
 $("media-preview-in").onclick = () => {
   const a = selectedAsset(); if (a) $("media-preview").currentTime = a.in || 0;
@@ -5493,11 +5567,11 @@ async function mlBrowse(root, path){
     el.onclick = onclick;
     box.appendChild(el);
   };
-  if (_mlPath) row("📁 ..", "up one folder",
+  if (_mlPath) row(bi("folder-fill") + " ..", "up one folder",
                    () => mlBrowse(_mlRoot, _mlPath.split("/").slice(0, -1).join("/")));
-  data.dirs.forEach(d => row(`📁 ${d.name}`, null,
+  data.dirs.forEach(d => row(`${bi("folder-fill")} ${d.name}`, null,
     () => mlBrowse(_mlRoot, _mlPath ? `${_mlPath}/${d.name}` : d.name)));
-  data.files.forEach(f => row(`🎬 ${f.name}  <span class="dim">${fmtSize(f.size)}</span>`, null,
+  data.files.forEach(f => row(`${bi("film")} ${f.name}  <span class="dim">${fmtSize(f.size)}</span>`, null,
     () => mlPick(_mlPath ? `${_mlPath}/${f.name}` : f.name)));
   if (!data.dirs.length && !data.files.length)
     $("medialink-status").textContent = "nothing playable in this folder";
@@ -5583,7 +5657,7 @@ async function fpLoad(path){
     d.dirs.forEach(name => {
       const el = document.createElement("div");
       el.className = "item";
-      el.innerHTML = `<span>📁 ${name}</span>`;
+      el.innerHTML = `<span>${bi("folder-fill")} ${name}</span>`;
       el.onclick = () => fpLoad(d.path.replace(/\/$/, "") + "/" + name);
       box.appendChild(el);
     });
@@ -5669,7 +5743,7 @@ async function renderMediaRootsList(){
   roots.forEach(r => {
     const el = document.createElement("div");
     el.className = "item";
-    el.innerHTML = `<span title="${r.path}"><b>${r.name}</b> — ${r.path}</span><span class="x" title="Remove this root">✕</span>`;
+    el.innerHTML = `<span title="${r.path}"><b>${r.name}</b> — ${r.path}</span><span class="x" title="Remove this root">${bi("x-lg")}</span>`;
     el.querySelector(".x").onclick = async () => {
       if (!confirm(`Remove media root "${r.name}"?\n\nShapes linking into it will show as missing until it's added back.`)) return;
       await fetch("/media/roots/" + encodeURIComponent(r.name), {method:"DELETE"});

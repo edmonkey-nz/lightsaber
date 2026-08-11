@@ -5,6 +5,24 @@ and under active development** — expect breaking changes to scene JSON shape
 and APIs between minor versions until a 1.0 release.
 
 ## [Unreleased]
+
+### Changed — Bootstrap Icons throughout (34)
+- Every emoji in the UI is now a **Bootstrap Icon** (v1.13.1, MIT), vendored
+  as an inline SVG sprite. No CDN, no font file, nothing fetched at runtime.
+  Icons inherit `currentColor` and are sized in `em`, so they pick up each
+  button's colour and font-size without per-icon rules.
+- **A subset, not the whole set**, because the numbers are lopsided: the full
+  sprite is 1.1MB and the icon font plus its CSS ~220KB, against ~17KB for
+  the 45 icons actually used. An external file isn't an option either —
+  cross-document `<use href="icons.svg#id">` doesn't work in Chrome or
+  Safari, and `<img>` can't inherit `currentColor`, so icons would render
+  black on a dark UI.
+- Adding one later is copy-paste: grab the SVG from icons.getbootstrap.com
+  and paste it into the sprite as a `<symbol>`. The sprite header says so.
+- Three transport controls compared `textContent` against an emoji to decide
+  play vs pause; they now carry a `data-playing` flag, which is what made
+  replacing the glyph safe.
+
 - Project scaffolding for VSCode / GitHub (this changelog, `.vscode/`, `LICENSE`, `pyproject.toml`)
 
 ## [0.36.0]

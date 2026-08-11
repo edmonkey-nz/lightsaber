@@ -30,7 +30,7 @@ future enchancements
 31) done-  'upload a copy' in the media tab doesnt work
 32) done-ish - ideally for the 'absolute path' this could be an option to chooose a folder using the computers native file/folder picker - and change the button/language to 'Media folder' - and i assume this is per-project too - so a diff project can use a diffeent 'media folder'? this section (link media/media root) is a bit ambigious and needs to be plain langauge.
 33) done - all modals should be able to be closed with the 'escape' key
-34) download the bootstrap icons and replace emojis with relevant options using the bootstrap ones instead.
+34) DONE - download the bootstrap icons and replace emojis with relevant options using the bootstrap ones instead.
 35) remove/fix terminal errors when quitting the process using 'control c'
 36) DONE - FPS is still not fixed as close as possibel to projects settings - witho both outpyut windows opening its goign up to 200fps and getting bad performance. 
 37) DONE - fix the spacing between the 'shapes list' and the 'shape settings' columns, theres a vertical line thats being overlapped. 
