@@ -1,6 +1,6 @@
 # Lightsaber — technical reference
 
-Implementation detail behind [README.md](README.md): how the renderer is put
+Implementation detail behind [README.md](../README.md): how the renderer is put
 together, the file formats, and the extension points.
 
 - [Architecture](#architecture)

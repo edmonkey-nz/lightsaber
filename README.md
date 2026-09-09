@@ -1,6 +1,6 @@
 # Lightsaber
 
-![version](https://img.shields.io/badge/version-0.36.0-33e0d0)
+![version](https://img.shields.io/badge/version-0.37.0-33e0d0)
 ![status](https://img.shields.io/badge/status-pre--release-orange)
 ![platform](https://img.shields.io/badge/platform-Ubuntu-informational)
 ![ai-code](https://img.shields.io/badge/AI%20coded-YES-orange)
@@ -99,7 +99,7 @@ Lightsaber began as a fork of
 [promptwaver](https://github.com/edmonkey-nz/promptwaver), which drives a
 vector laser rather than projectors. The two still share a scene engine and
 features cross over selectively — see
-[TECHNICAL.md](TECHNICAL.md#relationship-to-promptwaver).
+[TECHNICAL.md](docs/TECHNICAL.md#relationship-to-promptwaver).
 
 ## Development
 

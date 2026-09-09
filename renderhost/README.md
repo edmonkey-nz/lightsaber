@@ -1,6 +1,6 @@
 # Render host prototype
 
-Four scripts toward [`ARCHITECTURE.md`](../ARCHITECTURE.md)'s render
+Four scripts toward [`ARCHITECTURE.md`](../docs/ARCHITECTURE.md)'s render
 host — a prototype toward that architecture, not the architecture itself.
 See [What's real vs. deferred](#whats-real-vs-deferred) before assuming any
 other part of the doc is implemented.

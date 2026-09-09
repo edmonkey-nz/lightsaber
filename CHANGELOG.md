@@ -4,7 +4,7 @@ All notable changes to Lightsaber are logged here. This project is **pre-1.0
 and under active development** — expect breaking changes to scene JSON shape
 and APIs between minor versions until a 1.0 release.
 
-## [Unreleased]
+## [0.37.0]
 
 ### Added — punch-through cutouts
 - A cutout shape now has **two modes**. The existing one blacks out whatever
@@ -33,6 +33,12 @@ and APIs between minor versions until a 1.0 release.
   brings back a soft edge that was removed for cost long ago; the new one
   blurs a single mask fill rather than the content. Measured on hardware at
   ~0.04ms per feathered shape - the old one stalled the render loop.
+
+### Changed
+- The developer docs moved into **`docs/`** (ARCHITECTURE, TECHNICAL,
+  PROMPT-effectors, future). README, CHANGELOG and LICENSE stay at the repo
+  root, and so does `about.md` - the app reads that one at runtime to fill
+  the About dialog. Added `CLAUDE.md`.
 
 ### Fixed
 - Output windows' mirror-fold post-pass read back from the **visible canvas**
