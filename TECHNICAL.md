@@ -208,9 +208,58 @@ A `CanvasSpec` is an ordered list of `PolygonSpec`. A shape is four corners
 (clockwise from top-left, `+y` up) plus what fills it — `source_type` is one
 of `scene`, `media`, `webcam`, `text`, or `knockout`.
 
-`knockout` is the odd one out: an arbitrary-point opaque black shape with no
-content, there purely to blank out whatever it overlaps. Use `z_index`
-(1 = frontmost, 10 = backmost) to place it.
+`knockout` is the odd one out: an arbitrary-point shape with no content of
+its own, there purely to act on what it overlaps. Use `z_index`
+(1 = frontmost, 10 = backmost) to place it. It has two modes:
+
+- **Blackout** (`knockout_punch: false`, the default) — an opaque black fill
+  painted at its own z, hiding everything behind it all the way to the
+  output.
+- **Punch-through** (`knockout_punch: true`) — nothing is painted; the
+  shape's outline is *erased* from the layers behind it, so content further
+  back shows through the hole. `knockout_depth` says how far back the erase
+  reaches, counted in **z-levels**: a cutout at `z_index` k erases layers
+  whose `z_index` is in `[k+1, k+knockout_depth]` and leaves anything deeper
+  alone. Since z only runs to 10, the default depth of 10 always reaches the
+  back of the stack. Shapes at the *same* z are never punched — order within
+  a z-level is array order, so punching there would depend on creation
+  order.
+
+The renderers implement punch-through as a Canvas2D `destination-out` fill.
+A punch whose band already reaches z 10 covers everything behind it, so it
+is applied straight onto the frame buffer at its own place in the paint
+order — "erase everything painted so far" is exactly what that means, one
+extra fill and no extra surface. A *bounded* punch can't work that way (by
+then the frame buffer has merged the layers it should erase with the ones it
+should spare), so each layer inside the band is drawn into a side buffer,
+punched there, and blitted back. Punching each layer separately then
+stacking is identical to stacking then punching *only* while the erase is
+fully opaque, which is why a cutout's own opacity is deliberately not used
+as a partial-erase amount.
+
+**Feather** (`feather`, 0-20) softens whatever edge a shape presents: its
+mask edge on a content shape, its cutout edge on a knockout (either mode).
+0 is the hard edge that was the only behaviour before. The value is in
+PROJECT-CANVAS pixels, converted to each surface's own pixels at draw time,
+so one number looks the same in the editor preview and on an output window
+of any size — Canvas2D's blur filter is a device-pixel measurement and
+ignores the current transform, so this conversion has to be explicit.
+
+The ramp is symmetric about the authored edge, the way feather works in an
+image editor: content bleeds up to ~feather px *outside* the mask at falling
+alpha. Worth knowing when a mask is aligned to a physical surface. A shape
+being feathered is drawn into a side buffer with its hard clip suppressed
+(the blurred mask does the masking instead — clipping first would cut the
+content off at the edge and leave the outer half of the ramp with nothing to
+fade), then masked by one blurred fill through `destination-in`.
+
+This replaces an earlier feathered clip that was removed for cost: that one
+allocated an offscreen canvas per shape per tick and blurred the *content*.
+Cost on hardware is ~0.04ms per feathered shape, flat in blur radius — it
+does not need rationing. The buffer is also clipped to the shape's bounding
+box, which is a large win only under software rasterisation and neutral on a
+GPU; it is kept for the software case. See ARCHITECTURE.md's GPU-cost list,
+items 4-5, including why a headless browser cannot measure any of this.
 
 **Fit** controls how content of one aspect fills a quad of another —
 `stretch`, `fit` (letterbox) or `crop`.

@@ -647,6 +647,12 @@ apply.
      bbox maths is not. **Don't hand-optimise region updates on a GPU path** —
      measure before assuming smaller means faster. The optimisation was
      written, verified correct, measured, and then deleted.
+
+     **Re-confirmed by the feather work (see 4-5).** Bounding a filtered
+     draw to its bbox looked like a decisive 4x win — under software
+     rasterisation. On the GPU it measured exactly neutral, same as here.
+     Two independent attempts, same verdict: **region bounds do not pay on
+     this GPU path.**
   3. **The wall is draw-call count, not fill rate.** A distorted shape costs
      ~4.5ms/layer for the mesh alone because it is 72 separate
      clip + transform + `drawImage` calls; the pixels themselves are cheap.
@@ -657,6 +663,27 @@ apply.
      incremental. It also means micro-optimising the Canvas2D path is close
      to pointless: nothing short of removing the per-triangle draw calls
      moves that floor.
+  4. **Feathered masks/cutouts are nearly free on hardware, and the
+     software number is a 12x overstatement.** A feather blurs one mask fill
+     through `destination-in`. 8 masked shapes, editor paint: **0.5ms with
+     feather off, ~0.8ms with feather on** — about 0.04ms per feathered
+     shape, flat in blur radius. The same scene under software
+     rasterisation reads 1.8ms / 10ms, which is what made this look
+     expensive enough to nearly get the feature cut.
+  5. **Measure headed, or you are measuring SwiftShader.** Headless
+     Chromium falls back to software rendering *even with*
+     `--ignore-gpu-blocklist --enable-gpu-rasterization`; only
+     `headless=False` on the real display gets the GPU. Confirm with
+     `WEBGL_debug_renderer_info`'s `UNMASKED_RENDERER_WEBGL` — "SwiftShader"
+     means the numbers are fiction for this purpose. (`chrome://gpu` is not
+     reachable from Playwright.) This cost a whole optimisation pass:
+     clipping a `ctx.filter` draw to its bounding box is a **4x win in
+     software** (193ms -> 45ms per 8 shapes) and **exactly neutral on
+     hardware** (0.30ms either way). The clip is kept as cheap insurance for
+     any software-rasterised deployment, not because it helps here — which
+     is item 2's warning restated: the region bound did nothing on the GPU
+     path, again.
+
 
 - **A server-authoritative playhead is the right model, and the render host
   gets it for free — but "authoritative" must not mean "seek to correct".**

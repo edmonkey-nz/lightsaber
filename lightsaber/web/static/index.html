@@ -732,7 +732,9 @@
           <h2>Cutout</h2>
           <div class="row"><button id="cutout-add-btn" style="width:100%"><svg class="bi" aria-hidden="true"><use href="#bi-eraser-fill"/></svg><span>+ Add cutout shape</span></button></div>
           <div class="hint">a solid black shape that blocks whatever it overlaps — for killing light where you don't want it (a window, a doorway, the neighbour's wall). Unlike the other sources it holds no content: it's a hole in the output. Paint order decides what it hides, so give it a lower z-index than the shapes it should cover.</div>
-          <div class="hint">not a quad — double-click an edge to add a point, double-click a point to remove one. Different thing from Mask/clipping, which trims a single shape's own silhouette.</div>
+          <div class="row"><button id="cutout-add-punch-btn" style="width:100%"><svg class="bi" aria-hidden="true"><use href="#bi-eraser-fill"/></svg><span>+ Add punch-through</span></button></div>
+          <div class="hint">the same shape in its other mode: instead of painting black it <b>erases</b> the shapes behind it, so whatever is further back shows through the hole — a window cut in one layer onto another. How deep it cuts is a setting on the shape (Shape settings &gt; punch depth), so one cutout can go through several shapes or stop after the first.</div>
+          <div class="hint">neither is a quad — double-click an edge to add a point, double-click a point to remove one. Different thing from Mask/clipping, which trims a single shape's own silhouette.</div>
         </div>
         <div class="group input-section" id="input-sec-scenelib" style="display:none">
           <h2>3D Scenes</h2>
@@ -860,6 +862,13 @@
           <input type="range" id="poly-text-size" min="0.02" max="1" step="0.01" value="0.2">
           <span class="val" id="v-polytextsize">0.20</span></div>
         <div class="hint" id="poly-knockout-hint" style="display:none">a boolean cutout — solid, blocks the output wherever it overlaps other shapes (see z-index below). Not a quad: double-click an edge to add a point, double-click a point to remove it (min. 3)</div>
+        <label class="field" id="poly-knockout-punch-field" style="display:none;gap:8px;font-size:13px">
+          <input type="checkbox" id="poly-knockout-punch">
+          <span>punch through (don't black out)</span></label>
+        <div class="field" id="poly-knockout-depth-field" style="display:none"><label>punch depth</label>
+          <input type="range" id="poly-knockout-depth" min="1" max="10" step="1" value="10">
+          <span class="val" id="v-polyknockoutdepth">all</span></div>
+        <div class="hint" id="poly-knockout-punch-hint" style="display:none">a plain cutout paints black over whatever is behind it. Punch-through <b>erases</b> instead, so shapes further back show through the hole. Depth counts z-levels behind this one, so a cutout at z 4 with depth 2 cuts through z 5 and 6 and leaves 7–10 visible through it.</div>
         <div class="field" id="poly-opacity-field"><label>opacity</label>
           <input type="range" id="poly-opacity" min="0" max="1" step="0.01" value="1">
           <span class="val" id="v-polyopacity">1.00</span></div>
@@ -968,6 +977,11 @@
           </div>
           <div class="hint">"Reset mask" clears the silhouette back to the full quad; "Reset distortion" straightens the corner pins without moving the shape. Both are spelled out here because the button on Shape settings follows whichever mode you're in.</div>
           <div class="hint" id="poly-mask-hint" style="display:none">drag a point to reshape the silhouette · double-click an edge to add a point, a point to remove it (min. 3) · drag inside to move the whole mask · Esc back to Distort. The mask lives in the shape's own space, so distorting the corner pins warps the mask along with the content.</div>
+          <div class="field" id="poly-feather-field" style="display:none;margin-top:10px"><label>feather</label>
+            <input type="range" id="poly-feather" min="0" max="20" step="0.5" value="0">
+            <span class="val" id="v-polyfeather">0 px</span></div>
+          <div class="hint" id="poly-feather-hint" style="display:none">softens the edge — the mask on a normal shape, the cutout edge on a cutout. Measured in canvas pixels at the project resolution, so it looks the same in this preview and on the real output. The fade is centred on the edge you drew, so it bleeds about as far outside it as inside: pull a mask in slightly if it's aligned to a physical surface.</div>
+          <div class="hint" id="poly-feather-empty" style="display:none">give this shape a mask (above) to have an edge to feather.</div>
         </div>
       </div>
       </div>
@@ -1791,7 +1805,33 @@ function customMaskPath(ctx, poly, corners, rect, xform){
 // Is a clip actually in force? Guards the degenerate cases (clip_shape set
 // to "custom" on a shape that can't support one) that would otherwise clip
 // to an empty path and silently blank the shape out entirely.
+// Feather — how far a shape's mask/cutout edge ramps, authored in PROJECT-
+// CANVAS pixels so the same number means the same thing here and in an
+// output window of any size. The conversion to device pixels has to be
+// explicit because Canvas2D's blur filter is itself a device-pixel
+// measurement: it is applied to the rasterised result and measurably
+// ignores the current transform, so a blur inside the zoomed view transform
+// does NOT scale with it.
+function featherPx(p){ return Math.max(0, Math.min(20, p.feather ?? 0)); }
+function featherDevicePx(p, rect){
+  const f = featherPx(p);
+  if (f <= 0) return 0;
+  return f * (rect.w / (_projectRes.width || 1920)) * (_view.zoom || 1);
+}
+
+// Set only while a shape is being drawn into a feather buffer. The blurred
+// mask does the masking in that pass, so the hard clip has to stand aside:
+// clipping first would cut the content off dead on the mask edge, leaving
+// the outer half of the feather ramp with nothing to fade out.
+let _featherPass = false;
+
 function polyClipActive(poly){
+  if (_featherPass) return false;   // see _featherPass
+  return hasCustomMask(poly) || CLIP_PRESETS.includes(poly.clip_shape);
+}
+// Same question ignoring the feather pass — "is this shape masked at all",
+// which is what decides whether a feather has an edge to work on.
+function polyClipAuthored(poly){
   return hasCustomMask(poly) || CLIP_PRESETS.includes(poly.clip_shape);
 }
 // The single place that turns a shape's clip settings into a path —
@@ -1845,6 +1885,51 @@ function buildCssFilter(f){
 function drawKnockoutFill(ctx, poly, corners, rect, opacity){
   ctx.save();
   ctx.globalAlpha = opacity;
+  const f = featherDevicePx(poly, rect);
+  if (f > 0.1) ctx.filter = `blur(${f.toFixed(2)}px)`;
+  ctx.fillStyle = "#000";
+  ctx.beginPath();
+  corners.forEach((c,i) => { const [px,py]=normToPx(c[0],c[1],rect); i?ctx.lineTo(px,py):ctx.moveTo(px,py); });
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// Punch-through — the cutout's OTHER mode (mirrors output.html's copy of
+// these, comments included). Instead of painting opaque black at its own
+// z-index, the shape's outline is ERASED from the layers behind it, so
+// whatever is further back shows through the hole rather than black. Same
+// geometry, opposite premise: a blackout adds an occluder, a punch removes
+// one.
+//
+// Depth is counted in z-LEVELS, not shapes: a cutout at z=k with depth N
+// erases layers whose z_index lands in [k+1, k+N] and leaves anything deeper
+// alone to show through. z_index only runs to 10, so a band already reaching
+// 10 covers everything behind the cutout and takes the cheap path — one
+// destination-out onto the content buffer at the cutout's own place in the
+// paint order, since "erase everything painted so far" is exactly what that
+// means. It erases to transparent, and the artboard underneath is solid
+// black, so a full punch over nothing still reads as black — same as a
+// blackout would.
+//
+// A SHALLOWER punch can't work that way: by the time the cutout's turn comes
+// round the buffer has merged the layers it should punch with the ones it
+// should spare. Those layers go through a side buffer instead, punched there
+// and blitted back (see paintCanvasEditor). Punching each layer separately
+// and then stacking is identical to stacking and then punching, but only
+// while the erase is fully opaque — which is why the cutout's own opacity
+// deliberately does NOT become a partial-erase amount.
+function isPunchCutout(p){ return p.source_type === "knockout" && !!p.knockout_punch; }
+function punchBand(p){
+  const k = p.z_index ?? 5;
+  return {from: k + 1, to: k + Math.max(1, Math.min(10, p.knockout_depth ?? 10))};
+}
+function punchIsFullDepth(p){ return punchBand(p).to >= 10; }
+function applyPunch(ctx, corners, rect, featherDev){
+  ctx.save();
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.globalAlpha = 1;
+  ctx.filter = featherDev > 0.1 ? `blur(${featherDev.toFixed(2)}px)` : "none";
   ctx.fillStyle = "#000";
   ctx.beginPath();
   corners.forEach((c,i) => { const [px,py]=normToPx(c[0],c[1],rect); i?ctx.lineTo(px,py):ctx.moveTo(px,py); });
@@ -2676,6 +2761,21 @@ function getEditorScratchCanvas(w, h){
   if (_editorScratch.width !== w || _editorScratch.height !== h){ _editorScratch.width = w; _editorScratch.height = h; }
   return _editorScratch;
 }
+// Side buffers — one for a run of shapes a bounded punch-through cutout has
+// to cut through (see applyPunch), one for a single shape being masked
+// through a feathered edge. Separate from the content buffer above, each
+// allocated once, and only ever touched when the feature that needs it is
+// actually on the canvas.
+function makeBufferGetter(){
+  let c = null;
+  return (w, h) => {
+    if (!c){ c = document.createElement("canvas"); c.ctx = c.getContext("2d"); }
+    if (c.width !== w || c.height !== h){ c.width = w; c.height = h; }
+    return c;
+  };
+}
+const getEditorPunchCanvas = makeBufferGetter();
+const getEditorFeatherCanvas = makeBufferGetter();
 function paintCanvasEditor(){
   const w = cvEdit.width, h = cvEdit.height;
   const rect = getEditorRect();
@@ -2731,11 +2831,170 @@ function paintCanvasEditor(){
   const polys = [...((_canvasDoc && _canvasDoc.polygons) || [])]
     .sort((a, b) => (b.z_index ?? 5) - (a.z_index ?? 5));
   const gain = _lastState?.master_gain ?? 1;
+  // One shape's content, into whichever surface it belongs on: the content
+  // buffer normally, a side buffer when a bounded punch-through cutout has to
+  // erase this shape without touching the shapes behind it. Takes the canvas
+  // rather than its context because the mirror-fold post-pass reads back from
+  // the surface it just drew into.
+  const paintPolyContent = (surf, poly, layer, liveCorners, liveOpacity) => {
+    const dst = surf.ctx;
+    // Filters (5/2) — a per-shape display filter, same ctx.filter
+    // mechanism the browser already GPU-accelerates, wrapped around
+    // whichever draw call actually runs below so it applies uniformly to
+    // vector strokes AND raster (media/webcam/text) alike. Colourize has
+    // no native CSS "tint toward an arbitrary colour" filter, so it's
+    // approximated with the standard sepia()+hue-rotate() trick: sepia(1)
+    // collapses colour into one warm baseline hue (browsers land this
+    // ~50deg), hue-rotate re-aims that baseline at the target hue, and
+    // sepia's own 0..1 amount is already a mix-with-original control.
+    // Not colorimetrically exact, but a legitimate/cheap creative tint.
+    dst.filter = buildCssFilter(layer || poly.overrides || {});
+    if (poly.source_type === "media"){
+      drawPolyMedia(dst, poly, liveCorners, rect, liveOpacity, layer);
+      autoFitFromMedia(poly, layer);          // (18) once, while still default
+    } else if (poly.source_type === "webcam"){
+      drawPolyWebcam(dst, poly, liveCorners, rect, liveOpacity);
+      autoFitFromWebcam(poly);                // (26) camera's native aspect
+    } else if (poly.source_type === "text"){
+      drawPolyText(dst, poly, liveCorners, rect, liveOpacity);
+      autoFitShapeToContent(poly, 1);         // (18) text reads best square
+    } else if (layer && layer.strokes && layer.strokes.length){
+      const H = homography(liveCorners);
+      const opacity = liveOpacity;
+      const fitMode = poly.fit || "stretch";
+      const ca = parseAspectRatio(layer.aspect), qa = quadAspect(liveCorners, rect);
+      if (polyClipActive(poly)) {
+        drawClippedStrokes(dst, poly, layer, liveCorners, H, rect, opacity, fitMode, ca, qa);
+      } else if (fitMode === "crop") {
+        // Unclipped crop needs an explicit clip — zoomed content can spill
+        // past the quad's own edges otherwise.
+        dst.save();
+        clipToQuadPath(dst, liveCorners, rect);
+        drawWarpedStrokes(dst, rect, layer, H, opacity, fitMode, ca, qa);
+        dst.restore();
+      } else {
+        drawWarpedStrokes(dst, rect, layer, H, opacity, fitMode, ca, qa);
+      }
+    }
+    dst.filter = "none";
+    applyMirrorFoldPost(dst, poly, liveCorners, rect, poly.overrides || {}, surf);
+  };
+  // The same view transform and artboard clip sctx is already carrying, so a
+  // shape drawn into a side buffer lands on the identical device pixels and
+  // the blit back is a plain 1:1 drawImage. Balanced by closeBuffer's
+  // restore() — a clip only unwinds through the save stack, not through
+  // setTransform.
+  // bx/by/bw/bh limit the clear to a region when the caller knows the draw
+  // can't land outside it (see drawContentPoly); the default is the whole
+  // surface, which is what a punch run needs.
+  const openBuffer = (getCanvas, bx = 0, by = 0, bw = w, bh = h) => {
+    const buf = getCanvas(w, h), pctx = buf.ctx;
+    pctx.setTransform(1,0,0,1,0,0);
+    pctx.globalCompositeOperation = "source-over";
+    pctx.globalAlpha = 1; pctx.filter = "none"; pctx.shadowBlur = 0;
+    pctx.clearRect(bx, by, bw, bh);
+    pctx.save();
+    // Clipping to the region is what actually makes a bounded feather cheap:
+    // Chromium sizes the layer a ctx.filter draw allocates by the CURRENT
+    // CLIP, so bounding only the clear and the blit leaves the blur itself
+    // working over the whole surface. Measured on 8 masked shapes: 179ms
+    // unclipped vs 43ms clipped. Set in device space, before the view
+    // transform below — clips intersect, so both apply.
+    if (bx || by || bw !== w || bh !== h){
+      pctx.beginPath(); pctx.rect(bx, by, bw, bh); pctx.clip();
+    }
+    pctx.translate(rect.x + rect.w/2 + _view.panX, rect.y + rect.h/2 + _view.panY);
+    pctx.scale(_view.zoom, _view.zoom);
+    pctx.translate(-(rect.x + rect.w/2), -(rect.y + rect.h/2));
+    pctx.beginPath();
+    pctx.rect(rect.x, rect.y, rect.w, rect.h);
+    pctx.clip();
+    return buf;
+  };
+  // Unwinds openBuffer's save and blits the finished buffer onto dst, 1:1 and
+  // at full alpha — the shape's own opacity is already baked into its pixels.
+  const closeBuffer = (buf, dstCtx, bx = 0, by = 0, bw = w, bh = h) => {
+    buf.ctx.restore();
+    dstCtx.save();
+    dstCtx.setTransform(1,0,0,1,0,0);
+    dstCtx.globalCompositeOperation = "source-over";
+    dstCtx.globalAlpha = 1; dstCtx.filter = "none";
+    dstCtx.drawImage(buf, bx, by, bw, bh, bx, by, bw, bh);
+    dstCtx.restore();
+  };
+  // One shape, through its own feathered mask edge if it has one. The content
+  // is drawn into a buffer with the hard clip suppressed (see _featherPass)
+  // and then masked by ONE blurred fill of the same path via destination-in —
+  // that single fill is the whole cost of a feather. The old feathered clip
+  // this replaces allocated an offscreen canvas per shape per tick and blurred
+  // the CONTENT through it, which is what made it stall the render loop.
+  // The ramp is symmetric about the authored edge, so content bleeds up to
+  // ~feather px outside the mask at falling alpha.
+  const drawContentPoly = (surf, poly, layer, liveCorners, liveOpacity) => {
+    const f = polyClipAuthored(poly) ? featherDevicePx(poly, rect) : 0;
+    if (f <= 0.1){ paintPolyContent(surf, poly, layer, liveCorners, liveOpacity); return; }
+    // Only this shape's own footprint is touched, not the whole surface. The
+    // clear and the blit either side of a feather are full-frame operations
+    // by default, and with several feathered shapes on a canvas that cost —
+    // not the blur, which is flat in radius — is what dominates. Padded
+    // generously: a CSS blur(N) has sigma N/2 and reaches ~3 sigma, and the
+    // mask itself can sit outside the quad at clip_scale > 1.
+    const bb = polygonBBoxPx(liveCorners, rect);
+    const grow = Math.max(1, poly.clip_scale ?? 1);
+    const [x0, y0] = _viewToDevice(bb.cx - bb.rx*grow, bb.cy - bb.ry*grow, rect);
+    const [x1, y1] = _viewToDevice(bb.cx + bb.rx*grow, bb.cy + bb.ry*grow, rect);
+    const pad = f * 2 + 2;
+    const bx = Math.max(0, Math.floor(x0 - pad)), by = Math.max(0, Math.floor(y0 - pad));
+    const bw = Math.min(w, Math.ceil(x1 + pad)) - bx, bh = Math.min(h, Math.ceil(y1 + pad)) - by;
+    if (bw <= 0 || bh <= 0) return;               // entirely off-surface
+    const fb = openBuffer(getEditorFeatherCanvas, bx, by, bw, bh), fctx = fb.ctx;
+    _featherPass = true;
+    try { paintPolyContent(fb, poly, layer, liveCorners, liveOpacity); }
+    finally { _featherPass = false; }
+    fctx.globalCompositeOperation = "destination-in";
+    fctx.filter = `blur(${f.toFixed(2)}px)`;
+    polyClipPath(fctx, poly, liveCorners, rect);
+    fctx.fill();
+    fctx.globalCompositeOperation = "source-over";
+    fctx.filter = "none";
+    closeBuffer(fb, surf.ctx, bx, by, bw, bh);
+  };
+  // Bounded-depth punches have to be applied to the shapes they cover as
+  // those shapes are drawn, not when the cutout's own turn comes round — by
+  // then the content buffer has merged them with the shapes the punch is
+  // supposed to spare. Live corners, so a punch follows its own effectors.
+  //
+  // Those shapes are collected into RUNS rather than punched one at a time:
+  // every shape a given set of punches covers, cut through together as one
+  // stack. Punching shape by shape would be equivalent only while the erase
+  // is fully opaque — a FEATHERED punch has a partial-alpha ramp, and erasing
+  // 60% of two stacked shapes separately leaves more standing than erasing
+  // 60% of the two combined, which shows as a halo along the soft edge
+  // wherever punched shapes overlap. Runs are always contiguous in paint
+  // order: which punches cover a shape depends only on its z, and the shapes
+  // are already sorted by z.
+  const boundedPunches = polys.filter(p => isPunchCutout(p) && !punchIsFullDepth(p))
+    .map((p, i) => ({band: punchBand(p), key: i,
+                     feather: featherDevicePx(p, rect),
+                     corners: (_lastComposite.find(l => l.id === p.id) || {}).corners || p.corners}));
+  let run = null;                        // {key, hits, surf}
+  const flushRun = () => {
+    if (run && run.hits.length){
+      run.hits.forEach(b => applyPunch(run.surf.ctx, b.corners, rect, b.feather));
+      closeBuffer(run.surf, sctx);
+    }
+    run = null;
+  };
+  const surfaceFor = z => {
+    const hits = boundedPunches.filter(b => z >= b.band.from && z <= b.band.to);
+    const key = hits.map(b => b.key).join(",");
+    if (run && run.key === key) return run.surf;
+    flushRun();
+    run = {key, hits, surf: hits.length ? openBuffer(getEditorPunchCanvas) : scratch};
+    return run.surf;
+  };
   polys.forEach(poly => {
     const isKnockout = poly.source_type === "knockout";
-    const isMedia = poly.source_type === "media";
-    const isWebcam = poly.source_type === "webcam";
-    const isText = poly.source_type === "text";
     // Always looked up now (1) — the broadcast layer carries the LIVE,
     // effector-modulated hue/saturation/brightness/opacity (composite.py's
     // _apply_effectors resolves these server-side every tick, same as the
@@ -2756,54 +3015,26 @@ function paintCanvasEditor(){
     // dragging a corner mid-animation would be unusable.
     const liveCorners = (layer && layer.corners) || poly.corners;
     if (isKnockout){
-      // Excluded from the brightness/contrast filter below on purpose — a
+      // Both modes draw straight onto the content buffer, so any open run of
+      // punched shapes has to land first or it would blit back over them.
+      flushRun();
+      // A punch draws nothing of its own: a full-depth one erases the buffer
+      // so far, right here in paint order; a bounded one has already been
+      // applied to the runs inside its band (see boundedPunches above).
+      if (isPunchCutout(poly)){
+        if (punchIsFullDepth(poly)) applyPunch(sctx, liveCorners, rect, featherDevicePx(poly, rect));
+        return;
+      }
+      // Excluded from the brightness/contrast filter on purpose — a
       // knockout is a boolean mask (pure opaque black), and contrast <1
       // would lift black toward grey through Canvas2D's own filter formula,
       // silently breaking the "invisible cutout" premise.
       drawKnockoutFill(sctx, poly, liveCorners, rect, liveOpacity);
-    } else {
-      // Filters (5/2) — a per-shape display filter, same ctx.filter
-      // mechanism the browser already GPU-accelerates, wrapped around
-      // whichever draw call actually runs below so it applies uniformly to
-      // vector strokes AND raster (media/webcam/text) alike. Colourize has
-      // no native CSS "tint toward an arbitrary colour" filter, so it's
-      // approximated with the standard sepia()+hue-rotate() trick: sepia(1)
-      // collapses colour into one warm baseline hue (browsers land this
-      // ~50deg), hue-rotate re-aims that baseline at the target hue, and
-      // sepia's own 0..1 amount is already a mix-with-original control.
-      // Not colorimetrically exact, but a legitimate/cheap creative tint.
-      sctx.filter = buildCssFilter(layer || poly.overrides || {});
-      if (isMedia){
-        drawPolyMedia(sctx, poly, liveCorners, rect, liveOpacity, layer);
-        autoFitFromMedia(poly, layer);          // (18) once, while still default
-      } else if (isWebcam){
-        drawPolyWebcam(sctx, poly, liveCorners, rect, liveOpacity);
-        autoFitFromWebcam(poly);                // (26) camera's native aspect
-      } else if (isText){
-        drawPolyText(sctx, poly, liveCorners, rect, liveOpacity);
-        autoFitShapeToContent(poly, 1);         // (18) text reads best square
-      } else if (layer && layer.strokes && layer.strokes.length){
-        const H = homography(liveCorners);
-        const opacity = liveOpacity;
-        const fitMode = poly.fit || "stretch";
-        const ca = parseAspectRatio(layer.aspect), qa = quadAspect(liveCorners, rect);
-        if (polyClipActive(poly)) {
-          drawClippedStrokes(sctx, poly, layer, liveCorners, H, rect, opacity, fitMode, ca, qa);
-        } else if (fitMode === "crop") {
-          // Unclipped crop needs an explicit clip — zoomed content can spill
-          // past the quad's own edges otherwise.
-          sctx.save();
-          clipToQuadPath(sctx, liveCorners, rect);
-          drawWarpedStrokes(sctx, rect, layer, H, opacity, fitMode, ca, qa);
-          sctx.restore();
-        } else {
-          drawWarpedStrokes(sctx, rect, layer, H, opacity, fitMode, ca, qa);
-        }
-      }
-      sctx.filter = "none";
-      applyMirrorFoldPost(sctx, poly, liveCorners, rect, poly.overrides || {}, scratch);
+      return;
     }
+    drawContentPoly(surfaceFor(poly.z_index ?? 5), poly, layer, liveCorners, liveOpacity);
   });
+  flushRun();
   sctx.restore();
 
   // Single blit, single alpha (8) — the actual master-gain fade, applied
@@ -3620,6 +3851,21 @@ function renderPolyInspector(){
   $("poly-text-color-field").style.display = isText ? "flex" : "none";
   $("poly-text-size-field").style.display = isText ? "flex" : "none";
   $("poly-knockout-hint").style.display = isKnockout ? "block" : "none";
+  const isPunch = isKnockout && !!poly.knockout_punch;
+  $("poly-knockout-punch-field").style.display = isKnockout ? "flex" : "none";
+  $("poly-knockout-punch-hint").style.display = isKnockout ? "block" : "none";
+  $("poly-knockout-depth-field").style.display = isPunch ? "flex" : "none";
+  if (document.activeElement !== $("poly-knockout-punch"))
+    $("poly-knockout-punch").checked = isPunch;
+  if (document.activeElement !== $("poly-knockout-depth")){
+    const depth = poly.knockout_depth ?? 10;
+    $("poly-knockout-depth").value = depth;
+    // A punch can only reach z 10, so past that point the number stops
+    // meaning anything — say so rather than showing a depth that does
+    // nothing more than the one below it.
+    $("v-polyknockoutdepth").textContent =
+      (poly.z_index ?? 5) + depth >= 10 ? depth + " (all)" : String(depth);
+  }
   // fit/clip only mean anything for content-bearing shapes (scene/media/
   // webcam/text) — a knockout cutout is its own arbitrary-point shape
   // already, nothing to fit or further clip.
@@ -3653,6 +3899,18 @@ function renderPolyInspector(){
   $("poly-clip-uniform-hint").style.display = presetClip ? "block" : "none";
   if (document.activeElement !== $("poly-clip-uniform"))
     $("poly-clip-uniform").checked = !!poly.clip_uniform;
+  // Feather needs an edge to work on: a mask, or a cutout's own outline.
+  // Shown (disabled-looking, via the empty hint) rather than hidden on an
+  // unmasked shape, so it doesn't look like the control moved somewhere else.
+  const featherable = isKnockout || !!poly.clip_shape || customMask;
+  $("poly-feather-field").style.display = featherable ? "flex" : "none";
+  $("poly-feather-hint").style.display = featherable ? "block" : "none";
+  $("poly-feather-empty").style.display = featherable ? "none" : "block";
+  if (document.activeElement !== $("poly-feather")){
+    const fv = poly.feather ?? 0;
+    $("poly-feather").value = fv;
+    $("v-polyfeather").textContent = fv ? fv.toFixed(1).replace(/\.0$/, "") + " px" : "off";
+  }
   $("poly-clip-custom-btn").classList.toggle("amber", customMask);
   $("poly-clip-custom-btn").querySelector("span").textContent =
     customMask ? "Editing custom polygon" : "Draw custom polygon";
@@ -3806,6 +4064,38 @@ $("poly-clip-shape").onchange = () => {
     setEditMode("mask");
   }
   renderPolyInspector();
+};
+// Cutout mode. Optimistic local writes, same as clip_uniform below: the
+// inspector's own show/hide (and the depth slider's "(all)" label) read the
+// LOCAL shape, so waiting for the broadcast to echo back would leave the
+// depth row hidden for a frame after ticking the box.
+$("poly-knockout-punch").onchange = () => {
+  if (!selectedPolyId) return;
+  const on = $("poly-knockout-punch").checked;
+  const poly = polyById(selectedPolyId);
+  if (poly) poly.knockout_punch = on;
+  send({type:"poly_set", id:selectedPolyId, key:"knockout_punch", value:on});
+  renderPolyInspector();
+  paintCanvasEditor();
+};
+$("poly-knockout-depth").oninput = () => {
+  if (!selectedPolyId) return;
+  const v = parseInt($("poly-knockout-depth").value, 10);
+  const poly = polyById(selectedPolyId);
+  if (poly) poly.knockout_depth = v;
+  $("v-polyknockoutdepth").textContent =
+    ((poly && poly.z_index) ?? 5) + v >= 10 ? v + " (all)" : String(v);
+  send({type:"poly_set", id:selectedPolyId, key:"knockout_depth", value:v});
+  paintCanvasEditor();
+};
+$("poly-feather").oninput = () => {
+  if (!selectedPolyId) return;
+  const v = +$("poly-feather").value;
+  const poly = polyById(selectedPolyId);
+  if (poly) poly.feather = v;            // optimistic, same as clip_uniform below
+  $("v-polyfeather").textContent = v ? v.toFixed(1).replace(/\.0$/, "") + " px" : "off";
+  send({type:"poly_set", id:selectedPolyId, key:"feather", value:v});
+  paintCanvasEditor();
 };
 $("poly-clip-uniform").onchange = () => {
   if (!selectedPolyId) return;
@@ -5100,6 +5390,15 @@ $("webcam-refresh").onclick = () => refreshWebcamDevices(true);
 $("cutout-add-btn").onclick = () => {
   _pendingSelectNewPoly = true;
   _pendingNewPolyDefaults = {source_type: "knockout"};
+  send({type: "poly_add"});
+};
+// Same shape, punch mode preset — the two modes behave differently enough
+// that picking one up front beats adding a blackout and then discovering the
+// checkbox. Depth is left at its default (10 = all the way through), which
+// is the mode's own "obvious" reading.
+$("cutout-add-punch-btn").onclick = () => {
+  _pendingSelectNewPoly = true;
+  _pendingNewPolyDefaults = {source_type: "knockout", knockout_punch: true};
   send({type: "poly_add"});
 };
 $("text-add-btn").onclick = () => {

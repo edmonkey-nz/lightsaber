@@ -388,9 +388,34 @@ function customMaskPath(ctx, layer, H, mapWin){
   });
   ctx.closePath();
 }
+// Feather — how far a shape's mask/cutout edge ramps, authored in PROJECT-
+// CANVAS pixels so the same number means the same thing in the editor
+// preview and in a window of any size. _featherScale converts to THIS
+// window's pixels and is set once per paint (see paintComposite).
+//
+// The conversion has to be explicit because Canvas2D's blur filter is a
+// device-pixel measurement: it is applied to the rasterised result and
+// measurably ignores the current transform, so a blur inside a scaled
+// context does NOT scale with it.
+let _featherScale = 1;
+function featherPx(l){ return Math.max(0, Math.min(20, l.feather ?? 0)); }
+function featherDevicePx(l){ const f = featherPx(l); return f > 0 ? f * _featherScale : 0; }
+
+// Set only while a layer is being drawn into a feather buffer. The blurred
+// mask below does the masking in that pass, so the hard clip has to stand
+// aside: clipping first would cut the content off dead on the mask edge,
+// leaving the outer half of the feather ramp with nothing to fade out.
+let _featherPass = false;
+
 // Guards the degenerate case (clip_shape "custom" on a shape without a real
 // quad) that would otherwise clip to an empty path and blank the shape out.
 function polyClipActive(layer){
+  if (_featherPass) return false;   // see _featherPass
+  return hasCustomMask(layer) || CLIP_PRESETS.includes(layer.clip_shape);
+}
+// Same question ignoring the feather pass — "would this shape be masked at
+// all", which is what decides whether a feather has an edge to work on.
+function polyClipAuthored(layer){
   return hasCustomMask(layer) || CLIP_PRESETS.includes(layer.clip_shape);
 }
 function polyClipPath(ctx, layer, corners, mapWin){
@@ -482,12 +507,102 @@ function buildCssFilter(f){
 function drawKnockoutFill(ctx, layer, mapWin, opacity){
   ctx.save();
   ctx.globalAlpha = opacity;
+  const f = featherDevicePx(layer);
+  if (f > 0.1) ctx.filter = `blur(${f.toFixed(2)}px)`;
   ctx.fillStyle = "#000";
   ctx.beginPath();
   layer.corners.forEach((c,i) => { const [X,Y]=mapWin(c[0],c[1]); i?ctx.lineTo(X,Y):ctx.moveTo(X,Y); });
   ctx.closePath();
   ctx.fill();
   ctx.restore();
+}
+
+// Punch-through — the cutout's OTHER mode. Instead of painting opaque black
+// at its own z-index, the shape's outline is ERASED from the layers behind
+// it, so whatever is further back shows through the hole rather than black.
+// Same geometry, opposite premise: a blackout adds an occluder, a punch
+// removes one.
+//
+// Depth is counted in z-LEVELS, not shapes: a cutout at z=k with depth N
+// erases layers whose z_index lands in [k+1, k+N] and leaves anything deeper
+// alone to show through. z_index only runs to 10, so a band already reaching
+// 10 covers everything behind the cutout and can take the cheap path — one
+// destination-out onto the frame buffer at the cutout's own place in the
+// paint order, no extra surface, since "erase everything painted so far" is
+// exactly what that means. Erasing the black backdrop with it is harmless:
+// the finished frame is composited onto black anyway.
+//
+// A SHALLOWER punch can't work that way — by the time the cutout's turn
+// comes round the frame buffer has merged the layers it should punch with
+// the ones it should spare, and nothing distinguishes them any more. Those
+// layers are drawn into a side buffer, punched there and blitted back
+// (see paintComposite). Punching each layer separately and then stacking is
+// identical to stacking and then punching, but only while the erase is fully
+// opaque — which is why the cutout's own opacity deliberately does NOT
+// become a partial-erase amount here.
+function isPunchCutout(l){ return l.source_type === "knockout" && !!l.knockout_punch; }
+function punchBand(l){
+  const k = l.z_index ?? 5;
+  return {from: k + 1, to: k + Math.max(1, Math.min(10, l.knockout_depth ?? 10))};
+}
+function punchIsFullDepth(l){ return punchBand(l).to >= 10; }
+function applyPunch(ctx, layer, mapWin){
+  ctx.save();
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.globalAlpha = 1;
+  const f = featherDevicePx(layer);
+  ctx.filter = f > 0.1 ? `blur(${f.toFixed(2)}px)` : "none";
+  ctx.fillStyle = "#000";
+  ctx.beginPath();
+  layer.corners.forEach((c,i) => { const [X,Y]=mapWin(c[0],c[1]); i?ctx.lineTo(X,Y):ctx.moveTo(X,Y); });
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+// Side buffers — one for a run of layers a bounded punch has to cut through,
+// one for a single layer being masked through a feathered edge. Each is
+// allocated once and only ever touched when the feature that needs it is
+// actually on the canvas; both are cleared and reset by openBuffer below.
+function makeBufferGetter(){
+  let c = null;
+  return (w, h) => {
+    if (!c){ c = document.createElement("canvas"); c.ctx = c.getContext("2d"); }
+    if (c.width !== w || c.height !== h){ c.width = w; c.height = h; }
+    return c;
+  };
+}
+const getPunchCanvas = makeBufferGetter();
+const getFeatherCanvas = makeBufferGetter();
+// bx/by/bw/bh limit the clear to a region when the caller knows the draw
+// can't land outside it (see drawContentLayer); the default is the whole
+// surface, which is what a punch run needs.
+function openBuffer(buf, w, h, bx = 0, by = 0, bw = w, bh = h){
+  const g = buf.ctx;
+  g.setTransform(1,0,0,1,0,0);
+  g.globalCompositeOperation = "source-over";
+  g.globalAlpha = 1; g.filter = "none"; g.shadowBlur = 0;
+  g.clearRect(bx, by, bw, bh);
+  g.save();
+  // Clipping to the region is what actually makes a bounded feather cheap:
+  // Chromium sizes the layer a ctx.filter draw allocates by the CURRENT CLIP,
+  // so bounding only the clear and the blit leaves the blur itself working
+  // over the whole frame. Measured on 8 masked shapes: 179ms unclipped vs
+  // 43ms clipped. Unwound by blitBuffer's matching restore.
+  if (bx || by || bw !== w || bh !== h){
+    g.beginPath(); g.rect(bx, by, bw, bh); g.clip();
+  }
+  return buf;
+}
+// Blits a finished side buffer onto its destination, 1:1 and at full alpha —
+// the layer's own opacity is already baked into its pixels.
+function blitBuffer(dstCtx, buf, bx, by, bw, bh){
+  buf.ctx.restore();                 // matches openBuffer's save
+  dstCtx.save();
+  dstCtx.globalCompositeOperation = "source-over";
+  dstCtx.globalAlpha = 1; dstCtx.filter = "none";
+  if (bw === undefined) dstCtx.drawImage(buf, 0, 0);
+  else dstCtx.drawImage(buf, bx, by, bw, bh, bx, by, bw, bh);
+  dstCtx.restore();
 }
 
 // Media shapes — same idea as index.html's drawPolyMedia (see its comments
@@ -1052,7 +1167,10 @@ function drawLayerText(ctx, layer, mapWin, opacity){
 // device pixels directly, ctx is always identity), so unlike the editor's
 // version this needs no _viewToDevice mapping — mapWin's own output IS
 // device space already.
-function applyMirrorFoldPost(ctx, layer, mapWin){
+// srcCanvas is the surface this layer was drawn into — the frame buffer
+// normally, a punch side buffer when one is in play. It used to read the
+// VISIBLE canvas, which by this point still holds the previous frame.
+function applyMirrorFoldPost(ctx, layer, mapWin, srcCanvas){
   const mxPoint = layer.mirror_pre_distort === false ? (layer.mirror_x_point ?? 1) : 1;
   const myPoint = layer.mirror_pre_distort === false ? (layer.mirror_y_point ?? 1) : 1;
   const foldX = mxPoint < 0.999, foldY = myPoint < 0.999;
@@ -1074,7 +1192,7 @@ function applyMirrorFoldPost(ctx, layer, mapWin){
       ctx.save();
       ctx.beginPath(); ctx.rect(axis, top, copyW, h); ctx.clip();
       ctx.translate(axis*2, 0); ctx.scale(-1,1);
-      ctx.drawImage(cv, 0, 0);
+      ctx.drawImage(srcCanvas, 0, 0);
       ctx.restore();
     }
   }
@@ -1085,7 +1203,7 @@ function applyMirrorFoldPost(ctx, layer, mapWin){
       ctx.save();
       ctx.beginPath(); ctx.rect(left, axis, w, copyH); ctx.clip();
       ctx.translate(0, axis*2); ctx.scale(1,-1);
-      ctx.drawImage(cv, 0, 0);
+      ctx.drawImage(srcCanvas, 0, 0);
       ctx.restore();
     }
   }
@@ -1178,6 +1296,7 @@ function paintComposite(layers, resW, resH, masterGain, active, testPattern, sho
   const vp = filters.viewport;
   const effResW = vp ? resW * vp.w : resW, effResH = vp ? resH * vp.h : resH;
   const scale = Math.min(w / effResW, h / effResH);
+  _featherScale = scale;                  // canvas px -> this window's px
   const halfW = (effResW * scale) / 2, halfH = (effResH * scale) / 2;
   const cx0 = w / 2, cy0 = h / 2;
   const mapWin = (x, y) => {
@@ -1203,16 +1322,13 @@ function paintComposite(layers, resW, resH, masterGain, active, testPattern, sho
     // Paint order (3): highest z-index first (furthest back), lowest last
     // (furthest front) — matches the editor's stacking exactly.
     const ordered = [...layers].sort((a, b) => (b.z_index ?? 5) - (a.z_index ?? 5));
-    ordered.forEach(layer => {
-      const opacity = layer.opacity ?? 1;   // gain applied once at the end, not here
-      tctx.filter = "none";
-      if (layer.source_type === "knockout"){
-        // Excluded on purpose — see index.html's identical comment: a
-        // knockout is a boolean mask (pure opaque black), and contrast <1
-        // would lift black toward grey through Canvas2D's own filter formula.
-        drawKnockoutFill(tctx, layer, mapWin, opacity);
-        return;
-      }
+    // One layer's content, into whichever surface it belongs on: the frame
+    // buffer normally, a side buffer when a bounded punch-through cutout has
+    // to erase this layer without touching the ones behind it. Takes the
+    // canvas rather than its context because the mirror-fold post-pass reads
+    // back from the surface it just drew into.
+    const paintLayerContent = (surf, layer, opacity) => {
+      const dst = surf.ctx;
       // Viewport culling (see quadOffScreen) — only the decoder-backed layer
       // types, where skipping is worth real hardware. Vector layers can draw
       // a glow well outside their quad, so their bbox isn't a safe bound.
@@ -1222,20 +1338,20 @@ function paintComposite(layers, resW, resH, masterGain, active, testPattern, sho
       // rationale; layer.brightness/contrast/hue/saturation/colourize_* come
       // straight off the broadcast (composite.py's per-poly overrides), not
       // recomputed here.
-      tctx.filter = buildCssFilter(layer);
+      dst.filter = buildCssFilter(layer);
       if (layer.source_type === "media"){
         // Real output stays fully black on Stop, same as vector scenes
         // (empty frame) — a media layer would otherwise keep showing its
         // last frame regardless of active, since it isn't scene-clock-driven.
-        if (active) { drawLayerMedia(tctx, layer, mapWin, opacity); applyMirrorFoldPost(tctx, layer, mapWin); }
+        if (active) { drawLayerMedia(dst, layer, mapWin, opacity); applyMirrorFoldPost(dst, layer, mapWin, surf); }
         return;
       }
       if (layer.source_type === "webcam"){
-        if (active) { drawLayerWebcam(tctx, layer, mapWin, opacity); applyMirrorFoldPost(tctx, layer, mapWin); }
+        if (active) { drawLayerWebcam(dst, layer, mapWin, opacity); applyMirrorFoldPost(dst, layer, mapWin, surf); }
         return;
       }
       if (layer.source_type === "text"){
-        if (active) { drawLayerText(tctx, layer, mapWin, opacity); applyMirrorFoldPost(tctx, layer, mapWin); }
+        if (active) { drawLayerText(dst, layer, mapWin, opacity); applyMirrorFoldPost(dst, layer, mapWin, surf); }
         return;
       }
       if (!layer.strokes || !layer.strokes.length) return;
@@ -1243,17 +1359,108 @@ function paintComposite(layers, resW, resH, masterGain, active, testPattern, sho
       const fitMode = layer.fit || "stretch";
       const ca = parseAspectRatio(layer.aspect), qa = quadAspect(layer.corners, mapWin);
       if (polyClipActive(layer)) {
-        drawClippedStrokes(tctx, w, h, layer, H, mapWin, opacity, fitMode, ca, qa);
+        drawClippedStrokes(dst, w, h, layer, H, mapWin, opacity, fitMode, ca, qa);
       } else if (fitMode === "crop") {
-        tctx.save();
-        clipToQuadPath(tctx, layer.corners, mapWin);
-        drawWarpedStrokes(tctx, w, h, layer, H, mapWin, opacity, fitMode, ca, qa);
-        tctx.restore();
+        dst.save();
+        clipToQuadPath(dst, layer.corners, mapWin);
+        drawWarpedStrokes(dst, w, h, layer, H, mapWin, opacity, fitMode, ca, qa);
+        dst.restore();
       } else {
-        drawWarpedStrokes(tctx, w, h, layer, H, mapWin, opacity, fitMode, ca, qa);
+        drawWarpedStrokes(dst, w, h, layer, H, mapWin, opacity, fitMode, ca, qa);
       }
-      applyMirrorFoldPost(tctx, layer, mapWin);
+      applyMirrorFoldPost(dst, layer, mapWin, surf);
+    };
+    // One layer, through its own feathered mask edge if it has one. The
+    // content is drawn into a buffer with the hard clip suppressed (see
+    // _featherPass) and then masked by ONE blurred fill of the same path via
+    // destination-in — which is the whole cost of a feather: no per-shape
+    // offscreen canvas, no blurring of the content itself. The ramp is
+    // symmetric about the authored edge, so content bleeds up to ~feather px
+    // outside the mask at falling alpha.
+    const drawContentLayer = (surf, layer, opacity) => {
+      const f = polyClipAuthored(layer) ? featherDevicePx(layer) : 0;
+      if (f <= 0.1){ paintLayerContent(surf, layer, opacity); return; }
+      // Only this layer's own footprint is touched, not the whole frame. The
+      // clear and the blit either side of a feather are full-frame operations
+      // by default, and with several feathered layers that cost — not the
+      // blur, which is flat in radius — is what dominates. Padded generously:
+      // a CSS blur(N) has sigma N/2 and reaches ~3 sigma, and the mask itself
+      // can sit outside the quad at clip_scale > 1.
+      const bb = polygonBBoxPx(layer.corners, mapWin);
+      const grow = Math.max(1, layer.clip_scale ?? 1);
+      const pad = f * 2 + 2;
+      const bx = Math.max(0, Math.floor(bb.cx - bb.rx*grow - pad));
+      const by = Math.max(0, Math.floor(bb.cy - bb.ry*grow - pad));
+      const bw = Math.min(w, Math.ceil(bb.cx + bb.rx*grow + pad)) - bx;
+      const bh = Math.min(h, Math.ceil(bb.cy + bb.ry*grow + pad)) - by;
+      if (bw <= 0 || bh <= 0) return;              // entirely off-screen
+      const fb = openBuffer(getFeatherCanvas(w, h), w, h, bx, by, bw, bh), fctx = fb.ctx;
+      _featherPass = true;
+      try { paintLayerContent(fb, layer, opacity); }
+      finally { _featherPass = false; }
+      fctx.globalCompositeOperation = "destination-in";
+      fctx.filter = `blur(${f.toFixed(2)}px)`;
+      polyClipPath(fctx, layer, layer.corners, mapWin);
+      fctx.fill();
+      fctx.globalCompositeOperation = "source-over";
+      fctx.filter = "none";
+      blitBuffer(surf.ctx, fb, bx, by, bw, bh);
+    };
+    // Bounded-depth punches (see punchBand) have to be applied to the layers
+    // they cover as those layers are drawn, not when the cutout's own turn
+    // comes round — by then the frame buffer has merged them with the layers
+    // the punch is supposed to spare.
+    //
+    // Those layers are collected into RUNS rather than punched one at a
+    // time: every layer a given set of punches covers, cut through together
+    // as one stack. Punching layer by layer would be equivalent only while
+    // the erase is fully opaque — a FEATHERED punch has a partial-alpha
+    // ramp, and erasing 60% of two stacked layers separately leaves more
+    // standing than erasing 60% of the two combined, which shows up as a
+    // halo along the soft edge wherever punched layers overlap. Runs are
+    // always contiguous in paint order: which punches cover a layer depends
+    // only on its z, and the layers are already sorted by z.
+    const bounded = ordered.filter(l => isPunchCutout(l) && !punchIsFullDepth(l))
+                           .map((l, i) => ({layer: l, band: punchBand(l), key: i}));
+    let run = null;                      // {key, hits, surf}
+    const flushRun = () => {
+      if (run && run.hits.length){
+        run.hits.forEach(p => applyPunch(run.surf.ctx, p.layer, mapWin));
+        blitBuffer(tctx, run.surf);
+      }
+      run = null;
+    };
+    const surfaceFor = z => {
+      const hits = bounded.filter(p => z >= p.band.from && z <= p.band.to);
+      const key = hits.map(p => p.key).join(",");
+      if (run && run.key === key) return run.surf;
+      flushRun();
+      run = {key, hits, surf: hits.length ? openBuffer(getPunchCanvas(w, h), w, h) : scratch};
+      return run.surf;
+    };
+    ordered.forEach(layer => {
+      const opacity = layer.opacity ?? 1;   // gain applied once at the end, not here
+      tctx.filter = "none";
+      if (layer.source_type === "knockout"){
+        // Both modes draw straight onto the frame buffer, so any open run of
+        // punched layers has to land first or it would blit back over them.
+        flushRun();
+        // A punch draws nothing of its own: a full-depth one erases the
+        // frame so far, right here in paint order; a bounded one has already
+        // been applied to the runs inside its band.
+        if (isPunchCutout(layer)){
+          if (punchIsFullDepth(layer)) applyPunch(tctx, layer, mapWin);
+          return;
+        }
+        // Excluded on purpose — see index.html's identical comment: a
+        // knockout is a boolean mask (pure opaque black), and contrast <1
+        // would lift black toward grey through Canvas2D's own filter formula.
+        drawKnockoutFill(tctx, layer, mapWin, opacity);
+        return;
+      }
+      drawContentLayer(surfaceFor(layer.z_index ?? 5), layer, opacity);
     });
+    flushRun();
   }
   tctx.shadowBlur = 0;
   tctx.filter = "none";

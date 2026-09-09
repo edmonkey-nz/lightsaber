@@ -156,10 +156,41 @@ class PolygonSpec:
     # Custom masks are unaffected: their points are already placed
     # individually and have no proportions to preserve.
     clip_uniform: bool = False
+    # Feather (0-20 px, in PROJECT-CANVAS pixels, so a value means the same
+    # thing whatever size the editor preview or the output window happens to
+    # be). Softens the edge this shape presents: its mask/clip edge on a
+    # content shape, its cutout edge on a knockout (either mode). 0 = the
+    # hard edge that was the only behaviour before.
+    #
+    # The ramp is SYMMETRIC about the authored edge, the way feather works
+    # in an image editor: content bleeds up to ~feather px outside the mask
+    # at falling alpha, and fades to nothing that far inside it. Worth
+    # knowing when a mask is aligned to a physical surface — a feathered
+    # edge spills slightly past the line you drew.
+    feather: float = 0.0
     # Paint order (3): 1-10, 10 = furthest back, 1 = furthest front. Lets a
     # "knockout" cutout shape (see source_type above) sit in front of the
     # shapes it should blank out.
     z_index: int = 5
+    # Cutout mode (knockout shapes only). False (the default, and the only
+    # behaviour before this existed) = BLACK OUT: an opaque black fill is
+    # painted at this shape's z-index, hiding everything behind it all the
+    # way to the output. True = PUNCH THROUGH: nothing is painted at all;
+    # instead this shape's outline is ERASED from the layers immediately
+    # behind it, so whatever is further back shows through the hole. The
+    # difference only shows once there's something to reveal — with nothing
+    # behind it, a punch and a blackout both land on the same black canvas.
+    knockout_punch: bool = False
+    # How deep the punch reaches, in z-LEVELS (not shapes): a cutout at
+    # z_index k erases layers whose z_index falls in [k+1, k+knockout_depth],
+    # and leaves anything further back untouched to show through. z_index
+    # only runs to 10, so a depth of 10 always reaches the back of the stack
+    # ("punch all the way through", the default); smaller values are what
+    # let a punch reveal one layer while stopping short of the one behind
+    # it. Shapes at the SAME z as the cutout are never punched — order
+    # within a z-level is arbitrary (array order), so punching there would
+    # depend on which shape happened to be created first.
+    knockout_depth: int = 10
     # How the assigned scene's own frame shape (SceneSpec.aspect) is fitted
     # into this polygon's quad, which can be any aspect ratio once dragged —
     # without this, content just stretches to fill the quad. "stretch" (the
@@ -213,8 +244,11 @@ class PolygonSpec:
             clip_points=sanitize_clip_points(d.get("clip_points")),
             clip_scale=float(d.get("clip_scale", 1.0)),
             clip_uniform=bool(d.get("clip_uniform", False)),
+            feather=max(0.0, min(20.0, float(d.get("feather", 0.0)))),
             locked=bool(d.get("locked", False)),
             z_index=max(1, min(10, int(d.get("z_index", 5)))),
+            knockout_punch=bool(d.get("knockout_punch", False)),
+            knockout_depth=max(1, min(10, int(d.get("knockout_depth", 10)))),
             fit=d.get("fit", "stretch"),
             transform_anchor=d.get("transform_anchor")
                 if d.get("transform_anchor") in ANCHOR_POINTS else "center",

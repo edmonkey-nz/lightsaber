@@ -6,6 +6,40 @@ and APIs between minor versions until a 1.0 release.
 
 ## [Unreleased]
 
+### Added — punch-through cutouts
+- A cutout shape now has **two modes**. The existing one blacks out whatever
+  it overlaps; the new **punch-through** mode erases instead, so the shapes
+  *behind* it show through the hole rather than black. Same shape, opposite
+  premise: a blackout adds an occluder, a punch removes one.
+- **Punch depth** decides how far back it cuts, counted in z-levels: a cutout
+  at z 4 with depth 2 cuts through z 5 and 6 and leaves 7-10 showing through
+  it. The default of 10 always reaches the back of the stack, so the obvious
+  reading ("cut a hole in everything") needs no setting.
+- Off by default on every existing cutout, so saved canvases render
+  identically.
+- Input > Cutout gains a second button so the mode is pickable up front
+  rather than only discoverable as a checkbox on an already-added shape.
+
+### Added - feathered mask and cutout edges
+- **`feather` (0-20px)** softens whatever edge a shape presents: its mask
+  edge on a normal shape, its cutout edge on a cutout (blackout or
+  punch-through alike). Lives in the Mask/clipping pane.
+- Measured in **project-canvas pixels**, so one value looks the same in the
+  editor preview and on an output window of any size.
+- Symmetric about the edge you drew, like feather in an image editor - it
+  bleeds about as far outside the mask as inside, which is worth knowing
+  when a mask is aligned to a physical surface.
+- 0 by default, so every existing shape renders exactly as before. This
+  brings back a soft edge that was removed for cost long ago; the new one
+  blurs a single mask fill rather than the content. Measured on hardware at
+  ~0.04ms per feathered shape - the old one stalled the render loop.
+
+### Fixed
+- Output windows' mirror-fold post-pass read back from the **visible canvas**
+  — which at that point still holds the previous frame — instead of the
+  buffer the layer had just been drawn into. It now reads the surface it drew
+  into, which is also what makes a mirror-folded shape survive being punched.
+
 ### Added — camera "path" mode, ported from promptwaver
 - **A camera that walks a closed circuit** rather than orbiting or drifting.
   `camera.mode = "path"` with `waypoints` (>=3) builds a closed Catmull-Rom

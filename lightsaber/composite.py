@@ -547,10 +547,16 @@ class CompositeRenderer:
                 poly.clip_points = sanitize_clip_points(value)
             elif key == "clip_uniform":
                 poly.clip_uniform = bool(value)
+            elif key == "feather":
+                poly.feather = max(0.0, min(20.0, float(value)))
             elif key == "clip_scale":
                 poly.clip_scale = max(0.1, min(3.0, float(value)))
             elif key == "z_index":
                 poly.z_index = max(1, min(10, int(value)))
+            elif key == "knockout_punch":
+                poly.knockout_punch = bool(value)
+            elif key == "knockout_depth":
+                poly.knockout_depth = max(1, min(10, int(value)))
             elif key == "fit":
                 poly.fit = value if value in ("stretch", "fit", "crop") else "stretch"
             elif key == "transform_anchor":
@@ -801,9 +807,10 @@ class CompositeRenderer:
         return {
             "id": poly.id, "corners": poly.corners, "opacity": poly.opacity,
             "clip_shape": poly.clip_shape, "clip_scale": poly.clip_scale,
-            "clip_uniform": poly.clip_uniform,
+            "clip_uniform": poly.clip_uniform, "feather": poly.feather,
             "clip_points": poly.clip_points,
             "source_type": poly.source_type, "z_index": poly.z_index, "media": poly.media,
+            "knockout_punch": poly.knockout_punch, "knockout_depth": poly.knockout_depth,
             "webcam_device": poly.webcam_device, "text_content": poly.text_content,
             "media_link": poly.media_link,
             "media_mode": poly.media_mode, "media_rate": poly.media_rate,

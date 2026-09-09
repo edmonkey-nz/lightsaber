@@ -3,6 +3,7 @@
 ![version](https://img.shields.io/badge/version-0.36.0-33e0d0)
 ![status](https://img.shields.io/badge/status-pre--release-orange)
 ![platform](https://img.shields.io/badge/platform-Ubuntu-informational)
+![ai-code](https://img.shields.io/badge/AI%20coded-YES-orange)
 
 **A live visuals toolkit for projection mapping, multiple projectors and live VJing** 
 
@@ -20,7 +21,7 @@ Python backend + web browser for interface runs on a single computer for simple 
   pillar, an odd-shaped screen.
 - **Mask a shape** to a circle, hexagon, triangle, square, or a custom polygon
   you draw yourself. Custom masks warp along with the corner pins, so the silhouette keeps fitting the surface.
-- **Mix content types** on one canvas: generated scenes, video files, live webcam, text, and hard-edged cutouts that black out whatever they overlap.
+- **Mix content types** on one canvas: generated scenes, video files, live webcam, text, and hard-edged cutouts — which either black out whatever they overlap, or punch through it so the shapes behind show through the hole.
 - **Drive one wide canvas across several projectors**, each showing its own slice, with per-output flip and keystone correction.
 - **Modulate anything** — position, scale, rotation, hue, brightness, opacity — from LFOs or a live audio input.
 - **Sequence canvases** into a set, with per-step durations and crossfades.
