@@ -164,6 +164,13 @@
   .group{display:flex;flex-direction:column;gap:10px;min-width:0}
   .group h2{margin:0;font-size:11px;font-weight:500;letter-spacing:.16em;
             text-transform:uppercase;color:var(--dim)}
+  /* Several panes wrap their controls in a plain <div> so one JS toggle can
+     show or hide the lot. That makes the fields GRANDchildren of .group, so
+     .group's own gap no longer reaches them and they stack flush against
+     each other — most visibly in Playback. .stack gives the wrapper the same
+     column gap, so nesting for show/hide costs no spacing. Wrappers carrying
+     it must be toggled to "flex", not "block": `gap` does nothing on a block. */
+  .group .stack{display:flex;flex-direction:column;gap:10px;min-width:0}
   .field{display:flex;align-items:center;gap:10px;min-width:0}
   .field label{flex:0 0 84px;font-size:12px;color:var(--dim)}
   .field input[type=range]{flex:1;min-width:0;accent-color:var(--cyan);height:3px}
@@ -191,7 +198,14 @@
   .fx-subhead button{font-size:11px;padding:3px 8px}
   .fx-card{background:var(--panel2);border:1px solid var(--line);border-radius:8px;
            padding:8px;display:flex;flex-direction:column;gap:6px}
-  .fx-card .row{align-items:center}
+  /* A flex child defaults to min-width:auto, so each of a route row's three
+     selects refuses to shrink below its longest option ("saturation",
+     "position x") and the row pushes out past the panel's right edge rather
+     than fitting. min-width:0 lets them share the width; wrap gives the
+     second row's button strip somewhere to go when even that is not enough. */
+  .fx-card{min-width:0}
+  .fx-card .row{align-items:center;flex-wrap:wrap;min-width:0}
+  .fx-card .row > select,.fx-card .row > input{min-width:0}
   .fx-card select,.fx-card input[type=number]{font-size:12px;padding:4px 6px}
   .fx-meter{height:5px;border-radius:3px;background:var(--panel);position:relative;overflow:hidden}
   .fx-meter .fx-meter-fill{position:absolute;top:0;bottom:0;left:50%;background:var(--cyan);
@@ -464,6 +478,7 @@
   <symbol id="bi-display" viewBox="0 0 16 16"><path d="M0 4s0-2 2-2h12s2 0 2 2v6s0 2-2 2h-4q0 1 .25 1.5H11a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1h.75Q6 13 6 12H2s-2 0-2-2zm1.398-.855a.76.76 0 0 0-.254.302A1.5 1.5 0 0 0 1 4.01V10c0 .325.078.502.145.602q.105.156.302.254a1.5 1.5 0 0 0 .538.143L2.01 11H14c.325 0 .502-.078.602-.145a.76.76 0 0 0 .254-.302 1.5 1.5 0 0 0 .143-.538L15 9.99V4c0-.325-.078-.502-.145-.602a.76.76 0 0 0-.302-.254A1.5 1.5 0 0 0 13.99 3H2c-.325 0-.502.078-.602.145"/></symbol>
   <symbol id="bi-exclamation-triangle-fill" viewBox="0 0 16 16"><path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5m.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2"/></symbol>
   <symbol id="bi-eraser-fill" viewBox="0 0 16 16"><path d="M8.086 2.207a2 2 0 0 1 2.828 0l3.879 3.879a2 2 0 0 1 0 2.828l-5.5 5.5A2 2 0 0 1 7.879 15H5.12a2 2 0 0 1-1.414-.586l-2.5-2.5a2 2 0 0 1 0-2.828zm.66 11.34L3.453 8.254 1.914 9.793a1 1 0 0 0 0 1.414l2.5 2.5a1 1 0 0 0 .707.293H7.88a1 1 0 0 0 .707-.293z"/></symbol>
+  <symbol id="bi-eyedropper" viewBox="0 0 16 16"><path d="M13.354.646a1.207 1.207 0 0 0-1.708 0L8.5 3.793l-.646-.647a.5.5 0 1 0-.708.708L8.293 5l-7.147 7.146A.5.5 0 0 0 1 12.5v1.793l-.854.853a.5.5 0 1 0 .708.707L1.707 15H3.5a.5.5 0 0 0 .354-.146L11 7.707l1.146 1.147a.5.5 0 0 0 .708-.708l-.647-.646 3.147-3.146a1.207 1.207 0 0 0 0-1.708zM2 12.707l7-7L10.293 7l-7 7H2z"/></symbol>
   <symbol id="bi-film" viewBox="0 0 16 16"><path d="M0 1a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1zm4 0v6h8V1zm8 8H4v6h8zM1 1v2h2V1zm2 3H1v2h2zM1 7v2h2V7zm2 3H1v2h2zm-2 3v2h2v-2zM15 1h-2v2h2zm-2 3v2h2V4zm2 3h-2v2h2zm-2 3v2h2v-2zm2 3h-2v2h2z"/></symbol>
   <symbol id="bi-floppy" viewBox="0 0 16 16"><path d="M11 2H9v3h2z"/> <path d="M1.5 0h11.586a1.5 1.5 0 0 1 1.06.44l1.415 1.414A1.5 1.5 0 0 1 16 2.914V14.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 14.5v-13A1.5 1.5 0 0 1 1.5 0M1 1.5v13a.5.5 0 0 0 .5.5H2v-4.5A1.5 1.5 0 0 1 3.5 9h9a1.5 1.5 0 0 1 1.5 1.5V15h.5a.5.5 0 0 0 .5-.5V2.914a.5.5 0 0 0-.146-.353l-1.415-1.415A.5.5 0 0 0 13.086 1H13v4.5A1.5 1.5 0 0 1 11.5 7h-7A1.5 1.5 0 0 1 3 5.5V1H1.5a.5.5 0 0 0-.5.5m3 4a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 .5-.5V1H4zM3 15h10v-4.5a.5.5 0 0 0-.5-.5h-9a.5.5 0 0 0-.5.5z"/></symbol>
   <symbol id="bi-folder-fill" viewBox="0 0 16 16"><path d="M9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.825a2 2 0 0 1-1.991-1.819l-.637-7a2 2 0 0 1 .342-1.31L.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3m-8.322.12q.322-.119.684-.12h5.396l-.707-.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981z"/></symbol>
@@ -802,6 +817,7 @@
         <button id="handle-mask" class="drawer-handle-btn" data-drawer="mask" title="Mask / clipping" aria-label="Mask and clipping"><svg class="bi" aria-hidden="true"><use href="#bi-scissors"/></svg></button>
         <button id="handle-colourize" class="drawer-handle-btn" data-drawer="colourize" title="Colourize" aria-label="Colourize"><svg class="bi" aria-hidden="true"><use href="#bi-palette-fill"/></svg></button>
         <button id="handle-transform" class="drawer-handle-btn" data-drawer="transform" title="Transform — flip and mirror" aria-label="Transform"><svg class="bi" aria-hidden="true"><use href="#bi-arrows-angle-expand"/></svg></button>
+        <button id="handle-key" class="drawer-handle-btn" data-drawer="key" title="Key — chroma / luma keying" aria-label="Key"><svg class="bi" aria-hidden="true"><use href="#bi-eyedropper"/></svg></button>
         <button id="handle-effectors" class="drawer-handle-btn" data-drawer="effectors" title="Effectors — LFO and audio modulation" aria-label="Effectors"><svg class="bi" aria-hidden="true"><use href="#bi-activity"/></svg></button>
         <button id="handle-settings" class="drawer-handle-btn" data-drawer="settings" title="3D Scene Settings — motion and scene camera" aria-label="3D Scene Settings"><svg class="bi" aria-hidden="true"><use href="#bi-badge-3d"/></svg></button>
       </div>
@@ -838,7 +854,7 @@
           <button id="poly-media-src-lib" title="Use a file copied into the app's own media library"><svg class="bi" aria-hidden="true"><use href="#bi-folder-fill"/></svg><span>Library</span></button></div>
         <div class="field" id="poly-media-field" style="display:none"><label>media</label>
           <select id="poly-media"></select></div>
-        <div id="poly-media-link-field" style="display:none">
+        <div id="poly-media-link-field" class="stack" style="display:none">
           <div class="field"><label>path</label>
             <input type="text" id="poly-media-link-path" readonly
                    style="flex:1;min-width:0;font-size:11px" placeholder="no file linked yet"></div>
@@ -897,7 +913,7 @@
       <div class="group" id="g-playback">
         <h2>Playback</h2>
         <div class="hint" id="playback-empty">select a shape filled with a video to trim it — images, scenes, webcams and text have no playhead</div>
-        <div id="poly-playback-field" style="display:none">
+        <div id="poly-playback-field" class="stack" style="display:none">
           <div class="field"><label>playback</label>
             <select id="poly-media-mode" style="flex:1">
               <option value="loop">Loop</option>
@@ -945,7 +961,7 @@
       <div class="group" id="g-mask">
         <h2>Mask / clipping</h2>
         <div class="hint" id="mask-empty" style="display:none">select a shape to mask it</div>
-        <div id="mask-fields">
+        <div id="mask-fields" class="stack">
           <div class="field" id="poly-clip-field"><label>clip shape</label>
             <select id="poly-clip-shape">
               <option value="">none</option>
@@ -990,7 +1006,7 @@
       <div class="group" id="g-monitor">
         <h2>Colourize</h2>
         <div class="hint">applies to the selected shape's monitor output — select any shape (scene, media, webcam or text) to edit</div>
-        <div id="mf-vector-fields">
+        <div id="mf-vector-fields" class="stack">
           <div class="field"><label>glow</label>
             <input type="range" id="mf-glow" min="0" max="1" step="0.01" value="0">
             <span class="val" id="v-mfglow">0.00</span></div>
@@ -1060,6 +1076,44 @@
           <input type="checkbox" id="mf-mirror-predistort" checked> pre-distort
         </label>
         <div class="hint">pre-distort folds the source content before the shape's own corner-warp, so the fold warps along with the shape; unchecked (post-distort) folds the already-warped result instead, so the fold stays straight even on a skewed shape.</div>
+      </div>
+      </div>
+
+      <!-- Key (chroma/luma) — its own pane rather than more rows on Shape
+           settings: it is a stack of six controls you tune together, and it
+           only applies to raster fills, so it would be dead space on most
+           shapes. -->
+      <div id="content-key" class="drawer-content" style="display:none">
+      <div class="group" id="g-key">
+        <h2>Key</h2>
+        <div class="hint" id="key-empty">select a shape filled with a video, image or webcam — a scene or text shape already draws on transparent, so there is nothing to key out</div>
+        <div id="poly-key-block" class="stack" style="display:none">
+          <div class="field"><label>key</label>
+            <select id="poly-key-mode">
+              <option value="off">off</option>
+              <option value="colour">colour (chroma)</option>
+              <option value="luma">luma (key black)</option>
+            </select></div>
+          <div class="field" id="poly-key-colour-field" style="display:none"><label>key colour</label>
+            <input type="color" id="poly-key-color" value="#00b140">
+            <button id="poly-key-pick" title="Click the shape on the canvas to sample its key colour"><svg class="bi" aria-hidden="true"><use href="#bi-eyedropper"/></svg><span>Pick</span></button></div>
+          <div class="field" id="poly-key-tol-field" style="display:none"><label>tolerance</label>
+            <input type="range" id="poly-key-tolerance" min="0" max="1" step="0.01" value="0.65">
+            <span class="val" id="v-polykeytol">0.65</span></div>
+          <div class="field" id="poly-key-soft-field" style="display:none"><label>softness</label>
+            <input type="range" id="poly-key-softness" min="0.01" max="1" step="0.01" value="0.15">
+            <span class="val" id="v-polykeysoft">0.15</span></div>
+          <div class="field" id="poly-key-spill-field" style="display:none"><label>spill</label>
+            <input type="range" id="poly-key-spill" min="0" max="1" step="0.01" value="0.5">
+            <span class="val" id="v-polykeyspill">0.50</span></div>
+          <div class="field" id="poly-key-feather-field" style="display:none"><label>edge feather</label>
+            <input type="range" id="poly-key-feather" min="0" max="20" step="0.5" value="0">
+            <span class="val" id="v-polykeyfeather">off</span></div>
+          <label class="field" id="poly-key-matte-field" style="display:none;gap:8px;font-size:13px">
+            <input type="checkbox" id="poly-key-view-matte">
+            <span>view matte (black &amp; white)</span></label>
+          <div class="hint" id="poly-key-hint" style="display:none"></div>
+        </div>
       </div>
       </div>
 
@@ -1824,6 +1878,140 @@ function featherDevicePx(p, rect){
 // clipping first would cut the content off dead on the mask edge, leaving
 // the outer half of the feather ramp with nothing to fade out.
 let _featherPass = false;
+
+// Chroma / luma key (see canvases.py's key_mode) — ONE SVG filter pass over
+// a shape's already-warped side buffer. `ctx.filter` takes an SVG url(), so
+// the whole keyer is declarative and GPU-accelerated: no WebGL context, no
+// per-pixel JS, and it rides the same filter mechanism buildCssFilter uses.
+//
+// The filter element is built once and its attributes rewritten immediately
+// before each keyed shape draws, so twenty keyed shapes still cost exactly
+// one element. Draws are sequential, so there is no interleaving hazard.
+//
+// Two things the chain has to get right, both of which cost a rewrite to
+// discover:
+//   * The matte is computed on a branch straight off SourceGraphic, NOT off
+//     the spill-suppressed colour — suppressing the key hue first stops the
+//     key colour reading as key at all.
+//   * That branch zeroes its own RGB and is only ever used for its alpha.
+//     Driving alpha to 0 on the COLOUR branch would destroy the colour
+//     (the pipeline is premultiplied) and raising alpha again afterwards
+//     cannot bring it back: every kept pixel comes out black.
+const KEY_FILTER_ID = "ls-key";
+let _keyFilterEls = null;
+function ensureKeyFilter(){
+  if (_keyFilterEls) return _keyFilterEls;
+  const host = document.createElement("div");
+  host.style.cssText = "position:absolute;width:0;height:0;overflow:hidden";
+  // color-interpolation-filters="sRGB" is required: filters default to
+  // linear light, which would silently skew every matrix below.
+  host.innerHTML = `
+    <svg width="0" height="0"><defs>
+      <filter id="${KEY_FILTER_ID}" color-interpolation-filters="sRGB"
+              x="0%" y="0%" width="100%" height="100%">
+        <feColorMatrix id="${KEY_FILTER_ID}-mean" type="matrix" in="SourceGraphic" result="mean"/>
+        <feBlend in="SourceGraphic" in2="mean" mode="darken" result="dark"/>
+        <feComposite id="${KEY_FILTER_ID}-mix" in="dark" in2="SourceGraphic"
+                     operator="arithmetic" k1="0" k2="0" k3="1" k4="0" result="rgb"/>
+        <feColorMatrix id="${KEY_FILTER_ID}-matte" type="matrix" in="SourceGraphic" result="k"/>
+        <feComponentTransfer in="k" result="ramped">
+          <feFuncA id="${KEY_FILTER_ID}-ramp" type="linear" slope="1" intercept="0"/>
+        </feComponentTransfer>
+        <feGaussianBlur id="${KEY_FILTER_ID}-blur" in="ramped" stdDeviation="0" result="m"/>
+        <feComposite in="rgb" in2="m" operator="in" result="keyed"/>
+        <feColorMatrix id="${KEY_FILTER_ID}-view" type="matrix" in="keyed"/>
+      </filter>
+    </defs></svg>`;
+  document.body.appendChild(host);
+  const g = id => host.querySelector("#" + KEY_FILTER_ID + "-" + id);
+  _keyFilterEls = {mean: g("mean"), mix: g("mix"), matte: g("matte"),
+                   ramp: g("ramp"), blur: g("blur"), view: g("view")};
+  return _keyFilterEls;
+}
+// w = 2k-1 on the hue-normalised key colour: the axis that peaks on the key
+// hue and dips on everything else, so w.rgb reads as "how much like the key".
+function keyWeights(hex){
+  const n = parseInt(String(hex || "#00b140").slice(1), 16) || 0;
+  let r = (n >> 16 & 255) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255;
+  const m = Math.max(r, g, b) || 1;
+  return [2 * (r / m) - 1, 2 * (g / m) - 1, 2 * (b / m) - 1];
+}
+// "key channel := mean of the other two", fed to feBlend mode="darken" so it
+// can only ever pull that channel DOWN. A plain weighted blend would RAISE
+// it on colours that have none of it — pure red picked up a green cast.
+function spillMeanMatrix(hex){
+  const n = parseInt(String(hex || "#00b140").slice(1), 16) || 0;
+  const rgb = [n >> 16 & 255, n >> 8 & 255, n & 255];
+  const ch = rgb.indexOf(Math.max(...rgb));
+  const rows = [[1,0,0],[0,1,0],[0,0,1]];
+  rows[ch] = [0,0,0];
+  [0,1,2].filter(i => i !== ch).forEach(o => rows[ch][o] = 0.5);
+  return rows.map(r => r.join(" ") + " 0 0").join("  ") + "  0 0 0 1 0";
+}
+function keyActive(l){
+  const m = l.key_mode || "off";
+  return (m === "colour" || m === "luma")
+      && (l.source_type === "media" || l.source_type === "webcam");
+}
+function configureKeyFilter(l, blurDev, viewMatte){
+  const els = ensureKeyFilter();
+  const tol = Math.max(0, Math.min(1, l.key_tolerance ?? 0.65));
+  const soft = Math.max(0.01, Math.min(1, l.key_softness ?? 0.15));
+  const spill = Math.max(0, Math.min(1, l.key_spill ?? 0.5));
+  if ((l.key_mode || "off") === "luma"){
+    // Key out everything BELOW the threshold, so the ramp climbs with
+    // luminance. No hue to suppress, so spill is bypassed.
+    els.matte.setAttribute("type", "luminanceToAlpha");
+    els.matte.removeAttribute("values");
+    els.ramp.setAttribute("slope", (1 / soft).toFixed(4));
+    els.ramp.setAttribute("intercept", (-tol / soft).toFixed(4));
+    els.mix.setAttribute("k2", "0"); els.mix.setAttribute("k3", "1");
+  } else {
+    const [wr, wg, wb] = keyWeights(l.key_color);
+    els.matte.setAttribute("type", "matrix");
+    els.matte.setAttribute("values",
+      `0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  ${wr.toFixed(4)} ${wg.toFixed(4)} ${wb.toFixed(4)} 0 0`);
+    // Keyed once resemblance passes (1 - tolerance), ramping over `soft`
+    // above that — so tolerance UP keys MORE, which is the way round anyone
+    // reaching for a tolerance slider expects.
+    const thr = 1 - tol;
+    els.ramp.setAttribute("slope", (-1 / soft).toFixed(4));
+    els.ramp.setAttribute("intercept", ((thr + soft) / soft).toFixed(4));
+    els.mean.setAttribute("values", spillMeanMatrix(l.key_color));
+    els.mix.setAttribute("k2", spill.toFixed(4));
+    els.mix.setAttribute("k3", (1 - spill).toFixed(4));
+  }
+  // feGaussianBlur takes a sigma; CSS blur(N) is sigma N/2. Halved so a
+  // "10px" key feather matches a "10px" shape feather.
+  els.blur.setAttribute("stdDeviation", blurDev > 0.1 ? (blurDev / 2).toFixed(3) : "0");
+  els.view.setAttribute("values", viewMatte
+    ? "0 0 0 1 0  0 0 0 1 0  0 0 0 1 0  0 0 0 0 1"     // matte as greyscale
+    : "1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0");   // pass through
+}
+// Filters the buffer in place by drawing it onto itself through the filter
+// with "copy" (a canvas may read itself — same technique as
+// applyMirrorFoldPost). The buffer's own bbox clip bounds the work.
+function applyKeyFilter(buf, l, blurDev, viewMatte){
+  configureKeyFilter(l, blurDev, viewMatte);
+  const g = buf.ctx;
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = "copy";
+  g.globalAlpha = 1;
+  g.filter = `url(#${KEY_FILTER_ID})`;
+  g.drawImage(buf, 0, 0);
+  g.restore();
+}
+function keyFeatherDevicePx(p, rect){
+  const f = Math.max(0, Math.min(20, p.key_feather ?? 0));
+  if (f <= 0) return 0;
+  return f * (rect.w / (_projectRes.width || 1920)) * (_view.zoom || 1);
+}
+// Editor-only tuning aids, never persisted and never sent to an output:
+// which shape is showing its matte, and which is having its key colour
+// picked (the key is suspended for that one so you sample raw pixels).
+let _keyViewMatteFor = null;
+let _keyPickFor = null;
 
 function polyClipActive(poly){
   if (_featherPass) return false;   // see _featherPass
@@ -2932,7 +3120,14 @@ function paintCanvasEditor(){
   // ~feather px outside the mask at falling alpha.
   const drawContentPoly = (surf, poly, layer, liveCorners, liveOpacity) => {
     const f = polyClipAuthored(poly) ? featherDevicePx(poly, rect) : 0;
-    if (f <= 0.1){ paintPolyContent(surf, poly, layer, liveCorners, liveOpacity); return; }
+    // A key needs the same side buffer a feather does — it runs over the
+    // WARPED pixels, which is what keeps per-pixel alpha out of the warp mesh
+    // and its double-compositing skirts (see canvases.py's key_mode).
+    // Suspended entirely while picking the key colour off this shape, so you
+    // sample the raw footage rather than what the key has already removed.
+    const keyed = keyActive(poly) && _keyPickFor !== poly.id;
+    const kf = keyed ? keyFeatherDevicePx(poly, rect) : 0;
+    if (f <= 0.1 && !keyed){ paintPolyContent(surf, poly, layer, liveCorners, liveOpacity); return; }
     // Only this shape's own footprint is touched, not the whole surface. The
     // clear and the blit either side of a feather are full-frame operations
     // by default, and with several feathered shapes on a canvas that cost —
@@ -2943,20 +3138,25 @@ function paintCanvasEditor(){
     const grow = Math.max(1, poly.clip_scale ?? 1);
     const [x0, y0] = _viewToDevice(bb.cx - bb.rx*grow, bb.cy - bb.ry*grow, rect);
     const [x1, y1] = _viewToDevice(bb.cx + bb.rx*grow, bb.cy + bb.ry*grow, rect);
-    const pad = f * 2 + 2;
+    const pad = Math.max(f, kf) * 2 + 2;
     const bx = Math.max(0, Math.floor(x0 - pad)), by = Math.max(0, Math.floor(y0 - pad));
     const bw = Math.min(w, Math.ceil(x1 + pad)) - bx, bh = Math.min(h, Math.ceil(y1 + pad)) - by;
     if (bw <= 0 || bh <= 0) return;               // entirely off-surface
     const fb = openBuffer(getEditorFeatherCanvas, bx, by, bw, bh), fctx = fb.ctx;
-    _featherPass = true;
+    // The hard clip only stands aside for a FEATHER; a key on its own wants
+    // the shape masked normally.
+    _featherPass = f > 0.1;
     try { paintPolyContent(fb, poly, layer, liveCorners, liveOpacity); }
     finally { _featherPass = false; }
-    fctx.globalCompositeOperation = "destination-in";
-    fctx.filter = `blur(${f.toFixed(2)}px)`;
-    polyClipPath(fctx, poly, liveCorners, rect);
-    fctx.fill();
-    fctx.globalCompositeOperation = "source-over";
-    fctx.filter = "none";
+    if (keyed) applyKeyFilter(fb, poly, kf, _keyViewMatteFor === poly.id);
+    if (f > 0.1){
+      fctx.globalCompositeOperation = "destination-in";
+      fctx.filter = `blur(${f.toFixed(2)}px)`;
+      polyClipPath(fctx, poly, liveCorners, rect);
+      fctx.fill();
+      fctx.globalCompositeOperation = "source-over";
+      fctx.filter = "none";
+    }
     closeBuffer(fb, surf.ctx, bx, by, bw, bh);
   };
   // Bounded-depth punches have to be applied to the shapes they cover as
@@ -3448,7 +3648,7 @@ setActiveTab(localStorage.getItem("pw_active_tab") || "tab-canvas");
 // adding a shape), the rest start closed. Opening/closing changes
 // #cv-edit's own rendered width (canvas-col-main is flex:1 in the row),
 // so its backing buffer needs the same nudge switching tabs does.
-const DRAWER_NAMES = ["shapesettings", "playback", "mask", "colourize", "transform", "effectors", "settings"];
+const DRAWER_NAMES = ["shapesettings", "playback", "mask", "colourize", "transform", "key", "effectors", "settings"];
 const DRAWER_DEFAULT_OPEN = { shapesettings: true };
 function setDrawerOpen(name, on){
   if (on) DRAWER_NAMES.forEach(other => {
@@ -3543,6 +3743,26 @@ window.addEventListener("keydown", e => {
 });
 
 cvEdit.addEventListener("mousedown", e => {
+  // Eyedropper (armed from Shape settings > key > Pick) takes the click
+  // before any selection/drag gesture can. Sampled straight off the editor
+  // canvas in device pixels, which is already showing this shape unkeyed.
+  if (_keyPickFor){
+    const r = cvEdit.getBoundingClientRect();
+    const dx = Math.round((e.clientX - r.left) * cvEdit.width / r.width);
+    const dy = Math.round((e.clientY - r.top) * cvEdit.height / r.height);
+    const d = cvCtx.getImageData(dx, dy, 1, 1).data;
+    const hex = "#" + [d[0], d[1], d[2]].map(n => n.toString(16).padStart(2, "0")).join("");
+    const id = _keyPickFor;
+    const poly = polyById(id);
+    if (poly) poly.key_color = hex;
+    send({type:"poly_set", id, key:"key_color", value:hex});
+    _keyPickFor = null;
+    cvEdit.style.cursor = "";
+    renderPolyInspector();
+    paintCanvasEditor();
+    e.preventDefault();
+    return;
+  }
   if (_spaceDown || _tool === "hand"){
     _drag = {type:"pan", startClientX:e.clientX, startClientY:e.clientY, startPanX:_view.panX, startPanY:_view.panY};
     cvEdit.style.cursor = "grabbing";
@@ -3800,7 +4020,7 @@ function renderPolyInspector(){
     $("mask-empty").style.display = "block";
     return;
   }
-  $("mask-fields").style.display = "block";
+  $("mask-fields").style.display = "flex";
   $("mask-empty").style.display = "none";
   $("shapesettings-empty").style.display = "none";
   box.style.display = "flex";
@@ -3818,7 +4038,7 @@ function renderPolyInspector(){
   $("poly-media-src-link").classList.toggle("amber", usingLink);
   $("poly-media-src-lib").classList.toggle("amber", isMedia && !usingLink);
   $("poly-media-field").style.display = (isMedia && !usingLink) ? "flex" : "none";
-  $("poly-media-link-field").style.display = (isMedia && usingLink) ? "block" : "none";
+  $("poly-media-link-field").style.display = (isMedia && usingLink) ? "flex" : "none";
   if (isMedia && usingLink){
     const layer = _lastComposite.find(l => l.id === poly.id) || {};
     const abs = layer.media_link_path || "";
@@ -3841,7 +4061,7 @@ function renderPolyInspector(){
   // Playback controls are video-only — an image has no playhead to trim.
   const ref = isMedia ? mediaRefFor(poly) : null;
   const isVideo = !!ref && _MEDIA_VIDEO_EXT.has((ref.name.split(".").pop()||"").toLowerCase());
-  $("poly-playback-field").style.display = isVideo ? "block" : "none";
+  $("poly-playback-field").style.display = isVideo ? "flex" : "none";
   $("playback-empty").style.display = isVideo ? "none" : "block";
   $("poly-playback-pointer").style.display = isVideo ? "block" : "none";
   if (isVideo) renderPlaybackUI(poly);
@@ -3851,6 +4071,38 @@ function renderPolyInspector(){
   $("poly-text-color-field").style.display = isText ? "flex" : "none";
   $("poly-text-size-field").style.display = isText ? "flex" : "none";
   $("poly-knockout-hint").style.display = isKnockout ? "block" : "none";
+  // Keying only means anything on a raster source (media/webcam) — a scene or
+  // text shape already draws on transparent.
+  const keyable = isMedia || isWebcam;
+  const kmode = keyable ? (poly.key_mode || "off") : "off";
+  $("poly-key-block").style.display = keyable ? "flex" : "none";
+  $("key-empty").style.display = keyable ? "none" : "block";
+  if (document.activeElement !== $("poly-key-mode")) $("poly-key-mode").value = kmode;
+  const kon = kmode !== "off";
+  $("poly-key-colour-field").style.display = kmode === "colour" ? "flex" : "none";
+  $("poly-key-spill-field").style.display = kmode === "colour" ? "flex" : "none";
+  ["tol", "soft", "feather", "matte"].forEach(k =>
+    $("poly-key-" + k + "-field").style.display = kon ? "flex" : "none");
+  $("poly-key-hint").style.display = kon ? "block" : "none";
+  $("poly-key-hint").innerHTML = kmode === "luma"
+    ? "keys out everything <b>darker</b> than the threshold — for footage on a black field. Tolerance is that threshold; softness is the ramp above it."
+    : "tolerance up keys <b>more</b>. Spill pulls the key colour out of edges that survived, so a green fringe loses its cast without tinting anything else. Turn on <i>view matte</i> to set tolerance by eye: white is kept, black is gone.";
+  if (kon){
+    if (document.activeElement !== $("poly-key-color"))
+      $("poly-key-color").value = poly.key_color || "#00b140";
+    $("poly-key-pick").classList.toggle("amber", _keyPickFor === poly.id);
+    const sl = (id, span, field, dflt, fmt) => {
+      if (document.activeElement === $(id)) return;
+      const v = poly[field] ?? dflt;
+      $(id).value = v;
+      $(span).textContent = fmt(v);
+    };
+    sl("poly-key-tolerance", "v-polykeytol", "key_tolerance", 0.65, v => (+v).toFixed(2));
+    sl("poly-key-softness", "v-polykeysoft", "key_softness", 0.15, v => (+v).toFixed(2));
+    sl("poly-key-spill", "v-polykeyspill", "key_spill", 0.5, v => (+v).toFixed(2));
+    sl("poly-key-feather", "v-polykeyfeather", "key_feather", 0, v => +v ? (+v).toFixed(1).replace(/\.0$/, "") + " px" : "off");
+    $("poly-key-view-matte").checked = _keyViewMatteFor === poly.id;
+  }
   const isPunch = isKnockout && !!poly.knockout_punch;
   $("poly-knockout-punch-field").style.display = isKnockout ? "flex" : "none";
   $("poly-knockout-punch-hint").style.display = isKnockout ? "block" : "none";
@@ -4088,6 +4340,58 @@ $("poly-knockout-depth").oninput = () => {
   send({type:"poly_set", id:selectedPolyId, key:"knockout_depth", value:v});
   paintCanvasEditor();
 };
+// Key controls. Optimistic local writes throughout, same reason as
+// clip_uniform: the inspector's own show/hide reads the LOCAL shape, so
+// waiting for the broadcast to echo back would leave rows stale for a frame.
+$("poly-key-mode").onchange = () => {
+  if (!selectedPolyId) return;
+  const v = $("poly-key-mode").value;
+  const poly = polyById(selectedPolyId);
+  if (poly) poly.key_mode = v;
+  if (v === "off"){ _keyViewMatteFor = null; _keyPickFor = null; }
+  send({type:"poly_set", id:selectedPolyId, key:"key_mode", value:v});
+  renderPolyInspector();
+  paintCanvasEditor();
+};
+$("poly-key-color").oninput = () => {
+  if (!selectedPolyId) return;
+  const v = $("poly-key-color").value;
+  const poly = polyById(selectedPolyId);
+  if (poly) poly.key_color = v;
+  send({type:"poly_set", id:selectedPolyId, key:"key_color", value:v});
+  paintCanvasEditor();
+};
+// Eyedropper: arm it, and the next canvas click samples a pixel. The key is
+// suspended for this shape while armed (see drawContentPoly), so what you
+// click is the raw footage rather than whatever the current key already
+// removed — otherwise you'd be sampling a hole.
+$("poly-key-pick").onclick = () => {
+  if (!selectedPolyId) return;
+  _keyPickFor = _keyPickFor === selectedPolyId ? null : selectedPolyId;
+  cvEdit.style.cursor = _keyPickFor ? "crosshair" : "";
+  renderPolyInspector();
+  paintCanvasEditor();
+};
+$("poly-key-view-matte").onchange = () => {
+  if (!selectedPolyId) return;
+  _keyViewMatteFor = $("poly-key-view-matte").checked ? selectedPolyId : null;
+  paintCanvasEditor();
+};
+[["poly-key-tolerance", "v-polykeytol", "key_tolerance", v => v.toFixed(2)],
+ ["poly-key-softness", "v-polykeysoft", "key_softness", v => v.toFixed(2)],
+ ["poly-key-spill", "v-polykeyspill", "key_spill", v => v.toFixed(2)],
+ ["poly-key-feather", "v-polykeyfeather", "key_feather",
+  v => v ? v.toFixed(1).replace(/\.0$/, "") + " px" : "off"]].forEach(([id, span, field, fmt]) => {
+  $(id).oninput = () => {
+    if (!selectedPolyId) return;
+    const v = +$(id).value;
+    const poly = polyById(selectedPolyId);
+    if (poly) poly[field] = v;
+    $(span).textContent = fmt(v);
+    send({type:"poly_set", id:selectedPolyId, key:field, value:v});
+    paintCanvasEditor();
+  };
+});
 $("poly-feather").oninput = () => {
   if (!selectedPolyId) return;
   const v = +$("poly-feather").value;
@@ -4213,7 +4517,7 @@ function updatePolyControlsGate(){
   // (media/webcam/text), unlike brightness/contrast/hue/saturation/
   // colourize/mirror, which the ctx.filter approach applies uniformly.
   const isVectorFill = !!(poly && poly.source_type === "scene");
-  $("mf-vector-fields").style.display = isVectorFill ? "block" : "none";
+  $("mf-vector-fields").style.display = isVectorFill ? "flex" : "none";
   if (!hasContent) return;
   const ov = poly.overrides || {}, l0 = ov.layer0 || {}, cam = ov.camera || {};
   if (isVectorFill){

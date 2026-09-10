@@ -168,6 +168,33 @@ class PolygonSpec:
     # knowing when a mask is aligned to a physical surface — a feathered
     # edge spills slightly past the line you drew.
     feather: float = 0.0
+    # Chroma/luma key (raster sources only — media and webcam; a scene or
+    # text shape already draws on transparent, so there is nothing to key).
+    # "off" | "colour" (key a hue) | "luma" (key black, for footage shot or
+    # generated on a black field).
+    #
+    # Applied AFTER the quad warp, over the shape's own side buffer, as one
+    # SVG filter pass. Keying BEFORE the warp would match pristine source
+    # pixels and give slightly cleaner edges, but it would have to push
+    # per-pixel alpha through the 72-triangle mesh — whose 1.5px overlap
+    # skirts composite twice, turning any soft matte edge into a visible
+    # grid (the same artifact class as the old per-primitive opacity bug).
+    key_mode: str = "off"
+    key_color: str = "#00b140"     # standard chroma-green; ignored in luma mode
+    # How much of the key hue counts as background. UP = key MORE: a pixel
+    # drops out once its resemblance to the key colour passes (1 - tolerance).
+    key_tolerance: float = 0.65
+    key_softness: float = 0.15     # width of the ramp above that threshold
+    # Spill suppression: pulls the key channel down toward the mean of the
+    # other two, never up (a per-channel min — see the renderers' feBlend
+    # "darken"), so a green fringe on a retained edge loses its cast without
+    # tinting reds or neutrals.
+    key_spill: float = 0.5
+    # Softens the MATTE edge, in project-canvas px like `feather` above.
+    # Distinct from `feather`, which softens the shape's mask/outline: this
+    # one blurs the key's own alpha, so it smooths a ragged key rather than
+    # the silhouette.
+    key_feather: float = 0.0
     # Paint order (3): 1-10, 10 = furthest back, 1 = furthest front. Lets a
     # "knockout" cutout shape (see source_type above) sit in front of the
     # shapes it should blank out.
@@ -245,6 +272,12 @@ class PolygonSpec:
             clip_scale=float(d.get("clip_scale", 1.0)),
             clip_uniform=bool(d.get("clip_uniform", False)),
             feather=max(0.0, min(20.0, float(d.get("feather", 0.0)))),
+            key_mode=(d.get("key_mode") if d.get("key_mode") in ("off", "colour", "luma") else "off"),
+            key_color=d.get("key_color", "#00b140"),
+            key_tolerance=max(0.0, min(1.0, float(d.get("key_tolerance", 0.65)))),
+            key_softness=max(0.0, min(1.0, float(d.get("key_softness", 0.15)))),
+            key_spill=max(0.0, min(1.0, float(d.get("key_spill", 0.5)))),
+            key_feather=max(0.0, min(20.0, float(d.get("key_feather", 0.0)))),
             locked=bool(d.get("locked", False)),
             z_index=max(1, min(10, int(d.get("z_index", 5)))),
             knockout_punch=bool(d.get("knockout_punch", False)),

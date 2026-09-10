@@ -407,6 +407,134 @@ function featherDevicePx(l){ const f = featherPx(l); return f > 0 ? f * _feather
 // leaving the outer half of the feather ramp with nothing to fade out.
 let _featherPass = false;
 
+// Chroma / luma key (see canvases.py's key_mode) — ONE SVG filter pass over
+// a shape's already-warped side buffer. `ctx.filter` takes an SVG url(), so
+// the whole keyer is declarative and GPU-accelerated: no WebGL context, no
+// per-pixel JS, and it rides the same filter mechanism buildCssFilter uses.
+//
+// The filter element is built once and its attributes rewritten immediately
+// before each keyed shape draws, so twenty keyed shapes still cost exactly
+// one element. Draws are sequential, so there is no interleaving hazard.
+//
+// Two things the chain has to get right, both of which cost a rewrite to
+// discover:
+//   * The matte is computed on a branch straight off SourceGraphic, NOT off
+//     the spill-suppressed colour — suppressing the key hue first stops the
+//     key colour reading as key at all.
+//   * That branch zeroes its own RGB and is only ever used for its alpha.
+//     Driving alpha to 0 on the COLOUR branch would destroy the colour
+//     (the pipeline is premultiplied) and raising alpha again afterwards
+//     cannot bring it back: every kept pixel comes out black.
+const KEY_FILTER_ID = "ls-key";
+let _keyFilterEls = null;
+function ensureKeyFilter(){
+  if (_keyFilterEls) return _keyFilterEls;
+  const host = document.createElement("div");
+  host.style.cssText = "position:absolute;width:0;height:0;overflow:hidden";
+  // color-interpolation-filters="sRGB" is required: filters default to
+  // linear light, which would silently skew every matrix below.
+  host.innerHTML = `
+    <svg width="0" height="0"><defs>
+      <filter id="${KEY_FILTER_ID}" color-interpolation-filters="sRGB"
+              x="0%" y="0%" width="100%" height="100%">
+        <feColorMatrix id="${KEY_FILTER_ID}-mean" type="matrix" in="SourceGraphic" result="mean"/>
+        <feBlend in="SourceGraphic" in2="mean" mode="darken" result="dark"/>
+        <feComposite id="${KEY_FILTER_ID}-mix" in="dark" in2="SourceGraphic"
+                     operator="arithmetic" k1="0" k2="0" k3="1" k4="0" result="rgb"/>
+        <feColorMatrix id="${KEY_FILTER_ID}-matte" type="matrix" in="SourceGraphic" result="k"/>
+        <feComponentTransfer in="k" result="ramped">
+          <feFuncA id="${KEY_FILTER_ID}-ramp" type="linear" slope="1" intercept="0"/>
+        </feComponentTransfer>
+        <feGaussianBlur id="${KEY_FILTER_ID}-blur" in="ramped" stdDeviation="0" result="m"/>
+        <feComposite in="rgb" in2="m" operator="in" result="keyed"/>
+        <feColorMatrix id="${KEY_FILTER_ID}-view" type="matrix" in="keyed"/>
+      </filter>
+    </defs></svg>`;
+  document.body.appendChild(host);
+  const g = id => host.querySelector("#" + KEY_FILTER_ID + "-" + id);
+  _keyFilterEls = {mean: g("mean"), mix: g("mix"), matte: g("matte"),
+                   ramp: g("ramp"), blur: g("blur"), view: g("view")};
+  return _keyFilterEls;
+}
+// w = 2k-1 on the hue-normalised key colour: the axis that peaks on the key
+// hue and dips on everything else, so w.rgb reads as "how much like the key".
+function keyWeights(hex){
+  const n = parseInt(String(hex || "#00b140").slice(1), 16) || 0;
+  let r = (n >> 16 & 255) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255;
+  const m = Math.max(r, g, b) || 1;
+  return [2 * (r / m) - 1, 2 * (g / m) - 1, 2 * (b / m) - 1];
+}
+// "key channel := mean of the other two", fed to feBlend mode="darken" so it
+// can only ever pull that channel DOWN. A plain weighted blend would RAISE
+// it on colours that have none of it — pure red picked up a green cast.
+function spillMeanMatrix(hex){
+  const n = parseInt(String(hex || "#00b140").slice(1), 16) || 0;
+  const rgb = [n >> 16 & 255, n >> 8 & 255, n & 255];
+  const ch = rgb.indexOf(Math.max(...rgb));
+  const rows = [[1,0,0],[0,1,0],[0,0,1]];
+  rows[ch] = [0,0,0];
+  [0,1,2].filter(i => i !== ch).forEach(o => rows[ch][o] = 0.5);
+  return rows.map(r => r.join(" ") + " 0 0").join("  ") + "  0 0 0 1 0";
+}
+function keyActive(l){
+  const m = l.key_mode || "off";
+  return (m === "colour" || m === "luma")
+      && (l.source_type === "media" || l.source_type === "webcam");
+}
+function configureKeyFilter(l, blurDev, viewMatte){
+  const els = ensureKeyFilter();
+  const tol = Math.max(0, Math.min(1, l.key_tolerance ?? 0.65));
+  const soft = Math.max(0.01, Math.min(1, l.key_softness ?? 0.15));
+  const spill = Math.max(0, Math.min(1, l.key_spill ?? 0.5));
+  if ((l.key_mode || "off") === "luma"){
+    // Key out everything BELOW the threshold, so the ramp climbs with
+    // luminance. No hue to suppress, so spill is bypassed.
+    els.matte.setAttribute("type", "luminanceToAlpha");
+    els.matte.removeAttribute("values");
+    els.ramp.setAttribute("slope", (1 / soft).toFixed(4));
+    els.ramp.setAttribute("intercept", (-tol / soft).toFixed(4));
+    els.mix.setAttribute("k2", "0"); els.mix.setAttribute("k3", "1");
+  } else {
+    const [wr, wg, wb] = keyWeights(l.key_color);
+    els.matte.setAttribute("type", "matrix");
+    els.matte.setAttribute("values",
+      `0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  ${wr.toFixed(4)} ${wg.toFixed(4)} ${wb.toFixed(4)} 0 0`);
+    // Keyed once resemblance passes (1 - tolerance), ramping over `soft`
+    // above that — so tolerance UP keys MORE, which is the way round anyone
+    // reaching for a tolerance slider expects.
+    const thr = 1 - tol;
+    els.ramp.setAttribute("slope", (-1 / soft).toFixed(4));
+    els.ramp.setAttribute("intercept", ((thr + soft) / soft).toFixed(4));
+    els.mean.setAttribute("values", spillMeanMatrix(l.key_color));
+    els.mix.setAttribute("k2", spill.toFixed(4));
+    els.mix.setAttribute("k3", (1 - spill).toFixed(4));
+  }
+  // feGaussianBlur takes a sigma; CSS blur(N) is sigma N/2. Halved so a
+  // "10px" key feather matches a "10px" shape feather.
+  els.blur.setAttribute("stdDeviation", blurDev > 0.1 ? (blurDev / 2).toFixed(3) : "0");
+  els.view.setAttribute("values", viewMatte
+    ? "0 0 0 1 0  0 0 0 1 0  0 0 0 1 0  0 0 0 0 1"     // matte as greyscale
+    : "1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0");   // pass through
+}
+// Filters the buffer in place by drawing it onto itself through the filter
+// with "copy" (a canvas may read itself — same technique as
+// applyMirrorFoldPost). The buffer's own bbox clip bounds the work.
+function applyKeyFilter(buf, l, blurDev, viewMatte){
+  configureKeyFilter(l, blurDev, viewMatte);
+  const g = buf.ctx;
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = "copy";
+  g.globalAlpha = 1;
+  g.filter = `url(#${KEY_FILTER_ID})`;
+  g.drawImage(buf, 0, 0);
+  g.restore();
+}
+function keyFeatherDevicePx(l){
+  const f = Math.max(0, Math.min(20, l.key_feather ?? 0));
+  return f > 0 ? f * _featherScale : 0;
+}
+
 // Guards the degenerate case (clip_shape "custom" on a shape without a real
 // quad) that would otherwise clip to an empty path and blank the shape out.
 function polyClipActive(layer){
@@ -1379,7 +1507,12 @@ function paintComposite(layers, resW, resH, masterGain, active, testPattern, sho
     // outside the mask at falling alpha.
     const drawContentLayer = (surf, layer, opacity) => {
       const f = polyClipAuthored(layer) ? featherDevicePx(layer) : 0;
-      if (f <= 0.1){ paintLayerContent(surf, layer, opacity); return; }
+      // A key needs the same side buffer a feather does — it runs over the
+      // WARPED pixels, which is what keeps per-pixel alpha out of the warp
+      // mesh and its double-compositing skirts (see canvases.py's key_mode).
+      const keyed = keyActive(layer);
+      const kf = keyed ? keyFeatherDevicePx(layer) : 0;
+      if (f <= 0.1 && !keyed){ paintLayerContent(surf, layer, opacity); return; }
       // Only this layer's own footprint is touched, not the whole frame. The
       // clear and the blit either side of a feather are full-frame operations
       // by default, and with several feathered layers that cost — not the
@@ -1388,22 +1521,27 @@ function paintComposite(layers, resW, resH, masterGain, active, testPattern, sho
       // can sit outside the quad at clip_scale > 1.
       const bb = polygonBBoxPx(layer.corners, mapWin);
       const grow = Math.max(1, layer.clip_scale ?? 1);
-      const pad = f * 2 + 2;
+      const pad = Math.max(f, kf) * 2 + 2;
       const bx = Math.max(0, Math.floor(bb.cx - bb.rx*grow - pad));
       const by = Math.max(0, Math.floor(bb.cy - bb.ry*grow - pad));
       const bw = Math.min(w, Math.ceil(bb.cx + bb.rx*grow + pad)) - bx;
       const bh = Math.min(h, Math.ceil(bb.cy + bb.ry*grow + pad)) - by;
       if (bw <= 0 || bh <= 0) return;              // entirely off-screen
       const fb = openBuffer(getFeatherCanvas(w, h), w, h, bx, by, bw, bh), fctx = fb.ctx;
-      _featherPass = true;
+      // The hard clip only stands aside for a FEATHER; a key on its own wants
+      // the shape masked normally.
+      _featherPass = f > 0.1;
       try { paintLayerContent(fb, layer, opacity); }
       finally { _featherPass = false; }
-      fctx.globalCompositeOperation = "destination-in";
-      fctx.filter = `blur(${f.toFixed(2)}px)`;
-      polyClipPath(fctx, layer, layer.corners, mapWin);
-      fctx.fill();
-      fctx.globalCompositeOperation = "source-over";
-      fctx.filter = "none";
+      if (keyed) applyKeyFilter(fb, layer, kf, false);   // matte view is editor-only
+      if (f > 0.1){
+        fctx.globalCompositeOperation = "destination-in";
+        fctx.filter = `blur(${f.toFixed(2)}px)`;
+        polyClipPath(fctx, layer, layer.corners, mapWin);
+        fctx.fill();
+        fctx.globalCompositeOperation = "source-over";
+        fctx.filter = "none";
+      }
       blitBuffer(surf.ctx, fb, bx, by, bw, bh);
     };
     // Bounded-depth punches (see punchBand) have to be applied to the layers

@@ -261,6 +261,39 @@ box, which is a large win only under software rasterisation and neutral on a
 GPU; it is kept for the software case. See ARCHITECTURE.md's GPU-cost list,
 items 4-5, including why a headless browser cannot measure any of this.
 
+**Key** (`key_mode`, raster sources only — media and webcam) removes a colour.
+`colour` keys a hue; `luma` keys everything darker than a threshold, for
+footage on a black field. `key_tolerance` sets where the matte breaks (UP keys
+MORE — a pixel drops once its resemblance to `key_color` passes
+`1 - tolerance`), `key_softness` is the ramp above that, `key_spill` pulls the
+key channel down toward the mean of the other two, and `key_feather` blurs the
+matte in project-canvas px.
+
+It is one SVG filter applied through `ctx.filter` — declarative, GPU-accelerated,
+no WebGL context and no per-pixel JavaScript, riding the same filter mechanism
+`buildCssFilter` already uses. Three things in that chain are load-bearing:
+
+- The filter carries `color-interpolation-filters="sRGB"`. Filters default to
+  linear light, which silently skews every matrix in the chain.
+- The matte is computed on a branch straight off `SourceGraphic`, **not** off
+  the spill-suppressed colour — suppressing the key hue first stops the key
+  colour reading as key at all.
+- That branch zeroes its own RGB and is used only for its alpha. Driving alpha
+  to 0 on the *colour* branch destroys the colour, because the pipeline is
+  premultiplied, and raising alpha again afterwards cannot recover it: every
+  kept pixel comes out black.
+- Spill uses `feBlend mode="darken"` (a per-channel min) against a "key channel
+  := mean of the other two" version, so it can only ever pull that channel
+  down. A plain weighted blend raises it on colours that have none of it —
+  pure red picked up a green cast.
+
+The key runs **after** the quad warp, over the shape's side buffer, alongside
+the feather. Keying before the warp would match pristine source pixels and give
+slightly cleaner edges, but it would push per-pixel alpha through the
+72-triangle mesh, whose 1.5px overlap skirts composite twice — turning any soft
+matte edge into a visible grid (the same artifact class as the per-primitive
+opacity bug). Cost on hardware is ~0.1ms per keyed shape.
+
 **Fit** controls how content of one aspect fills a quad of another —
 `stretch`, `fit` (letterbox) or `crop`.
 

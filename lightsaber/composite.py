@@ -549,6 +549,14 @@ class CompositeRenderer:
                 poly.clip_uniform = bool(value)
             elif key == "feather":
                 poly.feather = max(0.0, min(20.0, float(value)))
+            elif key == "key_mode":
+                poly.key_mode = value if value in ("off", "colour", "luma") else "off"
+            elif key == "key_color":
+                poly.key_color = str(value or "#00b140")
+            elif key in ("key_tolerance", "key_softness", "key_spill"):
+                setattr(poly, key, max(0.0, min(1.0, float(value))))
+            elif key == "key_feather":
+                poly.key_feather = max(0.0, min(20.0, float(value)))
             elif key == "clip_scale":
                 poly.clip_scale = max(0.1, min(3.0, float(value)))
             elif key == "z_index":
@@ -688,7 +696,28 @@ class CompositeRenderer:
         self._enqueue(apply)
 
     def effector_route_add(self):
-        self._enqueue(lambda: self.canvases.current.effectors.routes.append(EffectorRoute()))
+        def apply():
+            from .effectors import AUDIO_PSEUDO_SOURCE_IDS
+            canvas = self.canvases.current
+            fx = canvas.effectors
+            route = EffectorRoute()
+            # A new route arrives pointed at something rather than at nothing.
+            # EffectorRoute's own defaults are empty strings, which match no
+            # <option> in either dropdown, so an unset route rendered as two
+            # BLANK selects — that reads as broken rather than as "pick
+            # something", and it needs three interactions before it does
+            # anything at all.
+            #
+            # A source the user actually built is the likely intent (you add
+            # an LFO, then a route for it), so prefer that over the audio
+            # bands, which the dropdown happens to list first but which do
+            # nothing until audio input is running.
+            route.source_id = (fx.sources[0].id if fx.sources
+                               else AUDIO_PSEUDO_SOURCE_IDS["low"])
+            if canvas.polygons:
+                route.target_poly = canvas.polygons[0].id
+            fx.routes.append(route)
+        self._enqueue(apply)
 
     def effector_route_remove(self, route_id: str):
         def apply():
@@ -808,6 +837,9 @@ class CompositeRenderer:
             "id": poly.id, "corners": poly.corners, "opacity": poly.opacity,
             "clip_shape": poly.clip_shape, "clip_scale": poly.clip_scale,
             "clip_uniform": poly.clip_uniform, "feather": poly.feather,
+            "key_mode": poly.key_mode, "key_color": poly.key_color,
+            "key_tolerance": poly.key_tolerance, "key_softness": poly.key_softness,
+            "key_spill": poly.key_spill, "key_feather": poly.key_feather,
             "clip_points": poly.clip_points,
             "source_type": poly.source_type, "z_index": poly.z_index, "media": poly.media,
             "knockout_punch": poly.knockout_punch, "knockout_depth": poly.knockout_depth,

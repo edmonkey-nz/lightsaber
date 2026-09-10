@@ -4,6 +4,55 @@ All notable changes to Lightsaber are logged here. This project is **pre-1.0
 and under active development** — expect breaking changes to scene JSON shape
 and APIs between minor versions until a 1.0 release.
 
+## [Unreleased]
+
+### Added — chroma / luma keying
+- **Media and webcam shapes can key out a colour**, with spill suppression
+  and a soft matte edge. Its own **Key** pane (eyedropper icon, after
+  Transform): mode (off / colour / luma),
+  key colour with a **click-the-canvas eyedropper**, tolerance, softness,
+  spill, edge feather, and a **view matte** toggle for setting tolerance by
+  eye (white kept, black gone). Off by default.
+- **Tolerance up keys more** - a pixel drops once its resemblance to the key
+  colour passes (1 - tolerance), ramping over `softness` above that.
+- **Luma mode keys out everything darker than the threshold**, for footage
+  shot or generated on a black field.
+- **Spill only ever pulls the key channel down**, toward the mean of the
+  other two (an feBlend "darken"), so a green fringe loses its cast while
+  reds and neutrals are untouched.
+- Implemented as a single SVG filter through `ctx.filter` - no WebGL context
+  and no per-pixel JavaScript. Measured on hardware at ~0.1ms per keyed
+  shape.
+- Runs **after** the quad warp, over the shape's own side buffer. Keying
+  before the warp would match pristine pixels and give slightly cleaner
+  edges, but it would push per-pixel alpha through the 72-triangle mesh,
+  whose overlap skirts composite twice and would turn any soft matte edge
+  into a visible grid.
+- Editor-only, never saved and never sent to an output: the matte view, and
+  the eyedropper's suspension of the key so you sample raw footage rather
+  than the hole the current key has already made.
+
+### Changed
+- **A new effector route arrives pointed at something.** It used to be
+  created with empty source and target, which matched no option in either
+  dropdown, so it rendered as two blank selects - reading as broken rather
+  than as "pick something", and needing three interactions before it did
+  anything. It now lands on the first source and the first shape. A source
+  you built is preferred over the audio bands, which the dropdown lists
+  first but which do nothing until audio input is running.
+
+### Fixed
+- **Pane controls stacked flush against each other.** Several panes wrap
+  their controls in a plain `<div>` so one toggle can show or hide the lot,
+  which made the fields grandchildren of `.group` and put them out of reach
+  of its own row gap - most visibly in Playback. Affected Playback,
+  Mask/clipping, Colourize and the linked-media block.
+- **Effector route rows pushed off the right of the panel.** A flex child
+  defaults to `min-width:auto`, so each of a route's three selects refused to
+  shrink below its longest option ("saturation", "position x") and the row
+  overflowed instead of fitting. They shrink now, and the row wraps rather
+  than overflowing when even that isn't enough.
+
 ## [0.37.0]
 
 ### Added — punch-through cutouts
