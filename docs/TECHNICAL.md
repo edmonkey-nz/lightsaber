@@ -255,8 +255,8 @@ fade), then masked by one blurred fill through `destination-in`.
 
 This replaces an earlier feathered clip that was removed for cost: that one
 allocated an offscreen canvas per shape per tick and blurred the *content*.
-Cost on hardware is ~0.04ms per feathered shape, flat in blur radius — it
-does not need rationing. The buffer is also clipped to the shape's bounding
+Cost on hardware is ~0.45-0.66ms per feathered shape (measured with a GPU
+sync; an unsynced measurement understates it roughly tenfold). The buffer is also clipped to the shape's bounding
 box, which is a large win only under software rasterisation and neutral on a
 GPU; it is kept for the software case. See ARCHITECTURE.md's GPU-cost list,
 items 4-5, including why a headless browser cannot measure any of this.
@@ -292,7 +292,46 @@ the feather. Keying before the warp would match pristine source pixels and give
 slightly cleaner edges, but it would push per-pixel alpha through the
 72-triangle mesh, whose 1.5px overlap skirts composite twice — turning any soft
 matte edge into a visible grid (the same artifact class as the per-primitive
-opacity bug). Cost on hardware is ~0.1ms per keyed shape.
+opacity bug). Cost on hardware is ~0.68ms per keyed shape, measured with a GPU sync —
+see ARCHITECTURE.md's GPU-cost list, item 4, on why an unsynced number is
+about ten times too optimistic.
+
+**FX** are post-warp treatments applied over the shape's side buffer next to
+the key, in a fixed order: `fx_pixelate`, then `fx_solarize` -> `fx_posterize`
+-> `fx_invert` as one tone curve, then `fx_duotone` mapping the result onto
+`fx_duotone_dark`/`fx_duotone_light`. They run after the warp, so they apply to
+any fill — scene, media, webcam or text — and only a cutout is excluded.
+
+`fx_pixelate` is a block size in project-canvas px and is **not** a filter: it
+is a downscale and redraw with `imageSmoothingEnabled=false`, which measured
+cheaper than every filter primitive tried. The other four are one
+`feComponentTransfer` plus, for duotone, a luminance matrix and a mix — see
+ARCHITECTURE.md's GPU-cost list for why they share a single lookup table and
+why edge-detect and emboss are deliberately absent (`feConvolveMatrix` and
+`feMorphology` are CPU fallbacks in Chromium, at +108ms and +61ms per
+full-size shape).
+
+One trap worth naming: an `feFunc*` takes **`tableValues`**, not `values`.
+`values` is `feColorMatrix`'s attribute; setting it on an `feFunc` fails
+silently, which presents as the tone curve doing nothing and duotone coming
+out greyscale.
+
+**Kaleidoscope** (`mirror_kaleido`, an `overrides` key alongside the mirror
+family) repeats the wedge between 0 and 360/n degrees of the already-drawn
+shape around its own centre. 0/1 = off, 2-10 = segment count.
+
+An **even** count alternates mirrored wedges, which is what lets a kaleidoscope
+close seamlessly all the way round. An **odd** count cannot — the first and
+last wedge would meet with the same handedness — so odd counts repeat by
+rotation only rather than leaving one visibly mismatched seam. The mapping is:
+even wedge `i` shows `source(t)` rotated by `i*step`; odd wedge `i` shows
+`source(step - t)`, reached by rotating `(i+1)*step` and reflecting.
+
+It runs on the side buffer after the key and FX, and is clipped to the shape's
+own quad — rotating a wedge otherwise throws content into the bbox corners a
+rotated quad does not cover, painting past the surface the shape was aligned
+to. It needs a snapshot canvas because the wedges are drawn back over the same
+buffer they are read from.
 
 **Fit** controls how content of one aspect fills a quad of another —
 `stretch`, `fit` (letterbox) or `crop`.

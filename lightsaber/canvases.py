@@ -195,6 +195,24 @@ class PolygonSpec:
     # one blurs the key's own alpha, so it smooths a ragged key rather than
     # the silhouette.
     key_feather: float = 0.0
+    # FX — cheap post-warp treatments, applied over the shape's own side
+    # buffer alongside the key. All of these are per-pixel and content
+    # agnostic, so they work on any fill, not just raster ones.
+    #
+    # Order is fixed and deliberate: pixelate, then solarise -> posterise ->
+    # invert (one shared tone curve), then duotone. Tone before duotone so
+    # posterising bands the luminance the duotone then maps.
+    #
+    # Pixelate is a block size in project-canvas px (0 = off) and is NOT a
+    # filter — it is a downscale-and-redraw with smoothing off, which
+    # measured cheaper than any filter primitive.
+    fx_pixelate: float = 0.0
+    fx_posterize: int = 0          # 0 = off, else 2-16 levels per channel
+    fx_solarize: float = 0.0       # 0-1, blends toward an inverted-highlights curve
+    fx_invert: float = 0.0         # 0-1
+    fx_duotone: float = 0.0        # 0-1 mix; maps luminance onto the two colours below
+    fx_duotone_dark: str = "#0a1a2f"
+    fx_duotone_light: str = "#ffd166"
     # Paint order (3): 1-10, 10 = furthest back, 1 = furthest front. Lets a
     # "knockout" cutout shape (see source_type above) sit in front of the
     # shapes it should blank out.
@@ -278,6 +296,13 @@ class PolygonSpec:
             key_softness=max(0.0, min(1.0, float(d.get("key_softness", 0.15)))),
             key_spill=max(0.0, min(1.0, float(d.get("key_spill", 0.5)))),
             key_feather=max(0.0, min(20.0, float(d.get("key_feather", 0.0)))),
+            fx_pixelate=max(0.0, min(64.0, float(d.get("fx_pixelate", 0.0)))),
+            fx_posterize=(0 if not d.get("fx_posterize") else max(2, min(16, int(d["fx_posterize"])))),
+            fx_solarize=max(0.0, min(1.0, float(d.get("fx_solarize", 0.0)))),
+            fx_invert=max(0.0, min(1.0, float(d.get("fx_invert", 0.0)))),
+            fx_duotone=max(0.0, min(1.0, float(d.get("fx_duotone", 0.0)))),
+            fx_duotone_dark=d.get("fx_duotone_dark", "#0a1a2f"),
+            fx_duotone_light=d.get("fx_duotone_light", "#ffd166"),
             locked=bool(d.get("locked", False)),
             z_index=max(1, min(10, int(d.get("z_index", 5)))),
             knockout_punch=bool(d.get("knockout_punch", False)),

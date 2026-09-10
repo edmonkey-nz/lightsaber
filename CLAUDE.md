@@ -18,9 +18,19 @@ a registered root are ever served), `--diag`, `--model`.
 Ruff and Black are configured in `pyproject.toml` (line-length 100, `py310`) but are
 **not installed in the venv** — install them before claiming a lint pass.
 
-**There is no test suite.** No pytest, no test files, no CI. Changes are verified by
-driving the running app (see below). Do not report a change as verified on the
-strength of `node --check` or a Python import alone — neither exercises a render path.
+**Regression suites live in `test-scripts/`** and drive the real app in a real
+browser — there is no unit-test layer, because what breaks here are render paths.
+Run them after any change to a draw path, the model, or the inspector:
+
+```bash
+.venv/bin/python test-scripts/run.py              # render + ui + perf, ~80s
+.venv/bin/python test-scripts/run.py --suite render
+```
+
+They build their own throwaway sandbox, so they never touch real projects. Failures
+print an expectation and a hint naming where to look. There is no CI. Do not report a
+change as verified on the strength of `node --check` or a Python import alone —
+neither exercises a render path.
 
 ## Verifying a change
 
@@ -28,12 +38,11 @@ strength of `node --check` or a Python import alone — neither exercises a rend
 happily pass a listener bound to a deleted element, which throws at load and kills the
 entire script. Actually run the app.
 
-Drive it with Playwright against a **sandbox copy**, never the user's live server:
-`run.py` resolves `scenes/`, `projects/`, `media/` and `settings.json` relative to the
-repo root, so copying `lightsaber/` + `run.py` into a scratch dir with empty
-`projects/ scenes/ media/` and a `{}` settings.json gives full isolation on another port.
+For anything the suites don't cover, drive it with Playwright against a **sandbox
+copy**, never the user's live server — `harness.build_sandbox()` does this, and
+`test-scripts/README.md` explains why it is not optional.
 
-Three traps, each of which has cost real time here:
+Three traps the harness already handles, each of which has cost real time here:
 
 - **The server is long-lived and holds canvas state in memory.** Successive test runs
   accumulate shapes on the same canvas, and stale shapes silently corrupt pixel

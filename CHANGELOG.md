@@ -4,7 +4,52 @@ All notable changes to Lightsaber are logged here. This project is **pre-1.0
 and under active development** — expect breaking changes to scene JSON shape
 and APIs between minor versions until a 1.0 release.
 
-## [Unreleased]
+## [0.38.0]
+
+### Added — regression suites (future.md 54)
+- **`test-scripts/`**: one command drives the real app in a real browser and
+  checks real pixels — punch depths, chroma/luma key, all five FX, feather
+  ramps, kaleidoscope symmetry, every pane and control, and synced frame
+  costs. 57 checks, ~80s, non-zero exit on failure, `--json` for tooling.
+- Each failure prints the expectation **and a hint naming the likely cause**,
+  so the output is worth pasting to a person or an agent as-is.
+- The harness builds a throwaway sandbox on a free port, so a run can never
+  touch real projects; it clears the canvas between suites, syncs the GPU
+  before timing, and runs headed. Those are the three mistakes that have
+  produced false results here before.
+
+### Added — kaleidoscope
+- **`Transform > kaleidoscope`**, under the mirror folds: 0-10 segments
+  repeated around the shape's own centre. An **even** count alternates
+  mirrored wedges — a true kaleidoscope that closes seamlessly; an **odd**
+  count can't close that way, so it repeats by rotation instead of leaving a
+  mismatched seam. The slider label says which you're getting ("6 mir",
+  "3 rot").
+- Clipped to the shape's own quad, so a rotated wedge can never paint past
+  the surface the shape was aligned to.
+- ~0.7ms/shape at 2 segments, ~1.2ms at 10 — the segment count is nearly
+  free, because each extra wedge covers proportionally less area.
+
+### Changed
+- The three verbatim copies of the per-shape `overrides` payload in
+  `composite.py` are now one `_poly_override_payload` helper. Adding a key
+  meant three edits, and missing one showed up as the value silently never
+  reaching that one kind of shape.
+
+### Added — FX pane
+- A new **FX** pane (stars icon, after Key) with five treatments, each chosen
+  after measuring it on hardware: **pixelate**, **posterize**, **solarize**,
+  **invert** and **duotone** (two colours with a swap button), plus Reset FX.
+- Applied after the warp, so they treat **any** fill - a scene or text shape
+  as readily as video or webcam. Only a cutout is excluded.
+- Solarize, posterize and invert compose into a single lookup table, so
+  stacking all three costs barely more than one. Synced measurements, 8
+  shapes: pixelate ~0.95ms/shape, tone curve ~0.36ms/shape, duotone
+  ~0.65ms/shape.
+- **Not included, on measurement:** edge detect and emboss
+  (`feConvolveMatrix`) and dilate/erode (`feMorphology`) are CPU fallbacks in
+  Chromium at +108ms and +61ms per full-size shape.
+
 
 ### Added — chroma / luma keying
 - **Media and webcam shapes can key out a colour**, with spill suppression
@@ -21,7 +66,7 @@ and APIs between minor versions until a 1.0 release.
   other two (an feBlend "darken"), so a green fringe loses its cast while
   reds and neutrals are untouched.
 - Implemented as a single SVG filter through `ctx.filter` - no WebGL context
-  and no per-pixel JavaScript. Measured on hardware at ~0.1ms per keyed
+  and no per-pixel JavaScript. Measured on hardware at ~0.68ms per keyed
   shape.
 - Runs **after** the quad warp, over the shape's own side buffer. Keying
   before the warp would match pristine pixels and give slightly cleaner
@@ -81,7 +126,7 @@ and APIs between minor versions until a 1.0 release.
 - 0 by default, so every existing shape renders exactly as before. This
   brings back a soft edge that was removed for cost long ago; the new one
   blurs a single mask fill rather than the content. Measured on hardware at
-  ~0.04ms per feathered shape - the old one stalled the render loop.
+  ~0.5ms per feathered shape - the old one stalled the render loop.
 
 ### Changed
 - The developer docs moved into **`docs/`** (ARCHITECTURE, TECHNICAL,

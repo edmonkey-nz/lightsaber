@@ -648,7 +648,7 @@ apply.
      measure before assuming smaller means faster. The optimisation was
      written, verified correct, measured, and then deleted.
 
-     **Re-confirmed by the feather work (see 4-5).** Bounding a filtered
+     **Re-confirmed by the feather work (see 5-7).** Bounding a filtered
      draw to its bbox looked like a decisive 4x win — under software
      rasterisation. On the GPU it measured exactly neutral, same as here.
      Two independent attempts, same verdict: **region bounds do not pay on
@@ -663,14 +663,50 @@ apply.
      incremental. It also means micro-optimising the Canvas2D path is close
      to pointless: nothing short of removing the per-triangle draw calls
      moves that floor.
-  4. **Feathered masks/cutouts are nearly free on hardware, and the
-     software number is a 12x overstatement.** A feather blurs one mask fill
-     through `destination-in`. 8 masked shapes, editor paint: **0.5ms with
-     feather off, ~0.8ms with feather on** — about 0.04ms per feathered
-     shape, flat in blur radius. The same scene under software
-     rasterisation reads 1.8ms / 10ms, which is what made this look
-     expensive enough to nearly get the feature cut.
-  5. **Measure headed, or you are measuring SwiftShader.** Headless
+  4. **Canvas GPU work is ASYNCHRONOUS — time it with a readback or every
+     filter looks free.** `performance.now()` around a paint measures command
+     *submission*, not execution; in a tight loop the queue runs ahead and a
+     4-octave `feTurbulence` clocks the same as a posterize. Force a sync with
+     a 1px `getImageData` before stopping the clock. This invalidated a first
+     pass of every number below by roughly 10x. Async is a lower bound and
+     synced (which serialises work the GPU would otherwise pipeline) is an
+     upper bound; the honest signal is the *delta* between variants measured
+     the same way.
+  5. **Feather and key cost roughly half a millisecond per shape.** Synced,
+     8 masked shapes: feather off 5.0ms, feather 12 8.6ms, feather 20 10.3ms
+     — about **0.45-0.66ms per feathered shape**. Chroma key over the same
+     8: off 4.4ms, keyed 9.8ms — about **0.68ms per keyed shape**, luma
+     slightly cheaper. Affordable for a handful of shapes, not free, and
+     worth watching if a show feathers or keys most of its layers.
+  6. **SVG filter primitives are NOT uniformly accelerated, and two of them
+     are traps.** One 960x540 shape, synced, cost over a no-filter baseline:
+     `feComponentTransfer` posterize +3.0ms and a luminance duotone +3.4ms;
+     RGB-split (offsets + blends) +16.4ms; bloom (`feGaussianBlur` +
+     composite) +18.2ms; `feTurbulence`+`feDisplacementMap` +25.2ms at 2
+     octaves, +37.6ms at 4. Then the cliff: **`feMorphology` +61.4ms and
+     `feConvolveMatrix` +107.6ms** — edge-detect and emboss kernels are a
+     CPU fallback in Chromium and are unusable per-frame. A pure-canvas
+     pixelate (downscale, redraw with `imageSmoothingEnabled=false`) costs
+     2.1ms *total*, cheaper than any filter — not everything wants to be one.
+
+     In the app, synced, 8 shapes: pixelate ~0.95ms/shape, duotone
+     ~0.65ms/shape, and the whole tone curve ~0.36ms/shape. That last number
+     is the useful one: **solarise, posterise and invert are all per-channel
+     1-D curves, so they compose into a single `feComponentTransfer` lookup
+     table** and adding solarise+invert on top of posterise costs +0.4ms
+     across all 8 shapes rather than another two full primitives.
+
+     The kaleidoscope is the counter-example to item 3 worth knowing: it is
+     n clipped `drawImage` calls per shape, yet 8 shapes cost 13.1ms at 2
+     segments and only 16.9ms at 10. Draw-call count is the wall when each
+     call covers the same area — here each extra wedge covers 1/n of it, so
+     total fill is flat and the side-buffer round trip (snapshot, clear,
+     blit) is what actually costs. Roughly 0.7ms/shape at 2 segments,
+     1.2ms at 10. Posterise
+     uses `type="discrete"` and the other two are folded into the band
+     *values*, so the bands stay hard however the curve is bent. Any future
+     per-channel effect should join that table rather than add a primitive.
+  7. **Measure headed, or you are measuring SwiftShader.** Headless
      Chromium falls back to software rendering *even with*
      `--ignore-gpu-blocklist --enable-gpu-rasterization`; only
      `headless=False` on the real display gets the GPU. Confirm with

@@ -557,6 +557,14 @@ class CompositeRenderer:
                 setattr(poly, key, max(0.0, min(1.0, float(value))))
             elif key == "key_feather":
                 poly.key_feather = max(0.0, min(20.0, float(value)))
+            elif key == "fx_pixelate":
+                poly.fx_pixelate = max(0.0, min(64.0, float(value)))
+            elif key == "fx_posterize":
+                poly.fx_posterize = 0 if not value else max(2, min(16, int(value)))
+            elif key in ("fx_solarize", "fx_invert", "fx_duotone"):
+                setattr(poly, key, max(0.0, min(1.0, float(value))))
+            elif key in ("fx_duotone_dark", "fx_duotone_light"):
+                setattr(poly, key, str(value or "#000000"))
             elif key == "clip_scale":
                 poly.clip_scale = max(0.1, min(3.0, float(value)))
             elif key == "z_index":
@@ -606,6 +614,15 @@ class CompositeRenderer:
                 poly.overrides[key] = max(0.0, min(1.0, float(value)))
             elif key == "mirror_pre_distort":
                 poly.overrides[key] = bool(value)
+            elif key == "mirror_kaleido":
+                # Radial symmetry, the last step of the mirror family: 0/1 =
+                # off, 2-10 = that many wedges repeated around the shape's
+                # centre. An EVEN count alternates mirrored wedges (a real
+                # kaleidoscope, seamless all the way round); an odd count
+                # cannot close that way, so it repeats by rotation only
+                # rather than leaving one visibly mismatched seam.
+                n = int(value)
+                poly.overrides[key] = 0 if n < 2 else min(10, n)
             elif key == "scale":
                 # Static authored scale (Transform drawer) — the BASE an
                 # effector "scale" route then multiplies, see
@@ -840,6 +857,10 @@ class CompositeRenderer:
             "key_mode": poly.key_mode, "key_color": poly.key_color,
             "key_tolerance": poly.key_tolerance, "key_softness": poly.key_softness,
             "key_spill": poly.key_spill, "key_feather": poly.key_feather,
+            "fx_pixelate": poly.fx_pixelate, "fx_posterize": poly.fx_posterize,
+            "fx_solarize": poly.fx_solarize, "fx_invert": poly.fx_invert,
+            "fx_duotone": poly.fx_duotone, "fx_duotone_dark": poly.fx_duotone_dark,
+            "fx_duotone_light": poly.fx_duotone_light,
             "clip_points": poly.clip_points,
             "source_type": poly.source_type, "z_index": poly.z_index, "media": poly.media,
             "knockout_punch": poly.knockout_punch, "knockout_depth": poly.knockout_depth,
@@ -858,6 +879,32 @@ class CompositeRenderer:
             "media_link_ok": bool(poly.media_link) and link_exists(poly.media_link),
             "text_color": poly.text_color, "text_size": poly.text_size,
             "fit": poly.fit, "locked": poly.locked,
+        }
+
+    @staticmethod
+    def _poly_override_payload(ov: dict) -> dict:
+        """The `overrides` keys the two renderers read straight off a layer.
+
+        Factored out because this exact dict was built verbatim at three call
+        sites (media/raster, blackout, and the rendered-scene path). Adding one
+        key meant three edits, and missing one showed up as the value silently
+        never reaching that one kind of shape — the same failure mode
+        _poly_layer_base exists to prevent for the spec's own fields.
+        """
+        return {
+            "glow": float(ov.get("glow", 0.0)), "trail": float(ov.get("trail", 0.0)),
+            "mirror_x": bool(ov.get("mirror_x", False)),
+            "mirror_y": bool(ov.get("mirror_y", False)),
+            "mirror_x_point": float(ov.get("mirror_x_point", 1.0)),
+            "mirror_y_point": float(ov.get("mirror_y_point", 1.0)),
+            "mirror_pre_distort": bool(ov.get("mirror_pre_distort", True)),
+            "mirror_kaleido": int(ov.get("mirror_kaleido", 0)),
+            "brightness": float(ov.get("brightness", 1.0)),
+            "contrast": float(ov.get("contrast", 1.0)),
+            "hue": float(ov.get("hue", 0.0)),
+            "saturation": float(ov.get("saturation", 1.0)),
+            "colourize_amount": float(ov.get("colourize_amount", 0.0)),
+            "colourize_hue": float(ov.get("colourize_hue", 0.0)),
         }
 
     def _update_effector_meters(self, t: float):
@@ -1106,15 +1153,7 @@ class CompositeRenderer:
                         **self._poly_layer_base(p),
                         "corners": corners,
                         "missing": False, "is_3d": False,
-                        "glow": float(ov.get("glow", 0.0)), "trail": float(ov.get("trail", 0.0)),
-                        "mirror_x": bool(ov.get("mirror_x", False)), "mirror_y": bool(ov.get("mirror_y", False)),
-                        "mirror_x_point": float(ov.get("mirror_x_point", 1.0)),
-                        "mirror_y_point": float(ov.get("mirror_y_point", 1.0)),
-                        "mirror_pre_distort": bool(ov.get("mirror_pre_distort", True)),
-                        "brightness": float(ov.get("brightness", 1.0)), "contrast": float(ov.get("contrast", 1.0)),
-                        "hue": float(ov.get("hue", 0.0)), "saturation": float(ov.get("saturation", 1.0)),
-                        "colourize_amount": float(ov.get("colourize_amount", 0.0)),
-                        "colourize_hue": float(ov.get("colourize_hue", 0.0)),
+                        **self._poly_override_payload(ov),
                         "aspect": "1:1",
                         "frame": [],
                     }
@@ -1189,15 +1228,7 @@ class CompositeRenderer:
                     layers.append({
                         **self._poly_layer_base(poly),
                         "missing": bool(poly.scene), "is_3d": False,
-                        "glow": float(ov.get("glow", 0.0)), "trail": float(ov.get("trail", 0.0)),
-                        "mirror_x": bool(ov.get("mirror_x", False)), "mirror_y": bool(ov.get("mirror_y", False)),
-                        "mirror_x_point": float(ov.get("mirror_x_point", 1.0)),
-                        "mirror_y_point": float(ov.get("mirror_y_point", 1.0)),
-                        "mirror_pre_distort": bool(ov.get("mirror_pre_distort", True)),
-                        "brightness": float(ov.get("brightness", 1.0)), "contrast": float(ov.get("contrast", 1.0)),
-                        "hue": float(ov.get("hue", 0.0)), "saturation": float(ov.get("saturation", 1.0)),
-                        "colourize_amount": float(ov.get("colourize_amount", 0.0)),
-                        "colourize_hue": float(ov.get("colourize_hue", 0.0)),
+                        **self._poly_override_payload(ov),
                         "aspect": "1:1",
                         "frame": [],
                     })
@@ -1210,17 +1241,7 @@ class CompositeRenderer:
                 layers.append({
                     **self._poly_layer_base(poly),
                     "missing": False, "is_3d": slot.scene.is_3d,
-                    "glow": float(ov.get("glow", 0.0)), "trail": float(ov.get("trail", 0.0)),
-                    "mirror_x": bool(ov.get("mirror_x", False)),
-                    "mirror_y": bool(ov.get("mirror_y", False)),
-                    "mirror_x_point": float(ov.get("mirror_x_point", 1.0)),
-                    "mirror_y_point": float(ov.get("mirror_y_point", 1.0)),
-                    "mirror_pre_distort": bool(ov.get("mirror_pre_distort", True)),
-                    "brightness": float(ov.get("brightness", 1.0)),
-                    "contrast": float(ov.get("contrast", 1.0)),
-                    "hue": float(ov.get("hue", 0.0)), "saturation": float(ov.get("saturation", 1.0)),
-                    "colourize_amount": float(ov.get("colourize_amount", 0.0)),
-                    "colourize_hue": float(ov.get("colourize_hue", 0.0)),
+                    **self._poly_override_payload(ov),
                     "aspect": slot.scene.spec.aspect,
                     "frame": frame,
                 })

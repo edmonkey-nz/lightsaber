@@ -530,6 +530,219 @@ function applyKeyFilter(buf, l, blurDev, viewMatte){
   g.drawImage(buf, 0, 0);
   g.restore();
 }
+
+// FX — cheap post-warp treatments, over the shape's own side buffer, next to
+// the key. Measured on hardware before picking these (see ARCHITECTURE.md's
+// GPU-cost list): everything here is a `feComponentTransfer` or a plain
+// canvas rescale. Deliberately NOT here: `feConvolveMatrix` (edge detect,
+// emboss) and `feMorphology` (dilate) are CPU fallbacks in Chromium at
+// +108ms and +61ms per full-size shape, which is a slideshow.
+//
+// Solarise, posterise and invert are all per-channel 1-D curves, so they
+// compose into ONE lookup table and cost one primitive between them rather
+// than three. Posterise uses type="discrete", which gives exact bands, and
+// the other two are folded into the band VALUES — so the bands stay hard
+// however the curve is bent.
+const FX_TONE_ID = "ls-fx", FX_DUO_ID = "ls-fxd";
+let _fxEls = null;
+function ensureFxFilter(){
+  if (_fxEls) return _fxEls;
+  const host = document.createElement("div");
+  host.style.cssText = "position:absolute;width:0;height:0;overflow:hidden";
+  const funcs = p => `<feFuncR id="${p}-r"/><feFuncG id="${p}-g"/><feFuncB id="${p}-b"/>`;
+  host.innerHTML = `
+    <svg width="0" height="0"><defs>
+      <filter id="${FX_TONE_ID}" color-interpolation-filters="sRGB"
+              x="0%" y="0%" width="100%" height="100%">
+        <feComponentTransfer in="SourceGraphic">${funcs(FX_TONE_ID)}</feComponentTransfer>
+      </filter>
+      <!-- Duotone lives in its own filter rather than as skippable primitives
+           on the one above: an unused primitive still executes, and each
+           feComponentTransfer costs ~3ms on a full-size shape. -->
+      <filter id="${FX_DUO_ID}" color-interpolation-filters="sRGB"
+              x="0%" y="0%" width="100%" height="100%">
+        <feComponentTransfer in="SourceGraphic" result="toned">${funcs(FX_DUO_ID)}</feComponentTransfer>
+        <feColorMatrix in="toned" type="matrix" result="lum" values="
+          0.2126 0.7152 0.0722 0 0
+          0.2126 0.7152 0.0722 0 0
+          0.2126 0.7152 0.0722 0 0
+          0 0 0 1 0"/>
+        <feComponentTransfer in="lum" result="duo">
+          <feFuncR id="${FX_DUO_ID}-dr" type="table"/>
+          <feFuncG id="${FX_DUO_ID}-dg" type="table"/>
+          <feFuncB id="${FX_DUO_ID}-db" type="table"/>
+        </feComponentTransfer>
+        <feComposite id="${FX_DUO_ID}-mix" in="duo" in2="toned" operator="arithmetic"
+                     k1="0" k2="1" k3="0" k4="0"/>
+      </filter>
+    </defs></svg>`;
+  document.body.appendChild(host);
+  const q = id => host.querySelector("#" + id);
+  _fxEls = {
+    tone: [q(FX_TONE_ID+"-r"), q(FX_TONE_ID+"-g"), q(FX_TONE_ID+"-b")],
+    duoTone: [q(FX_DUO_ID+"-r"), q(FX_DUO_ID+"-g"), q(FX_DUO_ID+"-b")],
+    duoMap: [q(FX_DUO_ID+"-dr"), q(FX_DUO_ID+"-dg"), q(FX_DUO_ID+"-db")],
+    mix: q(FX_DUO_ID+"-mix"),
+  };
+  return _fxEls;
+}
+function fxNum(v, hi){ return Math.max(0, Math.min(hi, +v || 0)); }
+function fxActive(l){
+  if (l.source_type === "knockout") return false;
+  return fxNum(l.fx_pixelate, 64) >= 1 || (l.fx_posterize | 0) >= 2
+      || fxNum(l.fx_solarize, 1) > 0 || fxNum(l.fx_invert, 1) > 0
+      || fxNum(l.fx_duotone, 1) > 0;
+}
+// The composed solarise -> invert curve, sampled into a table. Posterise, when
+// on, decides the sample count and makes it discrete.
+function fxToneCurve(l){
+  const sol = fxNum(l.fx_solarize, 1), inv = fxNum(l.fx_invert, 1), post = l.fx_posterize | 0;
+  const tone = t => {
+    let v = t;
+    // a triangle peaking at mid-grey: blending toward it rolls the highlights
+    // back down, which is what solarisation is
+    if (sol > 0) v = v * (1 - sol) + (1 - Math.abs(2 * t - 1)) * sol;
+    if (inv > 0) v = v * (1 - inv) + (1 - v) * inv;
+    return Math.max(0, Math.min(1, v));
+  };
+  if (post >= 2){
+    const vals = [];
+    for (let i = 0; i < post; i++) vals.push(tone(i / (post - 1)).toFixed(4));
+    return {type: "discrete", values: vals.join(" ")};
+  }
+  if (sol <= 0 && inv <= 0) return null;           // identity — skip it
+  const N = 33, vals = [];
+  for (let i = 0; i < N; i++) vals.push(tone(i / (N - 1)).toFixed(4));
+  return {type: "table", values: vals.join(" ")};
+}
+function fxHexTriplet(hex){
+  const n = parseInt(String(hex || "#000000").slice(1), 16) || 0;
+  return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
+}
+// Returns the url() to draw through, or null when nothing would change.
+function configureFxFilter(l){
+  const curve = fxToneCurve(l), duo = fxNum(l.fx_duotone, 1);
+  if (!curve && duo <= 0) return null;
+  const els = ensureFxFilter();
+  const target = duo > 0 ? els.duoTone : els.tone;
+  target.forEach(f => {
+    // tableValues, NOT values — `values` is feColorMatrix's attribute, and
+    // setting it on an feFunc silently does nothing at all.
+    if (curve){ f.setAttribute("type", curve.type); f.setAttribute("tableValues", curve.values); }
+    else { f.setAttribute("type", "identity"); f.removeAttribute("tableValues"); }
+  });
+  if (duo <= 0) return `url(#${FX_TONE_ID})`;
+  const dark = fxHexTriplet(l.fx_duotone_dark), light = fxHexTriplet(l.fx_duotone_light);
+  els.duoMap.forEach((f, i) => f.setAttribute("tableValues", `${dark[i].toFixed(4)} ${light[i].toFixed(4)}`));
+  els.mix.setAttribute("k2", duo.toFixed(4));
+  els.mix.setAttribute("k3", (1 - duo).toFixed(4));
+  return `url(#${FX_DUO_ID})`;
+}
+// Pixelate is a rescale, not a filter: down into a small canvas with
+// smoothing on, back up with it off. Measured cheaper than every filter
+// primitive tried, so it stays a canvas operation.
+const getFxSmallCanvas = makeBufferGetter();
+function applyPixelate(buf, blockDev, bx, by, bw, bh){
+  const b = Math.max(2, Math.round(blockDev));
+  const sw = Math.max(1, Math.round(bw / b)), sh = Math.max(1, Math.round(bh / b));
+  const sm = getFxSmallCanvas(sw, sh);
+  sm.ctx.setTransform(1, 0, 0, 1, 0, 0);
+  sm.ctx.globalCompositeOperation = "copy";
+  sm.ctx.imageSmoothingEnabled = true;
+  sm.ctx.drawImage(buf, bx, by, bw, bh, 0, 0, sw, sh);
+  const g = buf.ctx;
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = "copy";
+  g.imageSmoothingEnabled = false;
+  g.drawImage(sm, 0, 0, sw, sh, bx, by, bw, bh);
+  g.imageSmoothingEnabled = true;
+  g.restore();
+}
+// Filters the buffer in place, same self-drawing "copy" trick as the keyer.
+function applyFx(buf, l, pixelDev, bx, by, bw, bh){
+  if (pixelDev >= 2) applyPixelate(buf, pixelDev, bx, by, bw, bh);
+  const url = configureFxFilter(l);
+  if (!url) return;
+  const g = buf.ctx;
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = "copy";
+  g.globalAlpha = 1;
+  g.filter = url;
+  g.drawImage(buf, 0, 0);
+  g.restore();
+}
+
+// Kaleidoscope — the last step of the mirror family (see composite.py's
+// mirror_kaleido). Takes the wedge between 0 and 360/n degrees of the
+// already-drawn shape and repeats it around the shape's own centre.
+//
+// An EVEN segment count alternates mirrored wedges, which is what makes a
+// real kaleidoscope close seamlessly all the way round. An ODD count cannot
+// do that — the first and last wedge would meet with the same handedness and
+// leave one visibly mismatched seam — so odd counts repeat by rotation only.
+//
+// Runs on the side buffer after the key and FX, so it kaleidoscopes the
+// treated image. It needs a snapshot to read from: the wedges are drawn back
+// over the same buffer they are read from, and the buffer is cleared first.
+const getKaleidoSrc = makeBufferGetter();
+function kaleidoSegments(l){
+  const n = (l && l.mirror_kaleido) | 0;
+  return n >= 2 ? Math.min(10, n) : 0;
+}
+// `pts` are the shape's four corners already in DEVICE pixels — each renderer
+// maps them its own way, which is the only thing that differs between the two
+// copies of this function.
+function applyKaleidoscope(buf, segments, pts, bx, by, bw, bh){
+  const n = Math.max(2, Math.min(10, segments | 0));
+  const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+  const cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+  let R = 0;
+  pts.forEach(p => { R = Math.max(R, Math.hypot(p[0] - cx, p[1] - cy)); });
+  R += 2;
+  const src = getKaleidoSrc(buf.width, buf.height), s = src.ctx;
+  s.setTransform(1, 0, 0, 1, 0, 0);
+  s.globalCompositeOperation = "copy";
+  s.globalAlpha = 1; s.filter = "none";
+  s.drawImage(buf, 0, 0);
+  const g = buf.ctx;
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = "source-over";
+  g.globalAlpha = 1; g.filter = "none";
+  g.clearRect(bx, by, bw, bh);
+  // Rotating a wedge can throw content well outside the quad it came from —
+  // the bbox corners of a rotated shape are not covered by the shape. Clip to
+  // the quad so a kaleidoscope can never paint past the surface the shape was
+  // aligned to.
+  g.beginPath();
+  pts.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]));
+  g.closePath();
+  g.clip();
+  const step = (Math.PI * 2) / n, mirrored = n % 2 === 0;
+  for (let i = 0; i < n; i++){
+    g.save();
+    g.beginPath();
+    g.moveTo(cx, cy);
+    g.arc(cx, cy, R, i * step, (i + 1) * step);
+    g.closePath();
+    g.clip();
+    g.translate(cx, cy);
+    // Even/odd: reflecting the source wedge about the far edge of its
+    // destination lands it mirrored in exactly the right place.
+    if (mirrored && (i % 2)){ g.rotate((i + 1) * step); g.scale(1, -1); }
+    else { g.rotate(i * step); }
+    g.translate(-cx, -cy);
+    g.drawImage(src, 0, 0);
+    g.restore();
+  }
+  g.restore();
+}
+function fxPixelDevicePx(l){
+  const v = fxNum(l.fx_pixelate, 64);
+  return v >= 1 ? v * _featherScale : 0;
+}
 function keyFeatherDevicePx(l){
   const f = Math.max(0, Math.min(20, l.key_feather ?? 0));
   return f > 0 ? f * _featherScale : 0;
@@ -1512,7 +1725,10 @@ function paintComposite(layers, resW, resH, masterGain, active, testPattern, sho
       // mesh and its double-compositing skirts (see canvases.py's key_mode).
       const keyed = keyActive(layer);
       const kf = keyed ? keyFeatherDevicePx(layer) : 0;
-      if (f <= 0.1 && !keyed){ paintLayerContent(surf, layer, opacity); return; }
+      const fx = fxActive(layer);
+      const px = fx ? fxPixelDevicePx(layer) : 0;
+      const kal = kaleidoSegments(layer);
+      if (f <= 0.1 && !keyed && !fx && !kal){ paintLayerContent(surf, layer, opacity); return; }
       // Only this layer's own footprint is touched, not the whole frame. The
       // clear and the blit either side of a feather are full-frame operations
       // by default, and with several feathered layers that cost — not the
@@ -1534,6 +1750,8 @@ function paintComposite(layers, resW, resH, masterGain, active, testPattern, sho
       try { paintLayerContent(fb, layer, opacity); }
       finally { _featherPass = false; }
       if (keyed) applyKeyFilter(fb, layer, kf, false);   // matte view is editor-only
+      if (fx) applyFx(fb, layer, px, bx, by, bw, bh);   // after the key, before the feather
+      if (kal) applyKaleidoscope(fb, kal, layer.corners.map(c => mapWin(c[0], c[1])), bx, by, bw, bh);
       if (f > 0.1){
         fctx.globalCompositeOperation = "destination-in";
         fctx.filter = `blur(${f.toFixed(2)}px)`;
