@@ -1,30 +1,24 @@
 """Lightsaber's coordinator.
 
-Owns the on-disk libraries — scenes (global, shared across projects),
-projects (each with its own canvas library + sequencer document) — and the
-Claude scene director, and wires them into CompositeRenderer: the render
-loop, on its own thread/clock. There is no other render path: canvas
-polygons ("shapes") are the only thing that ever gets drawn, each with its
-own live Scene built from the scene library (see composite.py).
+Owns the on-disk project library (each project with its own canvas library
+and sequencer document) and wires it into CompositeRenderer: the render loop,
+on its own thread/clock. Canvas polygons ("shapes") are the only thing that
+is ever drawn, and the drawing itself happens in the browser (see
+composite.py).
 """
 
 from __future__ import annotations
 
 import os
 
-from .scenes import SceneManager
 from .canvases import CanvasManager
 from .sequencer import Sequencer
 from .projects import ProjectManager
 from .composite import CompositeRenderer
-from .director import SceneDirector
 
 
 class Engine:
-    def __init__(self, *, library_dir, cache_dir, projects_dir,
-                 fps=20, model=None, enable_diagnostics=False):
-        self.scenes = SceneManager(library_dir)
-        self.director = SceneDirector(cache_dir, model=model)
+    def __init__(self, *, projects_dir, fps=20, enable_diagnostics=False):
         self.projects = ProjectManager(projects_dir)
 
         # CompositeRenderer holds a live reference to `canvases`/`sequencer`
@@ -36,8 +30,13 @@ class Engine:
         self.canvases = CanvasManager(os.path.join(boot_dir, "canvases"))
         self.sequencer = Sequencer(os.path.join(boot_dir, "sequence.json"))
         self.composite = CompositeRenderer(
-            self.canvases, self.sequencer, self.scenes.load_spec, self.projects, fps=fps)
+            self.canvases, self.sequencer, self.projects, fps=fps)
         self.composite.set_diagnostics(enable_diagnostics)
+        # Latest client_stats from each output window, keyed by its socket
+        # (see server.py): which GPU the browser gave it, its canvas size and
+        # its paint rate. Written and read only on the event loop, so no lock.
+        # Ported from promptwaver's GPU indicator.
+        self.client_stats: dict = {}
 
     # lifecycle ---------------------------------------------------------
     def start(self):
@@ -46,44 +45,19 @@ class Engine:
     def stop(self):
         self.composite.stop()
 
-    # scene generation ----------------------------------------------------
-    def generate_scene(self, keyword: str, name: str | None = None, size: str = "small",
-                        aspect: str = "1:1") -> str:
-        """The director call may hit the network — call this off the event
-        loop (see server.py). Returns the library key the scene was saved
-        under, so the caller can put it straight onto the canvas (see
-        server.py's `generate` handler)."""
-        spec = self.director.generate(keyword, size=size, aspect=aspect)
-        name = (name or "").strip() or spec.name or keyword
-        spec.name = name
-        try:
-            self.scenes.save(name, spec)
-        except Exception as e:
-            print(f"[lightsaber] could not save generation: {e}")
-        return name
-
     # introspection for the UI ---------------------------------------------
     def state(self) -> dict:
         return {
             "version": __import__("lightsaber").__version__,
-            "library": self.scenes.names(),
-            "generators": __import__("lightsaber.generators", fromlist=["available"]).available(),
-            "director_online": self.director.online,
-            "director_model": self.director.model,
-            "director_source": self.director.last_source,
-            "director_error": self.director.last_error,
-            "director_choice": self.director.model_choice,
-            "director_effort": self.director.effort,
-            "director_progress": self.director.last_progress,
-            "director_generating": self.director.generating,
-            "max_pps": self.director.max_pps,
             **self.composite.state(),   # active, visuals_disabled, master_gain,
                                           # perf_diag, diagnostics_enabled,
                                           # project, project_library
             "canvas": self.canvases.current.to_dict(),
             "canvas_library": self.canvases.names(),
             "sequence": self.sequencer.state(),
+            # NOT "outputs" — that key already holds the output monitor configs.
+            "output_clients": list(self.client_stats.values()),
         }
 
-    def composite_preview(self, max_points: int = 4000, stroke_thin: int = 200):
-        return self.composite.composite_preview(max_points=max_points, stroke_thin=stroke_thin)
+    def composite_preview(self):
+        return self.composite.composite_preview()

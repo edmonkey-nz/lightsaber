@@ -1,16 +1,7 @@
 # Runtime dependencies. All required — this list is what a frozen build
 # (PyInstaller et al, via GitHub Actions for Windows/macOS/Ubuntu) bundles,
 # and a frozen app can't ask the user to pip install anything afterwards.
-numpy>=1.24
 aiohttp>=3.9
 
-# Claude scene director. Needs messages.stream() for the live progress bar,
-# hence the floor. Was optional while the only install path was "clone the
-# repo and pip install"; as a shipped executable it has to be in the bundle
-# whether or not a given user ever sets an API key.
-#
-# Note this is a dependency, not a requirement to USE Claude: with no API key
-# the director falls back to a local keyword mapping (see
-# director/claude_director.py), and that stays true. The library being
-# present is what lets the app offer the choice at runtime.
-anthropic>=0.34
+# numpy left with the vector-scene renderer (2026-11): nothing in lightsaber/
+# imports it now. renderhost/ has its own requirements.txt.

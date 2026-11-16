@@ -1,14 +1,14 @@
 """aiohttp control surface.
 
 Serves the single-page UI and a websocket that (a) broadcasts engine state +
-a composite frame ~20 Hz, and (b) receives control messages:
+the published layers at the project's frame rate, and (b) receives control
+messages:
 
     {"type":"set_active", "value":true}
     {"type":"set_frozen", "value":true}
     {"type":"set_visuals_disabled", "value":true, "fade":2.0}
-    {"type":"generate", "keyword":"aurora over a still lake", "aspect":"16:9"}
-    {"type":"scene_delete", "name":"..."}
-    {"type":"set_max_pps", "value":20000}
+    {"type":"client_stats", "role":"output 1", "gpu":"ANGLE (...)", "w":1920, "h":1080, "fps":30}
+        # sent by each output window every 2s; echoed as state.output_clients
 
 Project messages (see projects.py):
 
@@ -45,10 +45,10 @@ thumbnails; 404 if that canvas was never saved since this feature shipped.
         # Calibration aid, NOT persisted (engine-runtime only — see
         # composite.py's set_test_pattern): shows a keystone-aware alignment
         # grid on that output window instead of the live composite.
-    {"type":"poly_add", "scene":"..."}           # scene optional
+    {"type":"poly_add"}                          # an empty media shape
     {"type":"poly_delete", "id":"..."}
     {"type":"poly_corners", "id":"...", "corners":[[x,y]x4]}
-    {"type":"poly_set", "id":"...", "key":"scene|opacity|...", "value":...}
+    {"type":"poly_set", "id":"...", "key":"source_type|media|opacity|...", "value":...}
     {"type":"poly_reorder", "id":"...", "index":0}
     {"type":"seq_add", "canvas":"...", "duration":8.0, "crossfade":0.0}
     {"type":"seq_remove"/"seq_reorder"/"seq_set", "id":"..."}   # seq_set: canvas/duration/crossfade optional
@@ -81,6 +81,7 @@ from aiohttp import web, WSMsgType
 from .. import settings
 from .. import media_roots
 from .. import media_meta
+from .. import visuals
 
 _STATIC = os.path.join(os.path.dirname(__file__), "static")
 
@@ -119,7 +120,7 @@ def make_app(engine, media_dir: str) -> web.Application:
     # simple media-upload widget (Input > Local video/image files).
     app = web.Application(client_max_size=1024 * 1024 * 1024)
     app["engine"] = engine
-    app["clients"] = {}   # ws -> {"hq": bool}
+    app["clients"] = {}   # ws -> {"renderhost": bool}
 
     def _no_cache(resp):
         # The whole UI lives in one HTML file and changes across sessions
@@ -159,47 +160,107 @@ def make_app(engine, media_dir: str) -> web.Application:
         # composite broadcast the control UI does.
         return _no_cache(web.FileResponse(os.path.join(_STATIC, "output.html")))
 
+    # The visualiser shaders, shared by index.html and output.html. Served
+    # no-cache like the pages themselves: a browser holding a stale copy next
+    # to a fresh page would draw old shaders with new parameter names, which
+    # shows up as a visualiser that looks wrong rather than as an error.
+    async def visuals_js(request):
+        return _no_cache(web.FileResponse(os.path.join(_STATIC, "visuals.js")))
+
+    async def visuals_presets(request):
+        return web.json_response(visuals.presets_for_ui())
+
     async def ws_handler(request):
         ws = web.WebSocketResponse()
         await ws.prepare(request)
-        # ?hq=1 (the standalone output window) asks for a much less thinned
-        # composite than the small in-page control-UI canvas needs — it's
-        # the actual thing being watched, not just a status glance.
         # ?client=renderhost identifies a renderhost/serve.py process phoning
         # home (see its --lightsaber-url flag) purely so the header's "Render
         # Host" dot can reflect whether one is actually up and reachable —
         # not yet a content pipeline (renderhost doesn't consume the
         # composite broadcast at all yet, see ARCHITECTURE.md §12).
-        request.app["clients"][ws] = {
-            "hq": request.query.get("hq") == "1",
+        meta = {
             "renderhost": request.query.get("client") == "renderhost",
+            "latest": None,              # newest broadcast payload not yet sent
+            "wake": asyncio.Event(),
         }
+        request.app["clients"][ws] = meta
+        sender = asyncio.create_task(_client_sender(ws, meta))
         try:
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:
-                    reply = await _handle(engine, json.loads(msg.data))
+                    m = json.loads(msg.data)
+                    if m.get("type") == "client_stats":
+                        # Read-only telemetry from an output window: which GPU
+                        # the browser gave it, its canvas size and paint rate.
+                        # The editor's header shows the GPU, so it's visible
+                        # which one a show is really running on (Chrome
+                        # defaults to the iGPU on this laptop). Whitelisted
+                        # keys only, since this is echoed to every client.
+                        engine.client_stats[id(ws)] = {
+                            k: m.get(k) for k in ("role", "gpu", "w", "h", "fps")}
+                        continue
+                    reply = await _handle(engine, m)
                     if reply is not None:
                         await ws.send_str(json.dumps(reply))
         finally:
             request.app["clients"].pop(ws, None)
+            engine.client_stats.pop(id(ws), None)
+            sender.cancel()
         return ws
 
+    # One sender per client, fed through a one-slot mailbox. The broadcaster
+    # only ever overwrites `latest` and sets `wake`; it never awaits a send.
+    #
+    # It used to `gather` every client's send_str each tick, and aiohttp's send
+    # waits for the socket to drain once its buffer is full — so one client
+    # that stopped reading stalled the broadcaster, and every other window
+    # stopped receiving state. Found by accident (2026-11): a Python benchmark
+    # client that stopped reading took the output window under test to 0
+    # messages/s; with this mailbox the same run delivers 30/s. A hung CHROME
+    # tab did not reproduce it within 40s — Chrome buffers a lot — so the
+    # realistic risk is a script or tool client, not a browser. Either way a
+    # slow client now skips straight to the newest state when it catches up,
+    # and nobody waits for it. Stale states are worthless here, so dropping
+    # them is the right behaviour, not a compromise.
+    async def _client_sender(ws, meta):
+        try:
+            while True:
+                await meta["wake"].wait()
+                meta["wake"].clear()
+                payload, meta["latest"] = meta["latest"], None
+                if payload is not None:
+                    await ws.send_str(payload)
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            # The socket is gone; ws_handler's own loop ends on the close and
+            # does the rest of the cleanup.
+            app["clients"].pop(ws, None)
+
     async def broadcaster(app):
-        # Paced by engine.composite.fps (--fps), NOT a fixed rate — this
-        # used to be a hardcoded 20Hz (`asyncio.sleep(0.05)`) regardless of
-        # what --fps was set to, which silently capped every client's
-        # observed frame rate at ~20 no matter how fast the compositor's own
-        # render loop (composite.py's _loop, which DOES already respect
-        # --fps) was actually producing frames. --fps 60 looked like it did
-        # nothing because the broadcaster was still only picking up and
-        # sending a new frame 20 times a second.
+        # Paced by engine.composite.fps, NOT a fixed rate — this used to be a
+        # hardcoded 20Hz, which silently capped every client's observed frame
+        # rate regardless of the render loop's own rate.
+        #
+        # Deadline-paced, like the render loop: it used to do a tick's work
+        # and THEN sleep a full period, so it always ran slow by the work
+        # time — measured 27.5 messages/s against a 30fps target.
+        loop = asyncio.get_running_loop()
+        next_tick = loop.time()
         try:
             while True:
                 period = 1.0 / max(1, engine.composite.fps)
                 if app["clients"]:
                     try:
-                        state = engine.state()
-                        composite_std = engine.composite_preview()
+                        # Built ONCE per tick for every client. There used to
+                        # be a second, less-thinned stroke payload for output
+                        # windows, so the whole state was serialised twice.
+                        payload = json.dumps({
+                            "type": "state", "state": engine.state(),
+                            "composite": engine.composite_preview(),
+                            "renderhost_connected": any(
+                                meta.get("renderhost") for meta in app["clients"].values()),
+                        })
                     except Exception as e:
                         # Never let a bad tick (e.g. a non-JSON-serialisable
                         # value slipping into state()) kill this task. Before
@@ -210,40 +271,31 @@ def make_app(engine, media_dir: str) -> web.Application:
                         # the rest of the session, with the error only surfacing
                         # in the terminal on process exit. Fixed short backoff
                         # here (not `period`) on purpose — an error retry loop
-                        # shouldn't spin at whatever --fps happens to be.
+                        # shouldn't spin at whatever fps happens to be.
                         print(f"[lightsaber] broadcaster: skipped a bad state "
                               f"tick ({e}); continuing")
                         await asyncio.sleep(0.05)
+                        next_tick = loop.time()
                         continue
-                    renderhost_connected = any(
-                        meta.get("renderhost") for meta in app["clients"].values())
-                    payload_std = json.dumps({"type": "state", "state": state, "composite": composite_std,
-                                              "renderhost_connected": renderhost_connected})
-                    payload_hq = None   # built lazily, only if an hq client is actually connected
-                    if any(meta.get("hq") for meta in app["clients"].values()):
-                        composite_hq = engine.composite_preview(max_points=8000, stroke_thin=400)
-                        payload_hq = json.dumps({"type": "state", "state": state, "composite": composite_hq,
-                                                 "renderhost_connected": renderhost_connected})
 
-                    # Sent concurrently, not one-after-another. These were
-                    # sequential awaits, so a single slow client held up
-                    # delivery to every other one: with two output windows,
-                    # whichever was busier decided when the other got its
-                    # frame, and the other then received several at once when
-                    # the backlog cleared. That burstiness is what makes a
-                    # frame-rate meter read absurdly high while the picture
-                    # stutters (see output.html's updateFpsCounter).
-                    async def _send(ws, meta):
-                        try:
-                            await ws.send_str(payload_hq if meta.get("hq") else payload_std)
-                        except Exception:
-                            app["clients"].pop(ws, None)
-
-                    targets = list(app["clients"].items())
-                    if targets:
-                        await asyncio.gather(*(_send(ws, meta) for ws, meta in targets),
-                                             return_exceptions=True)
-                await asyncio.sleep(period)
+                    # Handed to each client's own sender (_client_sender), never
+                    # awaited here. Sends were sequential once, then gathered;
+                    # both let a slow client hold up delivery to the others,
+                    # which shows as bursty delivery and a frame-rate meter
+                    # reading absurdly high while the picture stutters (see
+                    # output.html's updateFpsCounter).
+                    for meta in list(app["clients"].values()):
+                        meta["latest"] = payload
+                        meta["wake"].set()
+                next_tick += period
+                delay = next_tick - loop.time()
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                else:
+                    # Fell behind (a slow client, a GC pause): re-anchor
+                    # rather than sending a burst to catch up.
+                    next_tick = loop.time()
+                    await asyncio.sleep(0)
         except asyncio.CancelledError:
             pass
 
@@ -255,8 +307,8 @@ def make_app(engine, media_dir: str) -> web.Application:
 
     # Media upload widget (Input > Local video/image files) — plain
     # HTTP, not the websocket: file bodies don't belong on the same
-    # channel as engine state broadcasts. Not wired into any scene/canvas
-    # yet, just upload + list + delete storage.
+    # channel as engine state broadcasts. Upload + list + delete storage;
+    # shapes reference these files by name (PolygonSpec.media).
     async def media_list(request):
         out = []
         for name in sorted(os.listdir(media_dir)):
@@ -397,6 +449,9 @@ def make_app(engine, media_dir: str) -> web.Application:
     app.router.add_get("/", index)
     app.router.add_get("/output", output_page)
     app.router.add_get("/about", about_info)
+    # Registered before add_static("/static/"), so this route wins.
+    app.router.add_get("/static/visuals.js", visuals_js)
+    app.router.add_get("/visuals/presets", visuals_presets)
     # Unified asset inventory for the Media tab — the app's own uploaded
     # library AND every linked file this install knows about, in one list.
     #
@@ -563,7 +618,6 @@ def make_app(engine, media_dir: str) -> web.Application:
 
 async def _handle(engine, m: dict):
     t = m.get("type")
-    loop = asyncio.get_event_loop()
     if t == "set_active":
         engine.composite.set_active(bool(m.get("value")))
     elif t == "set_frozen":
@@ -573,26 +627,6 @@ async def _handle(engine, m: dict):
     elif t == "set_visuals_disabled":
         fade = float(m.get("fade", 2.0))
         (engine.composite.disable_visuals if m.get("value") else engine.composite.enable_visuals)(fade=fade)
-    elif t == "set_max_pps":
-        # Scene-generation complexity budget (how much geometry Claude is
-        # told to keep a scene under) — not a hardware rate, see director.py.
-        engine.director.set_max_pps(int(m.get("value", 20000)))
-    elif t == "generate":
-        # run the (possibly networked) director off the event loop, then ack
-        # with the saved library name so the UI can drop it straight onto
-        # the canvas (see index.html's generate_result handler)
-        name = await loop.run_in_executor(None, engine.generate_scene,
-                                          m["keyword"], m.get("name"), m.get("size", "small"),
-                                          m.get("aspect", "1:1"))
-        return {"type": "generate_result", "ok": True, "name": name,
-                "source": engine.director.last_source,
-                "error": engine.director.last_error}
-    elif t == "set_model":
-        engine.director.set_model(m.get("value", "haiku"))
-    elif t == "set_effort":
-        engine.director.set_effort(m.get("value", "med"))
-    elif t == "scene_delete":
-        engine.scenes.delete(m["name"])
     # Projects (see projects.py) — the base-level container, each owning its
     # own canvas library + sequencer document. `current_project` is
     # persisted so the same project reopens on the next launch.
@@ -638,7 +672,7 @@ async def _handle(engine, m: dict):
     elif t == "set_test_pattern":
         engine.composite.set_test_pattern(m["index"], bool(m.get("value")))
     elif t == "poly_add":
-        engine.composite.add_polygon(m.get("scene"))
+        engine.composite.add_polygon()
     elif t == "poly_delete":
         engine.composite.delete_polygon(m["id"])
     elif t == "poly_corners":
@@ -689,14 +723,6 @@ async def _handle(engine, m: dict):
         engine.composite.seq_prev()
     elif t == "seq_goto":
         engine.composite.seq_goto(m["index"])
-    elif t == "set_api_key":
-        engine.director.set_api_key(m.get("key", ""))
-        return {"type": "api_result", "action": "save", "ok": engine.director.online,
-                "detail": "key saved" if engine.director.online else "key saved (package missing?)"}
-    elif t == "test_api_key":
-        # a real network call — keep it off the event loop
-        result = await loop.run_in_executor(None, engine.director.test)
-        return {"type": "api_result", "action": "test", **result}
     return None
 
 

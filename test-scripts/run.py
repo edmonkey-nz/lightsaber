@@ -24,7 +24,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from harness import Report, Server, Session, build_sandbox   # noqa: E402
 
-SUITES = ("render", "ui", "perf")
+# resilience runs last: it takes the server down and back up, which would
+# disturb anything sharing the session after it.
+SUITES = ("render", "ui", "output", "perf", "resilience")
 
 
 async def main_async(args):
@@ -37,6 +39,7 @@ async def main_async(args):
         with Server(root) as server:
             print(f"server:  {server.url}\n")
             async with Session(server.url, headless=args.headless) as s:
+                s.server = server      # suite_resilience cycles it
                 if args.headless:
                     print("!! headless: the GPU is SwiftShader here, so perf numbers are\n"
                           "!! software-rendered and comparisons are skipped.\n")
@@ -50,7 +53,7 @@ async def main_async(args):
                                        hint="the suite raised before finishing; earlier checks "
                                             "in this list are still valid")
                     print()
-                for err in s.errors:
+                for err in s.unexpected_errors():
                     rep.check_true("page/no-js-errors", False, detail=err,
                                    hint="a JS error kills the rest of the script in that page, so "
                                         "later checks may fail for this reason alone")

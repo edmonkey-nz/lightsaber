@@ -1,4 +1,4 @@
-"""Canvases: a screen composed of scene-filled polygons for the monitor
+"""Canvases: a screen composed of content-filled polygons for the monitor
 outputs (browser windows — see composite.py). A project (see projects.py)
 owns a directory of these; CanvasManager is retargeted to it on project
 switch (see `retarget` below) rather than being reconstructed, since
@@ -6,12 +6,10 @@ CompositeRenderer holds a live reference to it.
 
 A PolygonSpec is plain JSON-serialisable data: four corners (a quad, not an
 arbitrary N-gon — a quad has a canonical unit-square warp, which is what the
-corner-drag handles distort) plus which scene fills it and a sparse set of
-per-polygon display/motion overrides (absent key = inherit the scene's own
-settings). A CanvasSpec is an ordered list of polygons — list order is
-z-order, index 0 drawn first/backmost. CanvasManager owns the on-disk
-library and the canvas currently open in the editor, the same shape as
-SceneManager in scenes.py.
+corner-drag handles distort) plus what fills it and a sparse set of
+per-polygon display overrides (absent key = neutral). Paint order is set by
+z_index, not list order. CanvasManager owns the on-disk library and the
+canvas currently open in the editor.
 """
 
 from __future__ import annotations
@@ -20,12 +18,20 @@ import json
 import os
 
 from .effectors import EffectorMatrix, ANCHOR_POINTS
+from . import visuals
 import uuid
 from dataclasses import dataclass, field, asdict
 
+SOURCE_TYPES = ("media", "webcam", "text", "visual", "knockout")
+
+# Override keys that only ever drove the removed vector-scene renderer
+# (glow was a stroke shadow; layer0/camera/disable_plane were generator and
+# 3D-camera parameters). Dropped on load so they don't ride along forever in
+# every saved canvas.
+_RETIRED_OVERRIDES = ("glow", "layer0", "camera", "disable_plane")
+
 # clockwise from top-left — the default 16:9 rect a new polygon starts as
-# (1a; widened from a square since 16:9 is the common video/scene frame
-# shape — see SceneSpec.aspect). Same 1.0 total width span as the old
+# (1a; widened from a square since 16:9 is the common video frame shape). Same 1.0 total width span as the old
 # square, height scaled to 16:9 (0.5625 = 9/16).
 DEFAULT_CORNERS = [[-0.5, 0.28125], [0.5, 0.28125], [0.5, -0.28125], [-0.5, -0.28125]]
 
@@ -59,26 +65,22 @@ class PolygonSpec:
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     label: str = ""
     corners: list = field(default_factory=lambda: [list(c) for c in DEFAULT_CORNERS])
-    scene: str | None = None   # SceneManager library key — NOT spec.name (see
-                                # engine.py's _current_library_name docstring:
-                                # a handful of shipped scenes have an internal
-                                # name that doesn't match their filename)
-    # What this polygon shows: "scene" (the live generator system, via
-    # `scene` above), "media" (an uploaded image/video, via `media` below —
-    # warped into the quad client-side, same homography as a scene's strokes;
-    # the compositor itself doesn't touch pixels, it just carries the
-    # filename on the layer payload — see drawPolyMedia/paintComposite in the
-    # two HTML files), "webcam" (a single still frame grabbed from a camera
-    # device at load time, via `webcam_device`
-    # below — same client-side warp pipeline as media, just sourced from
-    # getUserMedia instead of an uploaded file), "text" (rendered from
+    # What this polygon shows: "media" (an image/video, via `media` or
+    # `media_link` below — warped into the quad client-side; the compositor
+    # itself never touches pixels, it just carries the reference on the
+    # layer payload — see drawPolyMedia/paintComposite in the two HTML
+    # files), "webcam" (a live camera feed via `webcam_device` below, same
+    # warp pipeline as media), "text" (rendered from
     # `text_content`/`text_color`/`text_size` below onto an offscreen canvas,
     # then warped exactly like media/webcam), or "knockout" — a boolean
     # cutout: an arbitrary-point (not just a quad) opaque black shape with no
     # content of its own, purely there to blank out whatever it overlaps on
     # the monitor output. Stacking against other shapes is controlled by
     # z_index below.
-    source_type: str = "scene"
+    #
+    # A "media" shape with no file set draws nothing, which is what a new
+    # shape and a migrated one both start as (see from_dict).
+    source_type: str = "media"
     media: str | None = None   # filename under media_dir, meaningful iff source_type=="media"
     # Linked media (see media_roots.py) — "<root-name>::<relative/path.ext>",
     # referencing a file where it already lives instead of copying a
@@ -99,8 +101,7 @@ class PolygonSpec:
     #    a backward seek per frame stutters badly on exactly the long files
     #    this feature exists for.)
     #   offset — start phase within the trimmed region, so two instances of
-    #     one clip can run deliberately out of step (the video counterpart of
-    #     time_offset above, which does the same job for generated scenes).
+    #     one clip can run deliberately out of step.
     media_in: float | None = None
     media_out: float | None = None
     media_mode: str = "loop"
@@ -111,13 +112,15 @@ class PolygonSpec:
     text_content: str = ""     # meaningful iff source_type=="text"
     text_color: str = "#ffffff"
     text_size: float = 0.2     # font size as a fraction of the rendered text raster's height
+    # Audio-responsive visualiser (source_type "visual") — see visuals.py.
+    # visual_params is sparse and keyed BY PRESET ({"clouds": {"hue": 0.3}}),
+    # so flipping a shape between presets and back keeps each one's tweaks.
+    visual_preset: str = visuals.DEFAULT_PRESET
+    visual_params: dict = field(default_factory=dict)
     opacity: float = 1.0
-    # seconds — without this, two polygons showing the same scene render
-    # pixel-identical (2D generators are pure functions of t; see composite.py)
-    time_offset: float = 0.0
-    # sparse: "glow"/"trail"/"mirror_x"/"mirror_y"/"disable_plane"/"layer0"
-    # (a dict of generator param overrides). Absent = inherit the scene's own
-    # spec.camera settings / base params.
+    # sparse display overrides: "trail", "mirror_*", "brightness", "hue",
+    # "scale", "rotation"… (see composite.py's set_polygon for the full set
+    # and their clamps). Absent = neutral.
     overrides: dict = field(default_factory=dict)
     # Clip Shape: a secondary shape (independent of the quad corners above)
     # that the rendered content is hard-clipped to — pure client-side
@@ -168,8 +171,8 @@ class PolygonSpec:
     # knowing when a mask is aligned to a physical surface — a feathered
     # edge spills slightly past the line you drew.
     feather: float = 0.0
-    # Chroma/luma key (raster sources only — media and webcam; a scene or
-    # text shape already draws on transparent, so there is nothing to key).
+    # Chroma/luma key (raster sources only — media and webcam; a text shape
+    # already draws on transparent, so there is nothing to key).
     # "off" | "colour" (key a hue) | "luma" (key black, for footage shot or
     # generated on a black field).
     #
@@ -236,14 +239,12 @@ class PolygonSpec:
     # within a z-level is arbitrary (array order), so punching there would
     # depend on which shape happened to be created first.
     knockout_depth: int = 10
-    # How the assigned scene's own frame shape (SceneSpec.aspect) is fitted
-    # into this polygon's quad, which can be any aspect ratio once dragged —
-    # without this, content just stretches to fill the quad. "stretch" (the
-    # old, only behaviour) fills exactly, distorting; "fit" letterboxes,
-    # preserving the scene's aspect; "crop" fills the quad, cropping
-    # overflow (needs a clip to the quad's own screen path — see
-    # paintCanvasEditor/paintComposite). Applies equally to a future
-    # media-sourced polygon's own native aspect.
+    # How the content's own aspect (a video's or image's native shape) is
+    # fitted into this polygon's quad, which can be any aspect ratio once
+    # dragged. "stretch" (the default) fills exactly, distorting; "fit"
+    # letterboxes, preserving the content's aspect; "crop" fills the quad,
+    # cropping overflow (needs a clip to the quad's own screen path — see
+    # paintCanvasEditor/paintComposite).
     fit: str = "stretch"   # "stretch" | "fit" | "crop"
     # Edit lock — a pure EDITOR guard, not a render property: a locked shape
     # renders exactly as before, it just can't be selected, dragged, corner-
@@ -264,12 +265,31 @@ class PolygonSpec:
 
     @staticmethod
     def from_dict(d: dict) -> "PolygonSpec":
+        # A shape saved while vector scenes existed (source_type "scene", the
+        # old default) becomes an EMPTY media shape: it keeps its corners,
+        # mask, z-order and effector routes, so it can be refilled rather
+        # than redrawn, and draws nothing until it is. Its scene name becomes
+        # the label when it had none, so it is still recognisable in the
+        # shapes list.
+        source_type = d.get("source_type", "scene")
+        label = d.get("label", "")
+        if source_type not in SOURCE_TYPES:
+            source_type = "media"
+            label = label or d.get("scene") or ""
+        overrides = {k: v for k, v in dict(d.get("overrides", {})).items()
+                     if k not in _RETIRED_OVERRIDES}
+        if d.get("source_type", "scene") == "scene":
+            # A scene's trail smeared its own vector strokes; trail is now
+            # frame-wide (the strongest on any shape wins), so on the empty
+            # shape a scene becomes it would smear EVERY other shape on the
+            # output from an invisible source. Found on a real canvas: a
+            # migrated scene with trail 0.95.
+            overrides.pop("trail", None)
         return PolygonSpec(
             id=d.get("id") or uuid.uuid4().hex[:8],
-            label=d.get("label", ""),
+            label=label,
             corners=[list(c) for c in d.get("corners", DEFAULT_CORNERS)],
-            scene=d.get("scene"),
-            source_type=d.get("source_type", "scene"),
+            source_type=source_type,
             media=d.get("media"),
             media_link=d.get("media_link"),
             media_in=(float(d["media_in"]) if d.get("media_in") is not None else None),
@@ -282,9 +302,10 @@ class PolygonSpec:
             text_content=d.get("text_content", ""),
             text_color=d.get("text_color", "#ffffff"),
             text_size=float(d.get("text_size", 0.2)),
+            visual_preset=visuals.preset_key(d.get("visual_preset")),
+            visual_params=visuals.sanitize_params(d.get("visual_params")),
             opacity=float(d.get("opacity", 1.0)),
-            time_offset=float(d.get("time_offset", 0.0)),
-            overrides=dict(d.get("overrides", {})),
+            overrides=overrides,
             clip_shape=d.get("clip_shape"),
             clip_points=sanitize_clip_points(d.get("clip_points")),
             clip_scale=float(d.get("clip_scale", 1.0)),
@@ -341,8 +362,8 @@ class CanvasSpec:
 
 
 class CanvasManager:
-    """On-disk canvas library, same persistence shape as scenes.SceneManager
-    (cached names(), atomic tmp+replace save, sanitised filenames) — plus
+    """On-disk canvas library (cached names(), atomic tmp+replace save,
+    sanitised filenames) — plus
     `current`, the canvas presently open in the editor. `current` is what the
     compositor renders; loading a different canvas (or a sequencer step
     advancing) replaces it wholesale rather than mutating in place."""
@@ -366,8 +387,10 @@ class CanvasManager:
         self.current = CanvasSpec(name="untitled", polygons=[PolygonSpec()])
 
     def names(self) -> list[str]:
-        # same rationale as SceneManager.names(): cached so the ~20Hz state
-        # broadcast doesn't do a disk listdir every tick.
+        # Cached, and invalidated explicitly by save/delete: state() — and so
+        # this — runs on every broadcast tick, and an unconditional listdir
+        # there was disk I/O on the process the render thread shares the GIL
+        # with, at frame rate, for a result that rarely changes.
         if self._names_cache is None:
             self._names_cache = sorted(
                 os.path.splitext(f)[0]

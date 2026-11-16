@@ -4,7 +4,7 @@ Everything here exists to make a suite a list of assertions rather than a pile
 of setup. Three things it takes care of, each of which has cost real debugging
 time when done by hand (see CLAUDE.md's "Verifying a change"):
 
-* **Isolation.** `run.py` resolves `scenes/`, `projects/`, `media/` and
+* **Isolation.** `run.py` resolves `projects/`, `media/` and
   `settings.json` relative to the repo root, so a test server started in the
   repo would read and write the user's real projects. `build_sandbox` copies
   the package into a temp dir with empty data folders instead, on a free port.
@@ -68,7 +68,7 @@ def _png(path, fn, size=64):
 def build_sandbox(dest: str | None = None) -> str:
     """A throwaway copy of the app with empty data folders and known fixtures."""
     dest = dest or tempfile.mkdtemp(prefix="lightsaber-test-")
-    for sub in ("projects", "scenes", "media"):
+    for sub in ("projects", "media"):
         os.makedirs(os.path.join(dest, sub), exist_ok=True)
     shutil.copytree(os.path.join(REPO, "lightsaber"), os.path.join(dest, "lightsaber"),
                     dirs_exist_ok=True,
@@ -79,7 +79,25 @@ def build_sandbox(dest: str | None = None) -> str:
         f.write("{}")
     for name, fn in FIXTURES.items():
         _png(os.path.join(dest, "media", name), fn)
+    _video_fixture(os.path.join(dest, "media", VIDEO_FIXTURE))
     return dest
+
+
+# A short looping clip for the checks that need real playback (output-window
+# paint pacing). VP8/WebM rather than H.264, because Playwright's bundled
+# Chromium has no H.264 decoder: an .mp4 there never becomes `ready` and the
+# layer silently draws black, which reads as a render bug. Made with ffmpeg
+# when it is installed; suites skip their video checks when it is not.
+VIDEO_FIXTURE = "loop.webm"
+
+
+def _video_fixture(path):
+    if not shutil.which("ffmpeg"):
+        return
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi",
+                    "-i", "testsrc=size=160x90:rate=25", "-t", "3",
+                    "-c:v", "libvpx", "-b:v", "300k", path],
+                   check=False, timeout=60)
 
 
 def free_port() -> int:
@@ -222,6 +240,17 @@ class Session:
     def __init__(self, url, headless=False):
         self.url, self.headless = url, headless
         self.errors: list[str] = []
+        # Substrings a suite has declared it expects to provoke. Only for
+        # errors the test CAUSES on purpose — suite_resilience takes the
+        # server down, and the browser rightly logs the failed reconnects.
+        self.expected_errors: list[str] = []
+
+    def expect_error(self, substring: str):
+        self.expected_errors.append(substring)
+
+    def unexpected_errors(self):
+        return [e for e in self.errors
+                if not any(x in e for x in self.expected_errors)]
 
     async def __aenter__(self):
         from playwright.async_api import async_playwright
@@ -314,7 +343,9 @@ class Session:
     async def bench(self, iterations=30):
         return await self.page.evaluate(_BENCH_JS, iterations)
 
-    async def open_output(self, index=0):
+    async def open_output(self, index=1):
+        """Output windows are 1-INDEXED: output.html does `(+outputId || 1) - 1`,
+        so `?out=0` is falsy and silently falls back to output 1."""
         page = await self.ctx.new_page()
         page.on("pageerror", lambda e: self.errors.append(f"output pageerror: {e}"))
         await page.goto(f"{self.url}/output?out={index}")

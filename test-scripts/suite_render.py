@@ -182,7 +182,7 @@ async def _output_window(s, rep):
     shot = await s.add_shape({"source_type": "media", "media": "greenred.png", "z_index": 4}, FULL_QUAD)
     await s.set(shot, "key_mode", "colour")
     await s.start()
-    out = await s.open_output(0)
+    out = await s.open_output(1)
     got = await out.evaluate("""() => {
       const g = cv.getContext('2d'), w = cv.width, h = cv.height;
       const sc = Math.min(w/1920, h/1080), halfW = 1920*sc/2;

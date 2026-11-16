@@ -6,11 +6,11 @@ Examples
     # serve the browser control surface
     python run.py --web
 
-    # use Claude as the scene director
-    ANTHROPIC_API_KEY=sk-... python run.py --web
+    # ...and open the editor in its own Chrome on the NVIDIA GPU, in one go
+    python run.py --web --open nvidia
 
-Then open http://localhost:8080, build a canvas of shapes, and generate or
-assign scenes into them.
+Then open http://localhost:8080, build a canvas of shapes and fill them with
+video, images, webcams or text.
 """
 
 from __future__ import annotations
@@ -40,10 +40,16 @@ def parse_args():
                          "files under a registered root are ever served (this server "
                          "listens on all interfaces by default). Persists to "
                          "settings.json, so this is a one-off per folder.")
+    ap.add_argument("--open", choices=("nvidia", "default"), default=None,
+                    help="once the server is up, open the editor in its own Chrome "
+                         "profile: 'nvidia' runs it on the NVIDIA card (Linux PRIME "
+                         "offload), 'default' on whatever GPU Chrome picks. Chrome is "
+                         "detached, so stopping or restarting the server leaves it open "
+                         "to reconnect; an already-open one isn't duplicated. See "
+                         "lightsaber/browser.py.")
     ap.add_argument("--diag", action="store_true",
                     help="enable perf diagnostics instrumentation at startup (off by "
                          "default; also toggleable live in Settings)")
-    ap.add_argument("--model", default=None, help="override director model id")
     return ap.parse_args()
 
 
@@ -95,19 +101,21 @@ def main():
     args = parse_args()
     _register_media_roots(args.media_root)
     engine = Engine(
-        library_dir=os.path.join(HERE, "scenes"),
-        cache_dir=os.path.join(HERE, "scenes", "generated"),
         projects_dir=os.path.join(HERE, "projects"),
-        fps=args.fps, model=args.model,
+        fps=args.fps,
         enable_diagnostics=args.diag,
     )
     engine.start()
     startup_project = _resolve_startup_project(engine.projects)
     engine.composite.set_project(startup_project)
-    print(f"[lightsaber] engine running — project={startup_project} "
-          f"director={'claude' if engine.director.online else 'local'}")
+    print(f"[lightsaber] engine running — project={startup_project}")
+    if args.open and not args.web:
+        print("[lightsaber] --open needs --web (there is no editor to open without it)")
     if args.web:
         print(f"[lightsaber] open http://localhost:{args.web_port}")
+        if args.open:
+            from lightsaber.browser import open_editor
+            open_editor(args.open, args.web_port)
         try:
             run_web(engine, os.path.join(HERE, "media"), host=args.host, port=args.web_port)
         finally:

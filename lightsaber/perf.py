@@ -1,13 +1,15 @@
 """Realtime render-loop diagnostics.
 
 The compositor's render loop (`CompositeRenderer._loop`, composite.py) is a
-fixed-rate thread: render every shape's scene, publish the composite payload,
-sleep off whatever's left of the frame budget. When something's slow, the
+fixed-rate thread: build every shape's layer (effectors, media playheads),
+publish it, sleep off whatever's left of the frame budget. When something's slow, the
 *symptom* (stutter) doesn't say WHERE the cost is — this measures each stage
 so that's visible instead of guessed at:
 
-  - `render_ms`  time spent building every shape's frame (generators + camera
-                 projection) — the part scene/shape-count complexity affects.
+  - `render_ms`  time spent building every shape's layer dict and resolving
+                 effector routes — scales with shape and route count. Small
+                 (well under 1ms for ten shapes) since the vector-scene
+                 renderer was removed; it was ~17ms for two scenes before.
   - `output_ms`  currently always 0 — no separate "hand off to hardware" stage
                  exists any more; kept as a field in case a future stage
                  (e.g. building the browser payload) wants to be split out.
@@ -19,6 +21,9 @@ so that's visible instead of guessed at:
   - dropped ticks: a tick whose total work exceeded the frame budget, so it
                  skipped its sleep entirely — the direct measurement of "the
                  loop fell behind its target FPS".
+
+`avg_points`/`max_points` now count LAYERS per tick (there are no stroke
+points any more); the field names are kept so state()'s shape is unchanged.
 
 `crossfading`/`xfade_ticks`/`xfade_dropped` are vestigial (the old
 single-scene loop's crossfade doesn't exist any more) — composite.py always

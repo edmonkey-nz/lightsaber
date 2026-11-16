@@ -11,12 +11,12 @@ Audience: Claude Code sessions working on this repo. Read this before proposing 
 
 **This document, and everything under `renderhost/`, is lightsaber-only.**
 Lightsaber is a fork of promptwaver (still developed alongside it, on the
-`upstream` remote) and the two share a scene engine — but promptwaver drives a
-vector laser and has no render host, no projector rig, and no equivalent of
-any of this. So: don't look upstream for prior art on §2-§10, and don't try to
-port this work back. What *does* flow between them is scene/generator/director
-code, selectively and by hand — see TECHNICAL.md's "Relationship to
-promptwaver" for how, and for what has already crossed.
+`upstream` remote), but promptwaver drives a vector laser and has no render
+host, no projector rig, and no equivalent of any of this. Since 2026-11 they
+don't share an engine either: lightsaber removed the generated vector-scene
+pipeline and its Claude director to become a video tool. So: don't look
+upstream for prior art, and don't try to port this work back — see
+TECHNICAL.md's "Relationship to promptwaver".
 
 ---
 
@@ -153,7 +153,7 @@ If using KMSDRM: X must not be running (single DRM master), and the process user
 Two-stage. The scene renders once into an offscreen buffer; each projector then samples that buffer through its own transform.
 
 ```
-  scene (vectors + video layers)
+  scene (video, image, webcam and text layers)
         │
         ▼
   FBO  7680×1024
@@ -223,10 +223,10 @@ Everything downstream of the FBO — crop, homography, warp, blend, output — i
 
 ### Content layers
 
-Both composite into the same FBO before the correction chain:
+Every layer composites into the same FBO before the correction chain:
 
-- **Vector** — the existing stroke engine. Primary content source.
-- **Video** — decoded via VA-API, imported as a GL texture through DMA-BUF (zero-copy), drawn as a textured quad. Because it lands in the FBO, it inherits crop/warp/blend for free.
+- **Video** — the primary content source (the laptop app's vector stroke
+  engine was removed in 2026-11). Decoded via VA-API, imported as a GL texture through DMA-BUF (zero-copy), drawn as a textured quad. Because it lands in the FBO, it inherits crop/warp/blend for free.
 
 For video, `libmpv`'s render API is worth preferring over raw GStreamer: it draws into *your* GL context rather than owning a window, and brings seeking, gapless playback and format handling at low integration cost.
 
@@ -588,7 +588,11 @@ apply.
   against.
 
 - **Measured: the topology-A media path caps out around 4–6 distorted HD
-  layers, and the limit is compositing, not decode or bitrate.** Benchmarked
+  layers, and the limit is compositing, not decode or bitrate.** (Superseded
+  in part, 2026-11: these numbers were taken with readback-synced timing,
+  which itself halves the iGPU's throughput, and before the filtered-mesh
+  fix. Re-measured: 12 distorted 1080p layers hold 27-37fps on the iGPU. See
+  "Measured on the laptop, 2026-11" below.) Benchmarked
   on a Ryzen 5 5500U with GPU-rasterized Canvas2D (AMD radeonsi via ANGLE),
   1080p output, using the shipping warp code verbatim. Per distorted 1080p
   media layer: ~4.5ms for the 72-triangle mesh alone, ~1.2ms for the
@@ -648,7 +652,7 @@ apply.
      measure before assuming smaller means faster. The optimisation was
      written, verified correct, measured, and then deleted.
 
-     **Re-confirmed by the feather work (see 5-7).** Bounding a filtered
+     **Re-confirmed by the feather work (see 5-8).** Bounding a filtered
      draw to its bbox looked like a decisive 4x win — under software
      rasterisation. On the GPU it measured exactly neutral, same as here.
      Two independent attempts, same verdict: **region bounds do not pay on
@@ -667,7 +671,10 @@ apply.
      filter looks free.** `performance.now()` around a paint measures command
      *submission*, not execution; in a tight loop the queue runs ahead and a
      4-octave `feTurbulence` clocks the same as a posterize. Force a sync with
-     a 1px `getImageData` before stopping the clock. This invalidated a first
+     a 1px `getImageData` before stopping the clock. **But see the 2026-11
+     caveat below:** on the AMD iGPU, readbacks permanently halve that
+     canvas's throughput, so synced numbers are pessimistic in absolute terms
+     and only the deltas are trustworthy. This invalidated a first
      pass of every number below by roughly 10x. Async is a lower bound and
      synced (which serialises work the GPU would otherwise pipeline) is an
      upper bound; the honest signal is the *delta* between variants measured
@@ -706,7 +713,35 @@ apply.
      uses `type="discrete"` and the other two are folded into the band
      *values*, so the bands stay hard however the curve is bent. Any future
      per-channel effect should join that table rather than add a primitive.
-  7. **Measure headed, or you are measuring SwiftShader.** Headless
+  7. **Topology A runs out of MEMORY before it runs out of frame budget, and
+     it fails as a white window rather than a slow one.** Measured: each open
+     output window costs **420-770MB**, with only 3.6MB clips on 8 layers —
+     editor alone 1505MB, then 1923 / 2502 / 3024 / 3796MB as four windows
+     open. Every window is a separate renderer process that decodes every
+     media layer independently (the N x M cost above), so the bill scales with
+     windows, distinct playback configs, and source file size.
+
+     The failure mode is the important part: past the limit Chrome cannot
+     spawn a renderer for the next window, so `window.open` returns a window
+     that **stays at `about:blank` and paints white**, with an empty console
+     because no page ever loaded. It looks nothing like an out-of-memory
+     error and nothing like a render bug — it looks like the app broke. A
+     real case: a 14GB laptop with 960MB free and swap 1.6GB/2.0GB full,
+     driving a canvas whose 10 layers needed 5 decoders per window including a
+     1.1GB and a 317MB video. Outputs 1 and 2 opened and played; 3 was white.
+
+     Decoder count is bounded by distinct (asset, playback-config) pairs, not
+     by shape count — shapes sharing a file at the same trim share one
+     decoder (see output.html's `getMediaEl`). `preload="auto"` on the
+     `<video>` elements makes Chrome buffer speculatively, which is where much
+     of the per-window cost goes; `"metadata"` would trade start-up smoothness
+     for memory, and has NOT been measured.
+
+     **This is the sharpest argument for the render host** — not frame time.
+     Topology B decodes once into a shared FBO and reads it per output, so
+     adding a projector costs a crop, not another full set of decoders.
+
+  8. **Measure headed, or you are measuring SwiftShader.** Headless
      Chromium falls back to software rendering *even with*
      `--ignore-gpu-blocklist --enable-gpu-rasterization`; only
      `headless=False` on the real display gets the GPU. Confirm with
@@ -745,6 +780,164 @@ apply.
   decoder per clip, no cross-window convergence to maintain — which is worth
   stating explicitly as another thing topology B removes rather than
   reimplements.
+
+### Measured on the laptop, 2026-11 (topology A, single output)
+
+A review aimed at one question: what limits a single-output show on the dev
+laptop (Ryzen 5 5500U, AMD Radeon iGPU, plus a GTX 1650), now that video is the
+content. Measured in **real Google Chrome, headed**, on a sandbox copy of a real
+10-shape project and on a synthetic stress canvas of 12 distorted 1080p25
+H.264 layers at 1920x1080. Several earlier assumptions turned out wrong.
+
+**Measurement traps, in the order they cost time:**
+
+- **Playwright's bundled Chromium has no H.264.** An `.mp4` layer never becomes
+  `ready` and draws black, so a first A/B "measured" two empty frames. Use
+  `channel="chrome"` for anything involving video; the regression harness now
+  makes a VP8 WebM fixture instead (`harness.VIDEO_FIXTURE`).
+- **`getImageData` readback degrades the canvas for good on the AMD iGPU.**
+  After 60 readbacks, the same paint's throughput fell from 55 to 28fps (6
+  layers) and 37 to 17fps (12 layers), and stayed there. GPU-cost item 4 above recommends readback-synced timing, and
+  `suite_perf.py` uses it; both remain valid as *deltas* measured the same
+  way, but not as absolute numbers. For absolute throughput, paint every rAF
+  without readback and count frames.
+- **The editor's hidden Output Preview tiles are full renderers** (see below),
+  so any benchmark that opens the editor is also running N more output pages.
+
+**What limited the picture, and what was done about it:**
+
+1. **~~The GPU, and the wrong one.~~ WITHDRAWN — see "Correction" below.**
+   This item reported the GTX 1650 running video outputs 1.5-5x faster than
+   the iGPU. Those NVIDIA numbers were taken while every video drew BLACK:
+   on this laptop's Wayland session, Chrome on the NVIDIA card (PRIME
+   offload, OpenGL/GLX) cannot display video at all. The iGPU figures stand.
+   The iGPU at 60fps with filters does not degrade gracefully to 30; it
+   collapses to single figures, so keep the project fps at what the content
+   needs.
+
+2. **A colour filter on a warped layer ran 72 times.** `ctx.filter` applies
+   per draw call, so brightness/contrast/hue/saturation/colourize on a
+   distorted shape filtered every mesh triangle separately. Now the mesh
+   draws unfiltered into the existing scratch buffer and the filter is applied
+   once, on the blit — the same route translucent meshes already took for the
+   anti-seam reason. 12 layers, brightness 1.2, rAF throughput: iGPU 17.5 ->
+   32fps, back within a few fps of unfiltered.
+
+3. **The render loop ignored the project's frame rate.** `_loop` computed its
+   period once, before the loop, so a 30fps project ran at the `--fps`
+   default of 20 (measured 19.8) while the UI and broadcaster both said 30.
+   The diagnostics' target and budget were stuck the same way. Both now track
+   `self.fps` every tick, and both loops are deadline-paced rather than
+   "sleep a period after the work", which had held the broadcaster at
+   27.5/s for a 30fps target. Now 29.7-30.
+
+4. **Output paints were tied to message arrival.** A window that could paint
+   55-60fps painted 27.5 times a second because it only painted when a state
+   message landed. Video frames advance in the browser regardless; the server
+   only supplies corners, settings and a playhead. The output now repaints
+   the newest state every period while video or webcam is on screen, and
+   converges on the playhead only on the first paint after a message (a stale
+   playhead would read as "running ahead" and drag every video back). Proven
+   by the output suite: starved to 7.5 messages/s, the window still paints
+   video at 30/s, and a still image only on messages.
+
+5. **Hidden preview tiles cost a whole output each.** The editor built one
+   `/output?preview=1` iframe per output whether or not the Output Preview
+   tab was open. On the real 3-output project that was 8 extra decoders (5
+   actively decoding), each tile painting ~16 times a second into an
+   invisible 300x150 canvas. Building them only while the tab is visible freed
+   307MB and raised the editor's own message rate from 17.4 to 20/s.
+
+6. **The Python process was busy rendering scenes nobody needed.** On the
+   real project, the vector-scene renderer cost ~17ms a tick for two shapes at
+   full CPU clock (~50ms with the CPU capped), and the broadcaster then
+   serialised the whole state twice (a std and an HQ stroke payload): ~25ms of
+   GIL time a tick between them, at frame rate. One of the two scenes was
+   attached to a *webcam* shape and never drawn at all. The vector path was
+   removed for unrelated reasons (lightsaber is a video tool now); after it,
+   building every layer takes ~0.5ms a tick and one 28kB broadcast payload
+   ~0.8ms. The server is no longer a factor for a single output.
+
+7. **One stalled websocket client froze state for everyone.** The broadcaster
+   `gather`ed every client's send, and aiohttp's send waits for the socket to
+   drain once its buffer fills, so a client that stopped reading stopped
+   delivery to every other window: found when a benchmark client did exactly
+   that and the output under test dropped to 0 messages/s. Each client now has
+   its own sender with a one-slot mailbox; the same run delivers 30/s. A hung
+   Chrome tab did *not* reproduce it within 40s (Chrome buffers a lot), so the
+   realistic risk was a script or tool client.
+
+**Tried and dropped: WebGL warp inside the Canvas2D pipeline.** GPU-cost item 3
+predicts that removing the 72 per-triangle draw calls is the big win. A
+prototype drew each warped layer as one WebGL mesh (a 24x24 grid, true
+projective UVs) into a GL canvas and blitted it back into the 2D canvas. It
+was **no faster** — 6 layers, about 49fps against 57 for the existing mesh (taken
+while another app was loading the machine, so treat as indicative) — because
+each layer still paid a GL-canvas-to-2D-canvas transfer. The draw-call count
+is not the binding constraint once the GPU is the bottleneck; a hybrid buys
+nothing. A real win needs the whole compositor in one GL context — which is
+topology B's render host, not a patch to topology A.
+
+**What this means for the RAM conclusion (item 7).** It still holds for
+*multiple* output windows: every window is its own renderer with its own
+decoders. For a single output, though, the binding limits were GPU choice,
+per-triangle filtering and paint pacing, not memory — and the hidden preview
+tiles were silently making a one-output show cost like a four-output one.
+
+### Correction, and the 3-projector project (2026-11, later the same day)
+
+Investigating a real 3-output project (`doublehappy-768h`: a 3072x768 canvas
+sliced across three 1024x768 projectors, three 1080p H.264 videos — one with
+a 9-segment kaleidoscope and a custom mask, one masked, one chroma-keyed and
+pixelated — plus images, text, a webcam and a cutout), measured in real Chrome
+with every screenshot checked for actual video this time:
+
+**The NVIDIA card can't show video in this session.** Under Wayland with PRIME
+offload, Chrome on the 1650 has two working backends and neither does both
+jobs:
+
+| Chrome backend on the 1650 | Canvas drawn on the GPU | Video |
+|---|---|---|
+| OpenGL via GLX (`--ozone-platform=x11` + PRIME variables) | yes (~3x the iGPU) | broken: `<video>` white, canvas copy black |
+| EGL (`--use-angle=gl-egl` + `__EGL_VENDOR_LIBRARY_FILENAMES`), or Vulkan | no — Chrome falls back to software compositing | correct |
+
+Flags tried without effect on the GLX path: disabling GPU memory buffers,
+native GPU memory buffers, zero-copy, multi-plane video formats. Native
+Wayland with the NVIDIA EGL vendor gave no WebGL at all. **Hardware decode on
+the AMD chip feeding the NVIDIA card** (`LIBVA_DRIVER_NAME=radeonsi` + VA-API
+features) also drew black — the decoded frames never cross GPUs. Untested
+and the likely fix: an **Xorg session** ("Ubuntu on Xorg" at login), where
+`prime-select nvidia` (already set on this laptop) makes the 1650 the primary
+GPU with no offload. Until that is verified, video work runs on the iGPU.
+
+**On the iGPU, that project gets 5fps per output with three output windows
+open — and 16-17fps in ONE window showing the whole canvas.** The same
+picture, three times the frame rate, because each window repeats all of the
+video work for its own slice: every window copies each visible 1080p frame
+into a canvas every paint and warps it, so a clip spanning two projectors
+costs twice. Leaving one shape out at a time across all three windows: each
+video alone was worth +2-3fps, all three videos together 5 -> 22fps, any other
+shape 0-1fps. That is §5's N x M argument measured on real content, and it is
+the strongest single argument for the render host: decode each clip once into
+the shared FBO, crop per projector.
+
+Smaller levers measured on that project (iGPU, three windows):
+- **Software decode beat hardware decode**: 5 -> 7fps with
+  `--disable-accelerated-video-decode`. Moving VA-API frames into a 2D canvas
+  costs more than decoding on the CPU. In one spanning window the difference
+  shrank to 16 vs 17.
+- **Capping the per-paint frame copy** at 960px wide: 5 -> 7fps, but it blurs
+  any video shown larger than that. Not shipped.
+- **A WebGL warp for video** (frame uploaded to a texture, one draw): no gain,
+  4.5 vs 5. Removing the 72 mesh draws doesn't help when the per-frame copy
+  is the cost. Third time this has come out flat; don't retry it in topology A.
+- **The editor's live preview** (now a toggle): off, +1fps on the iGPU, and it
+  stops the editor decoding its own copy of every video.
+
+**Conclusion for topology A:** one output window per laptop. A multi-projector
+canvas in the laptop app is for composing and setup; three output windows of
+HD video is past what one browser on this hardware can do at frame rate, and
+that is the render host's job.
 
 ### Suggested next build steps, in order
 

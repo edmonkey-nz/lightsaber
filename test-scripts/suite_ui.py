@@ -8,7 +8,8 @@ wired to a key the server drops, which renders as "the slider does nothing".
 from harness import FULL_QUAD
 
 EXPECTED_PANES = ["shapesettings", "playback", "mask", "colourize",
-                  "transform", "key", "fx", "effectors", "settings"]
+                  "transform", "key", "fx", "effectors"]
+# ("settings", the 3D Scene Settings pane, went with the vector scenes in 2026-11.)
 
 
 async def run(s, rep):

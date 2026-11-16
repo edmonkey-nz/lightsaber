@@ -8,10 +8,7 @@ it — adding a new source type doesn't touch routing.
 
 Lives at the CANVAS level (see canvases.py's CanvasSpec.effectors), not the
 scene: a route targets a specific polygon + param on THIS canvas, the same
-place Monitor filters' brightness/hue/etc already live, whereas
-SceneSpec.modulation (scenes.py) is a different, older mechanism entirely —
-per-scene-generator-param modulation baked into a scene's own JSON, unrelated
-to this.
+place Monitor filters' brightness/hue/etc already live.
 
 Scope (see PROMPT-effectors.md's own precedent for phased scope): `lfo` and
 `audio` sources are implemented; `steps` (step sequencer / arpeggiator) is
@@ -22,13 +19,12 @@ implementation pass. Routing targets: hue/saturation/brightness/opacity
 position_x/position_y/scale/rotation (a delta applied around a chosen
 anchor point — see transform_corners/ANCHOR_FRACTIONS below; a polygon's
 geometry is just four corners with no decomposed transform basis, so these
-are pivot-relative deltas, not absolute values). stroke-width isn't
-modulatable yet — no per-stroke-width override exists to hook into.
+are pivot-relative deltas, not absolute values).
 
 Determinism (ARCHITECTURE.md §5): every `lfo` source is a pure function of
 a single timestamp `t`, never of accumulated per-tick deltas — the render
-loop already computes `t` this way for every scene slot (see composite.py's
-_loop), so plugging in here doesn't change that discipline. `sample_hold`
+loop derives `t` from one canvas clock (see composite.py's _loop and
+_effector_t0), so a dropped tick never shifts the waveform. `sample_hold`
 needs a value that's constant within one LFO cycle but changes between
 cycles unpredictably — computed from a seeded PRNG keyed on the cycle
 INDEX (`random.Random(seed)`, a fresh instance per call), never bare
@@ -156,9 +152,7 @@ class EffectorSource:
     def sample(self, t: float, bpm: float, audio_bands: dict | None = None) -> float:
         """LFO: bipolar -1..1, pure function of (t, bpm) — see module
         docstring. Audio: unipolar 0..1, NOT a function of t at all — it's a
-        live external signal (see composite.py's set_audio_bands), the same
-        category modulation.py's own `Value` class already models for
-        externally-driven values. The determinism requirement in the module
+        live external signal (see composite.py's set_audio_bands). The determinism requirement in the module
         docstring is specifically about sources that claim to be a pure
         function of time; a live mic input never was one, same as the spec's
         own framing ("microphone input") assumes."""
@@ -259,8 +253,7 @@ class EffectorMatrix:
 
     def source_values(self, t: float, audio_bands: dict | None = None) -> dict:
         """One sampled value per source, for meters (2) and route resolution —
-        computed once per tick and reused for both, same discipline as
-        modulation.py's ModMatrix.update()/source_value(). `audio_bands` —
+        computed once per tick and reused for both. `audio_bands` —
         {"low"/"mid"/"high"/"master": 0..1} — is the browser's live mic
         analysis (see composite.py's set_audio_bands); ignored by "lfo"-type
         sources. Always includes the 4 fixed AUDIO_PSEUDO_SOURCE_IDS too (1),

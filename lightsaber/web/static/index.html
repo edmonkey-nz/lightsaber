@@ -339,6 +339,12 @@
   .statusdot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--red);
     box-shadow:0 0 6px var(--red);flex:0 0 auto}
   .statusdot.on{background:var(--green);box-shadow:0 0 6px var(--green)}
+  /* GPU indicator (ported from promptwaver): green = dedicated, amber =
+     integrated, grey = unknown, the default red = software rendering. */
+  .statusdot.warn{background:var(--amber);box-shadow:0 0 6px var(--amber)}
+  .statusdot.unknown{background:var(--dim);box-shadow:none}
+  .gpuname{color:var(--ink);font-family:var(--mono);font-size:11px;max-width:32ch;
+           overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .statushead{display:flex;align-items:center;gap:8px}
 
   /* Header sequencer indicator (3) — "is it running" and "stop it" without
@@ -478,6 +484,7 @@
   <symbol id="bi-display" viewBox="0 0 16 16"><path d="M0 4s0-2 2-2h12s2 0 2 2v6s0 2-2 2h-4q0 1 .25 1.5H11a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1h.75Q6 13 6 12H2s-2 0-2-2zm1.398-.855a.76.76 0 0 0-.254.302A1.5 1.5 0 0 0 1 4.01V10c0 .325.078.502.145.602q.105.156.302.254a1.5 1.5 0 0 0 .538.143L2.01 11H14c.325 0 .502-.078.602-.145a.76.76 0 0 0 .254-.302 1.5 1.5 0 0 0 .143-.538L15 9.99V4c0-.325-.078-.502-.145-.602a.76.76 0 0 0-.302-.254A1.5 1.5 0 0 0 13.99 3H2c-.325 0-.502.078-.602.145"/></symbol>
   <symbol id="bi-exclamation-triangle-fill" viewBox="0 0 16 16"><path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5m.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2"/></symbol>
   <symbol id="bi-eraser-fill" viewBox="0 0 16 16"><path d="M8.086 2.207a2 2 0 0 1 2.828 0l3.879 3.879a2 2 0 0 1 0 2.828l-5.5 5.5A2 2 0 0 1 7.879 15H5.12a2 2 0 0 1-1.414-.586l-2.5-2.5a2 2 0 0 1 0-2.828zm.66 11.34L3.453 8.254 1.914 9.793a1 1 0 0 0 0 1.414l2.5 2.5a1 1 0 0 0 .707.293H7.88a1 1 0 0 0 .707-.293z"/></symbol>
+  <symbol id="ls-visual" viewBox="0 0 16 16"><path d="M4.6 14h7.2a3.1 3.1 0 0 0 .3-6.18A4.2 4.2 0 0 0 4 8.1 3 3 0 0 0 4.6 14z"/><circle cx="3" cy="3" r="1.1"/><circle cx="7.4" cy="1.8" r=".7"/><circle cx="13" cy="3.4" r=".9"/></symbol>
   <symbol id="bi-stars" viewBox="0 0 16 16"><path d="M7.657 6.247c.11-.33.576-.33.686 0l.645 1.937a2.89 2.89 0 0 0 1.829 1.828l1.936.645c.33.11.33.576 0 .686l-1.937.645a2.89 2.89 0 0 0-1.828 1.829l-.645 1.936a.361.361 0 0 1-.686 0l-.645-1.937a2.89 2.89 0 0 0-1.828-1.828l-1.937-.645a.361.361 0 0 1 0-.686l1.937-.645a2.89 2.89 0 0 0 1.828-1.828zM3.794 1.148a.217.217 0 0 1 .412 0l.387 1.162c.173.518.579.924 1.097 1.097l1.162.387a.217.217 0 0 1 0 .412l-1.162.387A1.73 1.73 0 0 0 4.593 5.69l-.387 1.162a.217.217 0 0 1-.412 0L3.407 5.69A1.73 1.73 0 0 0 2.31 4.593l-1.162-.387a.217.217 0 0 1 0-.412l1.162-.387A1.73 1.73 0 0 0 3.407 2.31zM10.863.099a.145.145 0 0 1 .274 0l.258.774c.115.346.386.617.732.732l.774.258a.145.145 0 0 1 0 .274l-.774.258a1.16 1.16 0 0 0-.732.732l-.258.774a.145.145 0 0 1-.274 0l-.258-.774a1.16 1.16 0 0 0-.732-.732L9.1 2.137a.145.145 0 0 1 0-.274l.774-.258c.346-.115.617-.386.732-.732z"/></symbol>
   <symbol id="bi-eyedropper" viewBox="0 0 16 16"><path d="M13.354.646a1.207 1.207 0 0 0-1.708 0L8.5 3.793l-.646-.647a.5.5 0 1 0-.708.708L8.293 5l-7.147 7.146A.5.5 0 0 0 1 12.5v1.793l-.854.853a.5.5 0 1 0 .708.707L1.707 15H3.5a.5.5 0 0 0 .354-.146L11 7.707l1.146 1.147a.5.5 0 0 0 .708-.708l-.647-.646 3.147-3.146a1.207 1.207 0 0 0 0-1.708zM2 12.707l7-7L10.293 7l-7 7H2z"/></symbol>
   <symbol id="bi-film" viewBox="0 0 16 16"><path d="M0 1a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1zm4 0v6h8V1zm8 8H4v6h8zM1 1v2h2V1zm2 3H1v2h2zM1 7v2h2V7zm2 3H1v2h2zm-2 3v2h2v-2zM15 1h-2v2h2zm-2 3v2h2V4zm2 3h-2v2h2zm-2 3v2h2v-2zm2 3h-2v2h2z"/></symbol>
@@ -517,10 +524,10 @@
     <span>Status:</span>
     <span class="statusdot" id="engine-dot" title="backend engine websocket"></span>
     <span>Engine</span>
-    <span class="statusdot" id="claude-dot" title="Claude API"></span>
-    <span>Claude API</span>
     <span class="statusdot" id="renderhost-dot" title="renderhost/serve.py — a heartbeat only; it doesn't receive this canvas's live content yet, see ARCHITECTURE.md §12"></span>
     <span>Render Host</span>
+    <span class="statusdot unknown" id="gpu-dot" title="GPU"></span>
+    <span>GPU:</span><span class="gpuname" id="gpu-name">…</span>
   </div>
   <span class="meta" id="meta">connecting…</span>
   <span style="flex:1"></span>
@@ -554,7 +561,7 @@
         <button id="project-delete" title="Delete project"><svg class="bi" aria-hidden="true"><use href="#bi-x-lg"/></svg></button>
         <span class="dirty-indicator" id="project-dirty-indicator"><span class="dirty-dot"></span>changes not saved</span>
       </div>
-      <div class="hint">a project owns its own canvases and sequence — scenes and uploaded media stay shared across every project</div>
+      <div class="hint">a project owns its own canvases and sequence — uploaded media and media folders stay shared across every project</div>
 <details class="accordion" id="acc-project-notes" open>
         <summary>Notes</summary>
         <div class="accordion-body">
@@ -710,7 +717,7 @@
           <button class="input-rail-btn" id="input-btn-media" data-section="media" title="Video / image files" aria-label="Video / image files"><svg class="bi" aria-hidden="true"><use href="#bi-film"/></svg></button>
           <button class="input-rail-btn" id="input-btn-webcam" data-section="webcam" title="Webcam" aria-label="Webcam"><svg class="bi" aria-hidden="true"><use href="#bi-camera-video"/></svg></button>
           <button class="input-rail-btn" id="input-btn-text" data-section="text" title="Text input" aria-label="Text input"><svg class="bi" aria-hidden="true"><use href="#bi-fonts"/></svg></button>
-          <button class="input-rail-btn" id="input-btn-scenelib" data-section="scenelib" title="3D Scenes" aria-label="3D Scenes"><svg class="bi" aria-hidden="true"><use href="#bi-camera-reels"/></svg></button>
+          <button class="input-rail-btn" id="input-btn-visuals" data-section="visuals" title="Visualisers — audio-responsive" aria-label="Visualisers"><svg class="bi" aria-hidden="true"><use href="#ls-visual"/></svg></button>
           <button class="input-rail-btn" id="input-btn-cutout" data-section="cutout" title="Cutout" aria-label="Cutout"><svg class="bi" aria-hidden="true"><use href="#bi-eraser-fill"/></svg></button>
         </div>
         <div class="input-pane" id="input-pane">
@@ -744,6 +751,11 @@
 <div class="row"><button id="text-add-btn" style="width:100%">+ Add text shape</button></div>
               <div class="hint">adds a new shape showing live text — edit its content, colour and size from Shape settings once added</div>
         </div>
+        <div class="group input-section" id="input-sec-visuals" style="display:none">
+          <h2>Visualisers</h2>
+              <div class="lib" id="visual-preset-list" style="grid-template-columns:1fr"></div>
+              <div class="hint">generated, audio-responsive fills. Each "+" adds a shape; tune it from Shape settings. They react to the mic once audio input is started (Effectors pane), and work fine without it.</div>
+        </div>
         <div class="group input-section" id="input-sec-cutout" style="display:none">
           <h2>Cutout</h2>
           <div class="row"><button id="cutout-add-btn" style="width:100%"><svg class="bi" aria-hidden="true"><use href="#bi-eraser-fill"/></svg><span>+ Add cutout shape</span></button></div>
@@ -751,11 +763,6 @@
           <div class="row"><button id="cutout-add-punch-btn" style="width:100%"><svg class="bi" aria-hidden="true"><use href="#bi-eraser-fill"/></svg><span>+ Add punch-through</span></button></div>
           <div class="hint">the same shape in its other mode: instead of painting black it <b>erases</b> the shapes behind it, so whatever is further back shows through the hole — a window cut in one layer onto another. How deep it cuts is a setting on the shape (Shape settings &gt; punch depth), so one cutout can go through several shapes or stop after the first.</div>
           <div class="hint">neither is a quad — double-click an edge to add a point, double-click a point to remove one. Different thing from Mask/clipping, which trims a single shape's own silhouette.</div>
-        </div>
-        <div class="group input-section" id="input-sec-scenelib" style="display:none">
-          <h2>3D Scenes</h2>
-<button class="go" id="gen-open" style="width:100%">Generate scene…</button>
-              <div class="lib" id="lib"></div>
         </div>
         </div>
       </section>
@@ -780,12 +787,13 @@
             <button id="toggle-frame-guides" class="amber" title="Show the output frame guides — where each projector's slice starts and stops"><svg class="bi" aria-hidden="true"><use href="#bi-border-outer"/></svg></button>
             <button id="toggle-hide-borders" title="Hide shape outlines, corner pins and mask handles for a clean view — the selected shape still shows its own, so deselect for a completely clean canvas"><svg class="bi" aria-hidden="true"><use href="#bi-square"/></svg></button>
             <button id="toggle-z-badges" class="amber" title="Show each shape's paint order (z-index) on the canvas"><svg class="bi" aria-hidden="true"><use href="#bi-front"/></svg></button>
+            <button id="toggle-live-preview" class="amber" title="Live preview of video, webcam, text and visualisers in this editor. Turn it OFF during a show: the editor is a full extra renderer with its own video decoders, and on a 3-output project it halved every output's frame rate. Shape outlines and handles stay."><svg class="bi" aria-hidden="true"><use href="#bi-display"/></svg></button>
             <button id="canvas-freeze-btn" title="Freeze shape playback — content stays visible, just stops animating"><svg class="bi" aria-hidden="true"><use href="#bi-snow"/></svg></button>
           </div>
         </div>
         <div class="hint">scroll to zoom · hold space (or Hand tool) + drag to pan</div>
         <canvas id="cv-edit" width="640" height="360"></canvas>
-        <div class="hint">click a shape to select it, drag its corners to distort · <b>shift</b>-drag a corner to scale the whole shape · assign a scene from Shape settings below, or the "+" next to a scene in the library.</div>
+        <div class="hint">click a shape to select it, drag its corners to distort · <b>shift</b>-drag a corner to scale the whole shape · fill a shape from the Input rail on the left, or from Shape settings.</div>
       </div>
       </div>
 
@@ -821,7 +829,6 @@
         <button id="handle-key" class="drawer-handle-btn" data-drawer="key" title="Key — chroma / luma keying" aria-label="Key"><svg class="bi" aria-hidden="true"><use href="#bi-eyedropper"/></svg></button>
         <button id="handle-fx" class="drawer-handle-btn" data-drawer="fx" title="FX — pixelate, posterize, solarize, invert, duotone" aria-label="FX"><svg class="bi" aria-hidden="true"><use href="#bi-stars"/></svg></button>
         <button id="handle-effectors" class="drawer-handle-btn" data-drawer="effectors" title="Effectors — LFO and audio modulation" aria-label="Effectors"><svg class="bi" aria-hidden="true"><use href="#bi-activity"/></svg></button>
-        <button id="handle-settings" class="drawer-handle-btn" data-drawer="settings" title="3D Scene Settings — motion and scene camera" aria-label="3D Scene Settings"><svg class="bi" aria-hidden="true"><use href="#bi-badge-3d"/></svg></button>
       </div>
 
       <div id="content-shapesettings" class="drawer-content">
@@ -846,11 +853,9 @@
             <option value="media">Media</option>
             <option value="webcam">Webcam</option>
             <option value="text">Text</option>
-            <option value="scene">3D Scene</option>
+            <option value="visual">Visualiser</option>
             <option value="knockout">Cutout</option>
           </select></div>
-        <div class="field" id="poly-scene-field"><label>scene</label>
-          <select id="poly-scene"></select></div>
         <div class="field" id="poly-media-source-field" style="display:none"><label>source</label>
           <button id="poly-media-src-link" class="amber" title="Reference a file where it already lives — nothing is copied"><svg class="bi" aria-hidden="true"><use href="#bi-link-45deg"/></svg><span>Linked file</span></button>
           <button id="poly-media-src-lib" title="Use a file copied into the app's own media library"><svg class="bi" aria-hidden="true"><use href="#bi-folder-fill"/></svg><span>Library</span></button></div>
@@ -867,7 +872,7 @@
           </div>
           <div class="hint" id="poly-media-link-status"></div>
         </div>
-        <div class="hint" id="poly-media-hint" style="display:none">images and videos loop automatically — drag corners same as a scene shape</div>
+        <div class="hint" id="poly-media-hint" style="display:none">images and videos loop automatically — drag the corners to fit the surface</div>
         <div class="hint" id="poly-playback-pointer" style="display:none">in/out points, speed and loop mode live in the <b>Playback</b> pane →</div>
         <div class="field" id="poly-webcam-field" style="display:none"><label>camera</label>
           <select id="poly-webcam-device"></select></div>
@@ -879,6 +884,10 @@
         <div class="field" id="poly-text-size-field" style="display:none"><label>text size</label>
           <input type="range" id="poly-text-size" min="0.02" max="1" step="0.01" value="0.2">
           <span class="val" id="v-polytextsize">0.20</span></div>
+        <div class="field" id="poly-visual-preset-field" style="display:none"><label>visualiser</label>
+          <select id="poly-visual-preset"></select></div>
+        <div id="poly-visual-params" class="stack" style="display:none"></div>
+        <div class="hint" id="poly-visual-hint" style="display:none"></div>
         <div class="hint" id="poly-knockout-hint" style="display:none">a boolean cutout — solid, blocks the output wherever it overlaps other shapes (see z-index below). Not a quad: double-click an edge to add a point, double-click a point to remove it (min. 3)</div>
         <label class="field" id="poly-knockout-punch-field" style="display:none;gap:8px;font-size:13px">
           <input type="checkbox" id="poly-knockout-punch">
@@ -896,7 +905,7 @@
             <option value="fit">Fit (letterbox)</option>
             <option value="crop">Crop (fill)</option>
           </select></div>
-        <div class="hint" id="poly-fit-hint">how the scene's own frame shape fits this shape's quad</div>
+        <div class="hint" id="poly-fit-hint">how the content's own shape fits this shape's quad</div>
         <div class="field"><label>z-index</label>
           <input type="range" id="poly-zindex" min="1" max="10" step="1" value="5">
           <span class="val" id="v-polyzindex">5</span></div>
@@ -914,7 +923,7 @@
       <div id="content-playback" class="drawer-content" style="display:none">
       <div class="group" id="g-playback">
         <h2>Playback</h2>
-        <div class="hint" id="playback-empty">select a shape filled with a video to trim it — images, scenes, webcams and text have no playhead</div>
+        <div class="hint" id="playback-empty">select a shape filled with a video to trim it — images, webcams and text have no playhead</div>
         <div id="poly-playback-field" class="stack" style="display:none">
           <div class="field"><label>playback</label>
             <select id="poly-media-mode" style="flex:1">
@@ -1007,16 +1016,11 @@
       <div id="content-colourize" class="drawer-content" style="display:none">
       <div class="group" id="g-monitor">
         <h2>Colourize</h2>
-        <div class="hint">applies to the selected shape's monitor output — select any shape (scene, media, webcam or text) to edit</div>
-        <div id="mf-vector-fields" class="stack">
-          <div class="field"><label>glow</label>
-            <input type="range" id="mf-glow" min="0" max="1" step="0.01" value="0">
-            <span class="val" id="v-mfglow">0.00</span></div>
-          <div class="field"><label>trails</label>
-            <input type="range" id="mf-trail" min="0" max="0.95" step="0.01" value="0">
-            <span class="val" id="v-mftrail">0.00</span></div>
-          <div class="hint">glow/trails only affect scene (vector) shapes</div>
-        </div>
+        <div class="hint">applies to the selected shape's monitor output — select any shape (media, webcam or text) to edit</div>
+        <div class="field"><label>trails</label>
+          <input type="range" id="mf-trail" min="0" max="0.95" step="0.01" value="0">
+          <span class="val" id="v-mftrail">0.00</span></div>
+        <div class="hint">trails fade the whole output frame rather than clearing it — the strongest setting on any shape wins</div>
         <div class="field"><label>brightness</label>
           <input type="range" id="mf-brightness" min="0" max="2" step="0.01" value="1">
           <span class="val" id="v-mfbrightness">1.00</span></div>
@@ -1040,7 +1044,7 @@
       <div id="content-transform" class="drawer-content" style="display:none">
       <div class="group" id="g-transform">
         <h2>Transform</h2>
-        <div class="hint">applies to the selected shape's monitor output — select any shape (scene, media, webcam or text) to edit</div>
+        <div class="hint">applies to the selected shape's monitor output — select any shape (media, webcam or text) to edit</div>
         <div class="field"><label>anchor</label>
           <div class="anchor-grid" id="poly-anchor-grid">
             <button data-anchor="top-left" title="Top left"></button>
@@ -1092,7 +1096,7 @@
       <div id="content-key" class="drawer-content" style="display:none">
       <div class="group" id="g-key">
         <h2>Key</h2>
-        <div class="hint" id="key-empty">select a shape filled with a video, image or webcam — a scene or text shape already draws on transparent, so there is nothing to key out</div>
+        <div class="hint" id="key-empty">select a shape filled with a video, image or webcam — a text shape already draws on transparent, so there is nothing to key out</div>
         <div id="poly-key-block" class="stack" style="display:none">
           <div class="field"><label>key</label>
             <select id="poly-key-mode">
@@ -1150,7 +1154,7 @@
             <input type="color" id="poly-fx-duotone-dark" value="#0a1a2f" title="Where the darks land">
             <input type="color" id="poly-fx-duotone-light" value="#ffd166" title="Where the lights land">
             <button id="poly-fx-duo-swap" title="Swap the two colours"><svg class="bi" aria-hidden="true"><use href="#bi-arrow-clockwise"/></svg></button></div>
-          <div class="hint">order is fixed: pixelate first, then solarize &rarr; posterize &rarr; invert as one tone curve, then duotone maps the result onto the two colours. All of it runs after the shape is warped, so it treats whatever the shape shows — video, webcam, a scene or text alike.</div>
+          <div class="hint">order is fixed: pixelate first, then solarize &rarr; posterize &rarr; invert as one tone curve, then duotone maps the result onto the two colours. All of it runs after the shape is warped, so it treats whatever the shape shows — video, image, webcam or text alike.</div>
           <div class="hint">bright-on-black reads best on a projector, since black is simply no light — posterize and duotone with a dark low colour hold up well on a surface, where a washed mid-grey will not.</div>
           <button id="poly-fx-reset" title="Turn every effect on this shape off"><svg class="bi" aria-hidden="true"><use href="#bi-arrow-counterclockwise"/></svg><span>Reset FX</span></button>
         </div>
@@ -1187,57 +1191,6 @@
       </div>
       </div>
 
-      <div id="content-settings" class="drawer-content" style="display:none">
-        <div class="group" id="g-scene-settings-head">
-          <h2>3D Scene Settings</h2>
-          <div class="hint">everything in this pane drives the generated 3D scene filling the selected shape — flow, turbulence, hue and the scene's own camera. A shape holding video, an image, a webcam or text ignores all of it.</div>
-        </div>
-
-        <div class="group" id="g-motion">
-          <h2>Motion</h2>
-          <div class="hint">applies to the selected shape's scene</div>
-          <div class="field"><label>flow speed</label>
-            <input type="range" id="s-speed" min="0" max="0.6" step="0.01" value="0.2">
-            <span class="val" id="v-speed">0.20</span></div>
-          <div class="field"><label>turbulence</label>
-            <input type="range" id="s-turb" min="0" max="1" step="0.01" value="0.35">
-            <span class="val" id="v-turb">0.35</span></div>
-          <div class="field"><label>hue</label>
-            <input type="range" id="s-hue" min="0" max="1" step="0.01" value="0.55">
-            <span class="val" id="v-hue">0.55</span></div>
-        </div>
-
-        <div class="group" id="g-shapecamera">
-          <h2>Shape camera</h2>
-          <div class="hint">applies to the selected shape's scene (3D scenes only) — separate from the Camera group in column 1, which drives the single-scene preview</div>
-          <div class="field"><label>mode</label>
-            <select id="sc-mode">
-              <option value="orbit">orbit</option>
-              <option value="drift">drift</option>
-              <option value="fly">fly</option>
-              <option value="path">path (follows the scene's waypoints)</option>
-            </select></div>
-          <div class="field"><label>speed</label>
-            <input type="range" id="sc-speed" min="0" max="2" step="0.05" value="0.6">
-            <span class="val" id="v-scspeed">0.60</span></div>
-          <div class="field"><label>orbit dist</label>
-            <input type="range" id="sc-radius" min="3" max="20" step="0.5" value="10">
-            <span class="val" id="v-scradius">10.0</span></div>
-          <div class="field"><label>field of view</label>
-            <input type="range" id="sc-fov" min="30" max="100" step="1" value="62">
-            <span class="val" id="v-scfov">62</span></div>
-          <div class="field"><label>draw depth</label>
-            <input type="range" id="sc-far" min="6" max="40" step="1" value="30">
-            <span class="val" id="v-scfar">30</span></div>
-          <div class="field"><label>max strokes</label>
-            <input type="range" id="sc-max" min="20" max="200" step="5" value="120">
-            <span class="val" id="v-scmax">120</span></div>
-          <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim)">
-            <input type="checkbox" id="sc-disable-plane"> disable scene planes (if possible)
-          </label>
-        </div>
-      </div>
-
     </div>
 
     <details class="accordion" id="acc-perf" closed>
@@ -1245,7 +1198,7 @@
       <div class="accordion-body">
         <div class="hint" id="perf-status">fps: —</div>
         <div class="diagrid" id="perfstats"></div>
-        <div class="hint">"dropped" = ticks where render+output overran the frame budget — the direct measure of visible lag/stutter. "during fades" isolates that same count to ticks where a scene crossfade was rendering two full scenes at once.</div>
+        <div class="hint">this is the SERVER's tick (building each shape's state and playhead), not the output windows' paint rate — turn on "show output FPS" in the Project tab for that. "dropped" = ticks that overran the frame budget.</div>
         <div class="underruns" id="perf-drops"></div>
         <div class="row"><button id="perf-copy">Copy diagnostics</button></div>
       </div>
@@ -1294,49 +1247,6 @@
  </div>
 </main>
 
-<div class="modal-backdrop" id="modal-generate">
-  <div class="modal">
-    <div class="modal-head">
-      <h2>Generate scene</h2>
-      <button class="modal-close" id="gen-close">&times;</button>
-    </div>
-    <label class="flabel" for="scenename">name</label>
-    <input type="text" id="scenename" placeholder="e.g. Whale Song (optional — Claude names it if blank)">
-    <label class="flabel" for="kw">scene prompt</label>
-    <textarea id="kw" placeholder="exploring underwater with dozens of large jellyfish, long pink trailing tentacles, shafts of light from above…"></textarea>
-
-    <div class="field"><label>model</label>
-      <select id="d-model">
-        <option value="haiku">Haiku · fast/cheap</option>
-        <option value="sonnet">Sonnet · better</option>
-        <option value="opus">Opus · best</option>
-      </select></div>
-    <div class="field"><label>effort</label>
-      <select id="d-effort">
-        <option value="low">low</option>
-        <option value="med">medium</option>
-        <option value="high">high · richest</option>
-      </select></div>
-    <div class="field"><label>scene size</label>
-      <select id="d-size">
-        <option value="small" selected>small</option>
-        <option value="medium">medium</option>
-        <option value="large">large</option>
-        <option value="massive">massive — a route to travel</option>
-      </select></div>
-    <div class="field"><label>frame shape</label>
-      <select id="d-aspect">
-        <option value="1:1" selected>1:1 (square)</option>
-        <option value="16:9">16:9 (widescreen)</option>
-        <option value="4:3">4:3 (standard)</option>
-      </select></div>
-    <div class="hint">bigger 3D environments to fly through — object/detail count is set by effort, not this. Frame shape is saved with the scene, so a shape can fit it to its own quad without distorting.</div>
-    <button class="go" id="gen">Generate</button>
-    <div class="progress" id="genprog"><div class="bar" id="genbar"></div></div>
-    <div class="hint" id="dirhint-modal">keyword → scene (added to the library)</div>
-  </div>
-</div>
-
 <!-- About (25) — content comes from about.md at the repo root, fetched and
      rendered at open time, so the text has one home rather than being
      duplicated into markup that then drifts out of date. -->
@@ -1358,25 +1268,6 @@
     <div class="modal-head">
       <h2>Settings</h2>
       <button class="modal-close" id="settings-close">&times;</button>
-    </div>
-
-    <div class="group">
-      <h2 style="font-size:11px">Connection</h2>
-      <div class="row">
-        <input type="password" id="apikey" placeholder="ANTHROPIC_API_KEY (sk-…)">
-      </div>
-      <div class="row">
-        <button id="apisave">Save key</button>
-        <button id="apitest">Test connection</button>
-      </div>
-      <div class="hint" id="apistatus">director: —</div>
-    </div>
-
-    <div class="group">
-      <h2 style="font-size:11px">Scene complexity</h2>
-      <div class="field"><label>point budget</label>
-        <input type="text" inputmode="numeric" id="o-maxpps" value="20000" style="flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:6px 8px;font-size:12px;font-family:var(--mono)"></div>
-      <div class="hint">sent to Claude so generated scenes stay within a stroke-length budget it can actually author well — not a hardware/output setting.</div>
     </div>
 
     <div class="group">
@@ -1405,7 +1296,7 @@
     <label class="flabel" for="saveas-name">name</label>
     <input type="text" id="saveas-name" placeholder="e.g. Opening look">
     <button class="go" id="saveas-confirm">Save</button>
-    <div class="hint">saves the current canvas (its shapes and scene assignments) into the canvas library under this new name</div>
+    <div class="hint">saves the current canvas (its shapes and what fills them) into the canvas library under this new name</div>
   </div>
 </div>
 
@@ -1473,13 +1364,17 @@
   <button id="save-bar-canvas" title="Save the current canvas"><svg class="bi" aria-hidden="true"><use href="#bi-floppy"/></svg><span>Canvas</span></button>
   <button id="save-bar-project" title="Save the current project"><svg class="bi" aria-hidden="true"><use href="#bi-floppy"/></svg><span>Project</span></button>
 </div>
+<!-- Visualiser shaders, shared with output.html — see visuals.js's header. -->
+<script src="/static/visuals.js"></script>
 <script>
-const ws = new WebSocket(`ws://${location.host}/ws`);
+// Opened by connectWS() further down, once its handlers exist — and
+// reopened whenever it drops. See connectWS for why.
+let ws = null;
 const $ = id => document.getElementById(id);
 // Bootstrap Icons (34), as markup — for the many lists/rows built via
 // innerHTML. Static markup uses the same <svg><use> form written out longhand.
 function bi(name, cls){ return `<svg class="bi${cls ? " " + cls : ""}" aria-hidden="true"><use href="#bi-${name}"/></svg>`; }
-const send = o => ws.readyState === 1 && ws.send(JSON.stringify(o));
+const send = o => ws && ws.readyState === 1 && ws.send(JSON.stringify(o));
 
 // Canvas thumbnails (3) — a low-res JPEG of the editor's OWN already-
 // rendered artboard (cropped out of cv-edit's letterboxed backing buffer,
@@ -1508,39 +1403,45 @@ function captureAndUploadThumbnail(name){
   }, "image/jpeg", 0.72);
 }
 
-ws.onopen = () => { $("meta").textContent = ""; $("engine-dot").classList.add("on"); };
-ws.onclose = () => { $("meta").textContent = ""; $("engine-dot").classList.remove("on"); };
+function _wsOpen(){ $("meta").textContent = ""; $("engine-dot").classList.add("on"); }
+function _wsClose(){ $("meta").textContent = ""; $("engine-dot").classList.remove("on"); }
 
-// dirhint is mirrored in two places: the compact hint under the "Generate
-// scene…" button, and the fuller one inside the Generate modal itself.
-const setDirhint = text => { $("dirhint-modal").textContent = text; };
-ws.onmessage = e => {
+function _wsMessage(e){
   const m = JSON.parse(e.data);
   if (m.type === "state") {
+    if (window.LSVisuals) LSVisuals.onState(m);   // clock + audio for visualisers
     paintState(m.state);
     _lastComposite = m.composite || [];
     paintCanvasEditor();
     updatePolyControlsGate();
     $("renderhost-dot").classList.toggle("on", !!m.renderhost_connected);
   }
-  else if (m.type === "generate_result") {
-    $("genbar").style.width = "100%";
-    setTimeout(endGen, 200);
-    $("scenename").value = "";
-    setDirhint(m.ok && m.source === "claude" ? "composed by Claude ✓ (added to canvas)"
-      : m.ok && m.source === "cache" ? "from cache ✓"
-      : "local fallback — " + (m.error || "no key"));
-    closeModal("modal-generate");
-    // No single active scene to "watch it land" in any more — put it
-    // straight onto the canvas as a new shape instead, auto-selected.
-    if (m.ok && m.name) { _pendingSelectNewPoly = true; send({type:"poly_add", scene:m.name}); }
-  }
-  else if (m.type === "api_result") {
-    const s = $("apistatus");
-    s.innerHTML = bi(m.ok ? "check-lg" : "x-lg") + " " + m.detail.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
-    s.style.color = m.ok ? "var(--cyan)" : "var(--amber)";
-  }
-};
+}
+
+// Reconnecting socket. This page used to hold ONE WebSocket for its whole
+// life, so restarting the server — which every Python change needs — left the
+// editor silently dead: `send` quietly became a no-op, nothing repainted, and
+// the only clue was the engine dot going out. That reads as "the app broke"
+// rather than "reload me", and it looks like the OUTPUT windows have failed,
+// since they are the visible end of a control surface that has stopped
+// talking. output.html has always reconnected; this brings the editor in line.
+//
+// Backing off to a 5s ceiling so a server that stays down does not spin, and
+// resetting on a successful open so the next restart is picked up quickly.
+let _wsRetry = null, _wsDelay = 500;
+function connectWS(){
+  clearTimeout(_wsRetry);
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => { _wsDelay = 500; _wsOpen(); };
+  ws.onmessage = _wsMessage;
+  ws.onerror = () => ws.close();     // onclose is the single retry path
+  ws.onclose = () => {
+    _wsClose();
+    _wsRetry = setTimeout(connectWS, _wsDelay);
+    _wsDelay = Math.min(5000, Math.round(_wsDelay * 1.6));
+  };
+}
+connectWS();
 
 function paintState(s){
   _lastState = s;
@@ -1549,61 +1450,6 @@ function paintState(s){
   mt.dataset.active = s.active ? "1" : "0";
   mt.innerHTML = s.active ? bi("stop-fill") + "<span>Stop</span>" : bi("play-fill") + "<span>Start</span>";
   mt.className = s.active ? "amber" : "go";
-  $("claude-dot").classList.toggle("on", !!s.director_online);
-  if (!$("d-model").dataset.init && s.director_choice) {
-    $("d-model").dataset.init = "1";
-    $("d-model").value = s.director_choice;
-    $("d-effort").value = s.director_effort || "med";
-  }
-  if (generating && typeof s.director_progress === "number") {
-    $("genbar").style.width = Math.max(2, Math.round(s.director_progress*100)) + "%";
-  }
-  setDirhint(s.director_online
-    ? "keyword → Claude scene spec (cached; ~1 call per new keyword)"
-    : "keyword → local scene (set a key to use Claude)");
-  if (s.director_source) {
-    if (s.director_source === "claude") setDirhint("last scene: composed by Claude ✓");
-    else if (s.director_source === "cache") setDirhint("last scene: from cache (Claude) ✓");
-    else setDirhint("last scene: local fallback — " + (s.director_error || "no key"));
-  }
-  const as = $("apistatus");
-  if (!as.dataset.touched)
-    as.textContent = s.director_online ? `director: ${s.director_model}` : "director: local (no key)";
-  const lib = $("lib");
-  if (lib.dataset.sig !== s.library.join(",")) {
-    lib.dataset.sig = s.library.join(",");
-    lib.innerHTML = "";
-    s.library.forEach(name => {
-      const el = document.createElement("div");
-      el.className = "item";
-      el.dataset.name = name;
-      el.innerHTML = `<span>${name}</span><span class="plus" title="Add to active canvas">+</span><span class="x">${bi("x-lg")}</span>`;
-      // No single active scene to "load" any more (2) — click assigns this
-      // scene to the selected shape, or adds a new shape with it if nothing's
-      // selected (same as "+", just the more discoverable default action).
-      el.querySelector("span:first-child").onclick = () => {
-        if (selectedPolyId) send({type:"poly_set", id:selectedPolyId, key:"scene", value:name});
-        else { _pendingSelectNewPoly = true; send({type:"poly_add", scene:name}); }
-      };
-      el.querySelector(".plus").onclick = ev => { ev.stopPropagation();
-        _pendingSelectNewPoly = true; send({type:"poly_add", scene:name}); };
-      el.querySelector(".x").onclick = ev => { ev.stopPropagation();
-        if (confirm(`Delete "${name}"?`)) send({type:"scene_delete",name}); };
-      lib.appendChild(el);
-    });
-  }
-  // highlight scenes currently in use somewhere on this canvas — separate
-  // from the rebuild above since the canvas can change without the
-  // library's name list changing.
-  const scenesInUse = new Set((s.canvas.polygons || []).map(p => p.scene).filter(Boolean));
-  lib.querySelectorAll(".item").forEach(el => {
-    el.classList.toggle("active", scenesInUse.has(el.dataset.name));
-  });
-  // max PPS (scene-generation complexity budget): reflect the persisted
-  // ceiling unless the user is actively editing
-  if (document.activeElement !== $("o-maxpps") && typeof s.max_pps === "number") {
-    $("o-maxpps").value = s.max_pps;
-  }
   if (document.activeElement !== $("diag-enabled-toggle") && typeof s.diagnostics_enabled === "boolean") {
     $("diag-enabled-toggle").checked = s.diagnostics_enabled;
   }
@@ -1614,9 +1460,9 @@ function paintState(s){
   updateMediaPlayback();
   syncProjectDoc(s);
   syncCanvasDoc(s);
-  syncPolySceneOptions(s);
   renderSequencer(s);
   renderEffectors(s);
+  paintGpu(s.output_clients || []);
   // Diagnostics off (default) hides this block entirely rather than leaving
   // it open with a "disabled" message inside. renderPerf() still runs
   // unconditionally either way — it's what drives the FPS readout under the
@@ -1625,6 +1471,103 @@ function paintState(s){
   const diagOn = s.diagnostics_enabled !== false;
   $("acc-perf").style.display = diagOn ? "" : "none";
   renderPerf(s);
+}
+
+// --- GPU in the header ------------------------------------------------------
+// Ported from promptwaver (index.html's gpuPretty/gpuClass/ownGpu/paintGpu).
+// Output windows report which GPU the browser gave them (output.html's
+// reportClientStats -> state.output_clients), so this says at a glance which
+// one a show is actually running on — which matters on a hybrid laptop: on
+// the dev laptop's Wayland session the NVIDIA card can't display video at all
+// (ARCHITECTURE.md §12, "Correction").
+//
+// The renderer string WebGL reports is ANGLE's, e.g. "ANGLE (NVIDIA
+// Corporation, NVIDIA GeForce GTX 1650/PCIe/SSE2, OpenGL 4.5.0 ...)". These
+// pull the readable model out of it and say what kind of GPU it is.
+function gpuPretty(raw){
+  let s = String(raw || "").trim();
+  if (!s) return "";
+  const m = s.match(/^ANGLE \((.*)\)$/);
+  if (m) {
+    // ANGLE (vendor, renderer, backend): the renderer is the middle part,
+    // which may itself contain commas inside parentheses.
+    const parts = []; let depth = 0, cur = "";
+    for (const ch of m[1]) {
+      if (ch === "(") depth++;
+      if (ch === ")") depth--;
+      if (ch === "," && depth === 0) { parts.push(cur.trim()); cur = ""; } else cur += ch;
+    }
+    parts.push(cur.trim());
+    s = parts.length >= 2 ? parts[1] : parts[0];
+  }
+  s = s.replace(/^ANGLE Metal Renderer:\s*/i, "")
+       .replace(/^Mesa\s+/i, "")
+       .replace(/\/PCIe.*$/i, "")
+       .replace(/\s*\(0x[0-9a-f]+\)/ig, "")
+       .replace(/\s+Direct3D.*$/i, "")
+       .replace(/\s*\((?:[^()]*\b(?:LLVM|radeonsi|ACO|DRM)\b[^()]*|[A-Z]{2,4}\s+GT\d)\)/g, "")
+       .replace(/\((?:R|TM)\)/gi, "")
+       .replace(/\s+(?:Corporation|Inc\.?)\b/gi, "")
+       .replace(/\s{2,}/g, " ").trim();
+  return s;
+}
+function gpuClass(raw){
+  const s = String(raw || "");
+  if (!s) return "unknown";
+  if (/swiftshader|llvmpipe|softpipe|software|basic render/i.test(s)) return "software";
+  if (/nvidia|geforce|quadro|rtx|radeon\s+(rx|pro)|\barc\s+a\d|apple\s+m\d/i.test(s)) return "discrete";
+  return "integrated";
+}
+// This page's own GPU, from a throwaway WebGL context released straight
+// away. Every window of one browser shares its GPU process, so it is what
+// an output window opened from here will use, until one reports.
+let _ownGpu = null;
+function ownGpu(){
+  if (_ownGpu !== null) return _ownGpu;
+  try {
+    const gl = document.createElement("canvas").getContext("webgl2");
+    const ext = gl && gl.getExtension("WEBGL_debug_renderer_info");
+    _ownGpu = gl ? (ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)) : "";
+    gl?.getExtension("WEBGL_lose_context")?.loseContext();
+  } catch (e) { _ownGpu = ""; }
+  return _ownGpu;
+}
+let _gpuSig = null;
+function paintGpu(outputs){
+  // What the OUTPUT windows report wins: they are what drives the projector,
+  // and one opened from another machine's browser can be a different GPU
+  // entirely. Preview tiles are left out — they are this page's own browser.
+  const outs = (outputs || []).filter(o => o.gpu && o.role !== "preview");
+  const raws = outs.length ? [...new Set(outs.map(o => o.gpu))] : [ownGpu()];
+  // fps is in the signature so the tooltip's paint rates stay current; the
+  // DOM writes below are cheap enough at 2s granularity.
+  const sig = raws.join("|") + "|" + outs.map(o => `${o.role}:${o.fps}:${o.w}x${o.h}`).join(",");
+  if (sig === _gpuSig) return;
+  _gpuSig = sig;
+  const main = raws[0] || "";
+  const cls = gpuClass(main);
+  const label = cls === "software" ? "software rendering" : (gpuPretty(main) || "unknown");
+  $("gpu-name").textContent = label + (raws.length > 1 ? ` +${raws.length - 1}` : "");
+  const dot = $("gpu-dot");
+  dot.classList.toggle("on", cls === "discrete");
+  dot.classList.toggle("warn", cls === "integrated");
+  dot.classList.toggle("unknown", cls === "unknown");
+  const why = {
+    // Not "dedicated = good": on a hybrid Linux laptop under Wayland, Chrome on
+    // the NVIDIA card via PRIME offload draws video white/black, so the hint
+    // says to check rather than promising anything.
+    discrete: "dedicated GPU. On a hybrid Linux laptop in a Wayland session, check that video "
+      + "actually shows — Chrome there can draw it white/black on an NVIDIA card",
+    integrated: "integrated GPU — fine for video, and the only one that shows video correctly "
+      + "on the dev laptop's Wayland session",
+    software: "NO hardware acceleration: the browser is drawing on the CPU. "
+      + "Check chrome://gpu and that hardware acceleration is on.",
+    unknown: "the browser did not say which GPU it is using",
+  }[cls];
+  const who = outs.length
+    ? outs.map(o => `${o.role}: ${gpuPretty(o.gpu)} · ${o.fps} fps · ${o.w}x${o.h}`).join("\n")
+    : "this window (no output window open yet)";
+  $("gpu-name").title = dot.title = `${label}: ${why}\n\n${who}\n\n${main}`;
 }
 
 function renderPerf(s){
@@ -1651,8 +1594,7 @@ function renderPerf(s){
     return;
   }
   status.textContent = `fps: ${d.fps} (target ${d.target_fps}) · ` +
-    `${d.dropped} dropped ticks (${d.dropped_pct}%)` +
-    (d.xfade_ticks ? ` · ${d.xfade_dropped}/${d.xfade_ticks} dropped during scene fades` : "");
+    `${d.dropped} dropped ticks (${d.dropped_pct}%)`;
   status.style.color = short ? "var(--amber)" : "var(--dim)";
   const g = $("perfstats");
   g.innerHTML = `
@@ -1660,13 +1602,13 @@ function renderPerf(s){
     <span>output (avg/max)</span><b>${d.avg_output_ms} / ${d.max_output_ms} ms</b>
     <span>frame budget</span><b>${d.budget_ms} ms</b>
     <span>tick interval (avg/max)</span><b class="${d.max_interval_ms > d.budget_ms*1.5 ? 'bad':''}">${d.avg_interval_ms} / ${d.max_interval_ms} ms</b>
-    <span>points (avg/max)</span><b>${d.avg_points} / ${d.max_points}</b>
+    <span>shapes per tick</span><b>${d.avg_points}</b>
     <span>dropped ticks</span><b class="${d.dropped_pct>2?'bad':''}">${d.dropped} (${d.dropped_pct}%)</b>
   `;
   const u = $("perf-drops");
   if ((d.recent_drops||[]).length){
     u.innerHTML = "recent dropped ticks:<br>" + d.recent_drops.slice(-10).reverse()
-      .map(e => `t+${e.t}s: +${e.over_ms}ms over budget${e.crossfade ? " (during scene fade)" : ""}`).join("<br>");
+      .map(e => `t+${e.t}s: +${e.over_ms}ms over budget`).join("<br>");
   } else {
     u.innerHTML = "no dropped ticks yet";
   }
@@ -1693,7 +1635,12 @@ const CSS_VAR = name => getComputedStyle(document.documentElement).getPropertyVa
 const COLOR_CYAN = CSS_VAR("--cyan") || "#33e0d0";
 const COLOR_AMBER = CSS_VAR("--amber") || "#f2a623";
 
-let _lastComposite = [];      // last composite payload (per-polygon strokes) from the server
+let _lastComposite = [];      // last composite payload (per-shape layer dicts) from the server
+// Editor live preview on/off — see setLivePreview. Declared up here because
+// paintCanvasEditor reads it, and the canvas first repaints during page load.
+let _livePreview = (() => {
+  try { return localStorage.getItem("ls_live_preview") !== "0"; } catch (e) { return true; }
+})();
 let _canvasDoc = null;        // last engine.state().canvas — authoritative polygon geometry/assignment
 let selectedPolyId = null;
 
@@ -1753,12 +1700,6 @@ function pxToNorm(px, py, rect){ return [((px-rect.x)/rect.w-0.5)*2, (0.5-(py-re
 // "crop" zooms the source range instead, which can push points outside
 // [-1,1] — callers doing "crop" without a clip shape must clip to the
 // quad's own path (see paintCanvasEditor).
-function parseAspectRatio(str){
-  const m = /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/.exec(String(str||"").trim());
-  if (!m) return 1;
-  const w = parseFloat(m[1]), h = parseFloat(m[2]);
-  return h > 0 ? w/h : 1;
-}
 function quadAspect(corners, rect){
   const pts = corners.map(c => normToPx(c[0], c[1], rect));
   const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
@@ -1783,9 +1724,6 @@ function clipToQuadPath(ctx, corners, rect){
 
 const cvEdit = $("cv-edit"), cvCtx = cvEdit.getContext("2d");
 
-// Draws one polygon's warped strokes (incl. glow) into `ctx` — either the
-// visible canvas directly, or a to-be-clipped context (see
-// drawClippedStrokes below).
 // Mirror-point fold (7) — keeps the [0, point] fraction of an axis as-is
 // and mirrors it to fill [point, 1]; point=1 is a no-op (the "off" default),
 // point=0.5 is a classic centre mirror. Once the mirrored region is wider
@@ -1795,43 +1733,6 @@ function foldFraction(u, point){
   if (point >= 0.999) return u;
   return u <= point ? u : Math.max(0, 2*point - u);
 }
-// Same fold, operating directly in [-1,1] generator space (vector strokes
-// have no separate source image to sample, unlike drawMediaWarped below).
-function foldG(g, point){
-  if (point >= 0.999) return g;
-  const u = foldFraction(g*0.5+0.5, point);
-  return u*2 - 1;
-}
-function drawWarpedStrokes(ctx, rect, layer, H, opacity, fitMode, ca, qa){
-  ctx.save();
-  ctx.globalAlpha = opacity;
-  const glowPx = (layer.glow||0) * Math.min(rect.w,rect.h) * 0.05;
-  const preFold = layer.mirror_pre_distort ?? true;
-  const mxPoint = preFold ? (layer.mirror_x_point ?? 1) : 1;
-  const myPoint = preFold ? (layer.mirror_y_point ?? 1) : 1;
-  layer.strokes.forEach(st => {
-    const [r,g,b] = st.c;
-    const col = `rgb(${r*255|0},${g*255|0},${b*255|0})`;
-    ctx.strokeStyle = col;
-    ctx.shadowBlur = glowPx > 0 ? glowPx : 0;
-    ctx.shadowColor = col;
-    ctx.lineWidth = 1.4; ctx.lineJoin = "round";
-    ctx.beginPath();
-    st.p.forEach((pt,i) => {
-      let [gx,gy] = pt;
-      if (layer.mirror_x) gx = -gx;
-      if (layer.mirror_y) gy = -gy;
-      gx = foldG(gx, mxPoint); gy = foldG(gy, myPoint);
-      [gx,gy] = fitPoint(gx, gy, fitMode, ca, qa);
-      const [wx,wy] = applyHomography(H, gx, gy);
-      const [px,py] = normToPx(wx,wy,rect);
-      i ? ctx.lineTo(px,py) : ctx.moveTo(px,py);
-    });
-    ctx.stroke();
-  });
-  ctx.restore();
-}
-
 function polygonBBoxPx(corners, rect){
   const pts = corners.map(c => normToPx(c[0], c[1], rect));
   const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
@@ -2286,19 +2187,6 @@ function polyClipPath(ctx, poly, corners, rect){
   clipShapePath(ctx, poly.clip_shape, cx, cy, rx*s, ry*s, !!poly.clip_uniform);
 }
 
-// Clip (4): hard-edged only — Canvas 2D's own clip() does exactly this, no
-// offscreen canvas/blur needed. Used to support a soft/feathered edge (fill
-// the clip shape through a CSS blur filter, composite the content through
-// it with "source-in") but that was expensive enough to visibly stall the
-// render loop with more than a couple of clipped shapes on screen.
-function drawClippedStrokes(ctx, poly, layer, corners, H, rect, opacity, fitMode, ca, qa){
-  ctx.save();
-  polyClipPath(ctx, poly, corners, rect);
-  ctx.clip();
-  drawWarpedStrokes(ctx, rect, layer, H, opacity, fitMode, ca, qa);
-  ctx.restore();
-}
-
 // Builds the ctx.filter string from a poly/layer's overrides (2) — shared
 // shape between poly.overrides here and the broadcast layer dict in
 // output.html (composite.py copies these override keys straight through
@@ -2399,16 +2287,15 @@ function drawZBadge(ctx, poly, rect){
   ctx.restore();
 }
 
-// Media shapes — an uploaded image/video, warped into its quad the same way
-// a scene's strokes are (same homography, same fit/crop/clip system), just
-// drawn as a raster instead of vector strokes.
+// Media shapes — an image/video warped into its quad through the shape's
+// homography, with the same fit/crop/clip system every content type uses.
 //
 // Playback (perf): videos load with autoplay OFF — 'loadeddata' alone
 // decodes frame 0, enough for a static preview, without spending any CPU on
 // an actual playing decode loop while you're just editing. updateMediaPlayback
 // (called from paintState, ~20Hz) starts/stops every loaded video together,
-// keyed off the master Start/Stop + freeze state, same as vector scenes
-// freezing their own clock — so nothing actually plays until you hit Start,
+// keyed off the master Start/Stop + freeze state — so nothing actually plays
+// until you hit Start,
 // and freeze pauses it again without unloading anything.
 const _mediaEls = new Map();   // filename -> {el, kind, ready, frameCanvas?, frameCtx?}
 const _MEDIA_VIDEO_EXT = new Set(["mp4","mov","webm","m4v","mkv","avi","ogv"]);
@@ -2560,11 +2447,11 @@ function reportMediaDuration(assetKey, el){
 // leave several 4K decoders running), and a stale element can even be found
 // ahead of the live one when debugging. Anything not drawn for a few seconds
 // is released; it reloads on demand if it comes back.
-let _mediaFrame = 0;
-const _MEDIA_EVICT_AFTER = 60;   // ticks (~3s at 20fps)
+// Wall time, not paint count — see output.html's copy of this comment.
+const _MEDIA_EVICT_AFTER_MS = 3000;
 function evictUnusedMedia(){
   for (const [key, m] of _mediaEls){
-    if (_mediaFrame - (m.lastUsed || 0) <= _MEDIA_EVICT_AFTER) continue;
+    if (performance.now() - (m.lastUsed || 0) <= _MEDIA_EVICT_AFTER_MS) continue;
     try {
       if (m.kind === "video"){ m.el.pause(); m.el.removeAttribute("src"); m.el.load(); }
     } catch (e) {}
@@ -2579,7 +2466,7 @@ function getMediaEl(ref, layer){
   const cfg = (layer && layer.media_cfg) || "";
   const cacheKey = ref.key + "|" + cfg;
   let m = _mediaEls.get(cacheKey);
-  if (m){ m.lastUsed = _mediaFrame; return m; }
+  if (m){ m.lastUsed = performance.now(); return m; }
   const ext = (ref.name.split(".").pop() || "").toLowerCase();
   const kind = _MEDIA_VIDEO_EXT.has(ext) ? "video" : "image";
   const url = mediaUrlFor(ref);
@@ -2596,7 +2483,7 @@ function getMediaEl(ref, layer){
     el.addEventListener("load", () => { m.ready = true; });
     el.src = url;
   }
-  m = {el, kind, ready: false, seeking: false, seekUntil: 0, lastTarget: null, lastResync: 0, assetKey: ref.key, lastUsed: _mediaFrame};
+  m = {el, kind, ready: false, seeking: false, seekUntil: 0, lastTarget: null, lastResync: 0, assetKey: ref.key, lastUsed: performance.now()};
   _mediaEls.set(cacheKey, m);
   return m;
 }
@@ -2657,7 +2544,7 @@ function autoFitShapeToContent(poly, contentAspect){
 // apart — they're the same question asked at different moments.
 function contentAspectFor(poly){
   if (!poly) return null;
-  const t = poly.source_type || "scene";
+  const t = poly.source_type || "media";
   if (t === "media"){
     const layer = _lastComposite.find(l => l.id === poly.id);
     const ref = mediaRefFor(layer || poly);
@@ -2671,9 +2558,7 @@ function contentAspectFor(poly){
       ? s.video.videoWidth / s.video.videoHeight : null;
   }
   if (t === "text") return 1;
-  if (t === "knockout") return null;          // arbitrary point list, no frame
-  const layer = _lastComposite.find(l => l.id === poly.id);
-  return layer && layer.aspect ? parseAspectRatio(layer.aspect) : null;
+  return null;          // knockout: an arbitrary point list, no frame
 }
 // The undistorted quad a shape SHOULD start from: its content's own shape,
 // falling back to 16:9. Centred on the canvas unless a centre is given.
@@ -2709,7 +2594,7 @@ function autoFitFromWebcam(poly){
 // Guarded by .paused so idempotent repeated calls (every ~20Hz state tick)
 // don't spam play()/pause() on an already-correct element.
 function updateMediaPlayback(){
-  _mediaFrame++; evictUnusedMedia();
+  evictUnusedMedia();
   // Webcam shapes aren't in this loop (6) — unlike output.html, the editor
   // keeps every shape's preview live regardless of active/frozen (an
   // editing aid, not "the show"), so there's nothing to pause/resume here.
@@ -2843,16 +2728,13 @@ function drawWarpedTriangle(ctx, img, s0,s1,s2, d0,d1,d2){
   ctx.drawImage(img, 0, 0);
   ctx.restore();
 }
-// Grid points are laid out in the SAME raw (pre-fit) [-1,1] generator space
-// vector strokes use — the image is treated as if it already fills that
-// full square, exactly parallel to how fitPoint treats vector content, so
-// the same fit/crop/stretch maths apply unmodified.
+// Grid points are laid out in raw (pre-fit) [-1,1] shape space — the image is
+// treated as if it already fills that full square, so fitPoint's
+// fit/crop/stretch maths apply unmodified.
 // Mirror (5) — flips which SOURCE pixels get sampled at each destination
 // grid point, leaving the destination geometry (fitPoint/homography, the
 // quad's own warp/fit) completely untouched — a true "flip the image"
-// effect, not a repositioning. Same mirror_x/mirror_y override vector
-// strokes already use (drawWarpedStrokes flips the point pre-warp instead,
-// since it has no separate "source image" to sample from).
+// effect, not a repositioning.
 // Mesh compositing scratch. The anti-seam skirt makes each triangle overlap
 // its neighbours by ~1.5px; at full opacity that's invisible (opaque pixels
 // just redraw the same colour), but at ANY opacity below 1 the overlap band
@@ -2865,6 +2747,11 @@ function drawWarpedTriangle(ctx, img, s0,s1,s2, d0,d1,d2){
 // draw the mesh at FULL opacity into an offscreen buffer, then blend that
 // finished layer in once. The parallelogram fast path is a single drawImage
 // with nothing to overlap, so it keeps applying opacity directly.
+//
+// A colour FILTER takes the same route, for cost rather than correctness:
+// ctx.filter applies per draw call, so a filtered mesh ran it 72 times per
+// layer. Through the scratch it runs once, on the blit — see output.html's
+// copy of this comment for the measurement.
 let _meshScratch = null;
 function getMeshScratch(w, h){
   if (!_meshScratch){
@@ -2918,10 +2805,18 @@ function drawMediaWarped(ctx, rect, H, corners, img, iw, ih, opacity, fitMode, c
     }
     dst.push(drow); src.push(srow);
   }
-  // Translucent: build the whole mesh opaque off-screen, then blend once.
-  const translucent = opacity < MESH_OPAQUE;
+  // Translucent or filtered: build the whole mesh opaque and unfiltered
+  // off-screen, then blend (and filter) once.
+  //
+  // A semi-transparent SOURCE still shows the seams (the skirts overlap in
+  // the scratch too), and "copy"-compositing each triangle only turned the
+  // bright grid into a faint dark one. Visualisers, the source that is
+  // translucent everywhere, therefore skip this mesh entirely — see
+  // visuals.js's frame().
+  const filtered = !!ctx.filter && ctx.filter !== "none";
+  const viaScratch = opacity < MESH_OPAQUE || filtered;
   let out = ctx, scratch = null;
-  if (translucent){
+  if (viaScratch){
     scratch = getMeshScratch(ctx.canvas.width, ctx.canvas.height);
     out = scratch.ctx;
     // Same transform, so the mesh lands on the same device pixels. The
@@ -2937,10 +2832,10 @@ function drawMediaWarped(ctx, rect, H, corners, img, iw, ih, opacity, fitMode, c
       drawWarpedTriangle(out, img, src[j][i+1], src[j+1][i+1], src[j+1][i], dst[j][i+1], dst[j+1][i+1], dst[j+1][i]);
     }
   }
-  if (translucent){
+  if (viaScratch){
     ctx.setTransform(1,0,0,1,0,0);
     ctx.globalAlpha = opacity;
-    ctx.drawImage(scratch, 0, 0);
+    ctx.drawImage(scratch, 0, 0);       // ctx.filter, if any, applies here, once
   }
   ctx.restore();
 }
@@ -3001,7 +2896,12 @@ function getWebcamStream(deviceId){
   if (s) return s;
   s = {video: null, ready: false, frameCanvas: null, frameCtx: null};
   _webcamStreams.set(key, s);
-  const constraints = {video: deviceId ? {deviceId: {exact: deviceId}} : true, audio: false};
+  // `ideal`, not `exact`: Chrome hands out a different deviceId for the same
+  // camera in every browser PROFILE, so an id saved from one (your everyday
+  // Chrome) doesn't exist in another (run.py --open's own profile). With
+  // `exact` that threw OverconstrainedError and the shape drew nothing; with
+  // `ideal` it uses that camera when it's there and the default one when not.
+  const constraints = {video: deviceId ? {deviceId: {ideal: deviceId}} : true, audio: false};
   navigator.mediaDevices.getUserMedia(constraints).then(stream => {
     const video = document.createElement("video");
     video.muted = true; video.playsInline = true; video.srcObject = stream;
@@ -3076,6 +2976,33 @@ function getTextFrame(poly){
   lines.forEach((line, i) => ctx.fillText(line, W/2, startY + i*lineH));
   return c;
 }
+// Visualiser shapes ("visual" fill) — see visuals.js / visuals.py. Mirrors
+// output.html's drawLayerVisual: visuals.js renders the shape already warped
+// (no triangle mesh) and this places it with one drawImage, in artboard px
+// under the editor's view transform, so pxScale is the zoom. Reads the
+// clock, phase and resolved params off the broadcast LAYER (the server owns
+// those) and mirror settings off the poly, like drawPolyText. Shown even
+// while stopped, frozen at its current instant, the way a video shows a still
+// preview here.
+function drawPolyVisual(ctx, poly, corners, rect, opacity, layer){
+  if (!layer || !layer.visual_preset || !window.LSVisuals || corners.length !== 4) return;
+  const quad = corners.map(c => normToPx(c[0], c[1], rect));
+  const ov = poly.overrides || {};
+  const preFold = ov.mirror_pre_distort ?? true;
+  const t = ctx.getTransform();
+  const f = LSVisuals.frame(layer, quad, {
+    pxScale: Math.hypot(t.a, t.b) || 1,
+    clip: {x: rect.x, y: rect.y, w: rect.w, h: rect.h},
+    mirror: [!!ov.mirror_x, !!ov.mirror_y,
+             preFold ? (ov.mirror_x_point ?? 1) : 1, preFold ? (ov.mirror_y_point ?? 1) : 1],
+  });
+  if (!f) return;
+  ctx.save();
+  if (polyClipActive(poly)){ polyClipPath(ctx, poly, corners, rect); ctx.clip(); }
+  ctx.globalAlpha = opacity;
+  ctx.drawImage(f.canvas, 0, 0, f.canvas.width, f.canvas.height, f.x, f.y, f.w, f.h);
+  ctx.restore();
+}
 function drawPolyText(ctx, poly, corners, rect, opacity){
   if (!poly.text_content) return;
   const frame = getTextFrame(poly).canvas;
@@ -3116,10 +3043,10 @@ function getEditorRect(){
 }
 
 // Post-distort mirror fold (7) — pre-distort (the default) folds the
-// SOURCE before the quad warp (see foldFraction/foldG above), so the fold
+// SOURCE before the quad warp (see foldFraction above), so the fold
 // itself warps along with the shape. Post-distort instead folds the
 // already-warped, already-rendered pixels — content-type agnostic (works
-// identically for media/webcam/text/scene, unlike the pre-distort path
+// identically for media/webcam/text, unlike the pre-distort path
 // which is threaded through each content type's own draw call), done by
 // copying a mirrored slice of the shape's own already-painted pixels back
 // onto itself via a self-referencing drawImage (canvases may read
@@ -3218,6 +3145,28 @@ function makeBufferGetter(){
 }
 const getEditorPunchCanvas = makeBufferGetter();
 const getEditorFeatherCanvas = makeBufferGetter();
+// One bad layer must not cost the whole frame. Every draw call below runs
+// inside paintComposite, so an exception in any of them — a decoder in a
+// broken state, a stream that went away, a filter the GPU refused — abandoned
+// the ENTIRE frame: nothing after that layer was drawn, and a layer that
+// throws every tick leaves the window black with no clue which one did it.
+// That is indistinguishable from "the output just stopped working".
+//
+// Logged once per layer+message so a persistent failure names itself without
+// flooding the console at frame rate.
+const _layerErrSeen = new Set();
+function safeLayer(layer, draw){
+  try { draw(); }
+  catch (e){
+    const id = (layer && layer.id) || "?", type = (layer && layer.source_type) || "?";
+    const key = id + ":" + (e && e.message);
+    if (!_layerErrSeen.has(key)){
+      _layerErrSeen.add(key);
+      console.error(`[lightsaber] layer ${id} (${type}) threw while drawing and was `
+                    + `skipped; the rest of the frame still painted:`, e);
+    }
+  }
+}
 function paintCanvasEditor(){
   const w = cvEdit.width, h = cvEdit.height;
   const rect = getEditorRect();
@@ -3279,11 +3228,14 @@ function paintCanvasEditor(){
   // rather than its context because the mirror-fold post-pass reads back from
   // the surface it just drew into.
   const paintPolyContent = (surf, poly, layer, liveCorners, liveOpacity) => {
+    // Live preview off (see setLivePreview): no content at all, so no video
+    // element is touched and the eviction sweep releases this page's decoders.
+    if (!_livePreview) return;
     const dst = surf.ctx;
     // Filters (5/2) — a per-shape display filter, same ctx.filter
     // mechanism the browser already GPU-accelerates, wrapped around
     // whichever draw call actually runs below so it applies uniformly to
-    // vector strokes AND raster (media/webcam/text) alike. Colourize has
+    // media, webcam and text alike. Colourize has
     // no native CSS "tint toward an arbitrary colour" filter, so it's
     // approximated with the standard sepia()+hue-rotate() trick: sepia(1)
     // collapses colour into one warm baseline hue (browsers land this
@@ -3300,23 +3252,8 @@ function paintCanvasEditor(){
     } else if (poly.source_type === "text"){
       drawPolyText(dst, poly, liveCorners, rect, liveOpacity);
       autoFitShapeToContent(poly, 1);         // (18) text reads best square
-    } else if (layer && layer.strokes && layer.strokes.length){
-      const H = homography(liveCorners);
-      const opacity = liveOpacity;
-      const fitMode = poly.fit || "stretch";
-      const ca = parseAspectRatio(layer.aspect), qa = quadAspect(liveCorners, rect);
-      if (polyClipActive(poly)) {
-        drawClippedStrokes(dst, poly, layer, liveCorners, H, rect, opacity, fitMode, ca, qa);
-      } else if (fitMode === "crop") {
-        // Unclipped crop needs an explicit clip — zoomed content can spill
-        // past the quad's own edges otherwise.
-        dst.save();
-        clipToQuadPath(dst, liveCorners, rect);
-        drawWarpedStrokes(dst, rect, layer, H, opacity, fitMode, ca, qa);
-        dst.restore();
-      } else {
-        drawWarpedStrokes(dst, rect, layer, H, opacity, fitMode, ca, qa);
-      }
+    } else if (poly.source_type === "visual"){
+      drawPolyVisual(dst, poly, liveCorners, rect, liveOpacity, layer);
     }
     dst.filter = "none";
     applyMirrorFoldPost(dst, poly, liveCorners, rect, poly.overrides || {}, surf);
@@ -3460,7 +3397,7 @@ function paintCanvasEditor(){
     run = {key, hits, surf: hits.length ? openBuffer(getEditorPunchCanvas) : scratch};
     return run.surf;
   };
-  polys.forEach(poly => {
+  polys.forEach(poly => safeLayer(poly, () => {
     const isKnockout = poly.source_type === "knockout";
     // Always looked up now (1) — the broadcast layer carries the LIVE,
     // effector-modulated hue/saturation/brightness/opacity (composite.py's
@@ -3500,7 +3437,7 @@ function paintCanvasEditor(){
       return;
     }
     drawContentPoly(surfaceFor(poly.z_index ?? 5), poly, layer, liveCorners, liveOpacity);
-  });
+  }));
   flushRun();
   sctx.restore();
 
@@ -3538,7 +3475,7 @@ function paintCanvasEditor(){
     cvCtx.strokeStyle = poly.id === selectedPolyId ? COLOR_CYAN
       : isKnockout ? "rgba(255,120,120,.5)"
       : (isMedia ? !mediaRefFor(poly) || (poly.media_link && layer && layer.media_link_ok === false)
-         : isText ? !poly.text_content : layer && layer.missing) ? COLOR_AMBER : "rgba(255,255,255,.25)";
+         : isText ? !poly.text_content : false) ? COLOR_AMBER : "rgba(255,255,255,.25)";
     cvCtx.lineWidth = (poly.id === selectedPolyId ? 2 : 1) / (_view.zoom || 1);
     // Locked shapes (9) draw dashed — a passive "this one won't respond to
     // dragging" cue that costs no extra chrome on the canvas.
@@ -3593,6 +3530,16 @@ function paintCanvasEditor(){
     if (_zBadges) drawZBadge(cvCtx, poly, rect);
   });
   drawOutputCropGuides(cvCtx, rect);
+  if (!_livePreview){
+    // Say so on the artboard, or an empty canvas reads as "the content broke".
+    const z = _view.zoom || 1;
+    cvCtx.save();
+    cvCtx.font = `${12 / z}px ui-monospace, "SF Mono", Menlo, Consolas, monospace`;
+    cvCtx.fillStyle = "rgba(242,166,35,.85)";
+    cvCtx.textBaseline = "top";
+    cvCtx.fillText("live preview off — outlines only (outputs unaffected)", rect.x + 8 / z, rect.y + 8 / z);
+    cvCtx.restore();
+  }
   cvCtx.restore();   // matches the view-transform save() above
 }
 
@@ -3842,7 +3789,7 @@ cvEdit.addEventListener("wheel", e => {
 // shuts the pane. That's this column's collapse — the canvas gets the width
 // back — which is the job the old collapse button did. Panes has no
 // equivalent need, so there it's a no-op.
-const INPUT_SECTIONS = ["media", "webcam", "text", "scenelib", "cutout"];
+const INPUT_SECTIONS = ["media", "webcam", "text", "visuals", "cutout"];
 let _inputSection = localStorage.getItem("pw_input_section");
 if (!INPUT_SECTIONS.includes(_inputSection) && _inputSection !== "") _inputSection = "media";
 function setInputSection(name, refresh = true){
@@ -3897,6 +3844,10 @@ function setActiveTab(tabId){
   // The inventory depends on canvases and roots that may have changed since
   // it was last built, so rebuild on entry rather than caching it forever.
   if (tabId === "tab-media") loadAssets(true);
+  // Output preview tiles exist only while their tab shows — see
+  // renderOutputPreview. Deferred a tick: this also runs during startup,
+  // before the preview code further down has been evaluated.
+  setTimeout(refreshOutputPreview, 0);
 }
 document.querySelectorAll(".tab-btn").forEach(b => b.onclick = () => setActiveTab(b.dataset.tab));
 setActiveTab(localStorage.getItem("pw_active_tab") || "tab-canvas");
@@ -3915,7 +3866,7 @@ setActiveTab(localStorage.getItem("pw_active_tab") || "tab-canvas");
 // adding a shape), the rest start closed. Opening/closing changes
 // #cv-edit's own rendered width (canvas-col-main is flex:1 in the row),
 // so its backing buffer needs the same nudge switching tabs does.
-const DRAWER_NAMES = ["shapesettings", "playback", "mask", "colourize", "transform", "key", "fx", "effectors", "settings"];
+const DRAWER_NAMES = ["shapesettings", "playback", "mask", "colourize", "transform", "key", "fx", "effectors"];
 const DRAWER_DEFAULT_OPEN = { shapesettings: true };
 function setDrawerOpen(name, on){
   if (on) DRAWER_NAMES.forEach(other => {
@@ -4293,11 +4244,12 @@ function renderPolyInspector(){
   box.style.display = "flex";
   if (document.activeElement !== $("poly-label")) $("poly-label").value = poly.label || "";
   if (document.activeElement !== $("poly-locked")) $("poly-locked").checked = !!poly.locked;
-  const fillType = poly.source_type || "scene";
+  const fillType = poly.source_type || "media";
   const isMedia = fillType === "media", isKnockout = fillType === "knockout";
   const isWebcam = fillType === "webcam", isText = fillType === "text";
+  const isVisual = fillType === "visual";
   if (document.activeElement !== $("poly-source-type")) $("poly-source-type").value = fillType;
-  $("poly-scene-field").style.display = (!isMedia && !isKnockout && !isWebcam && !isText) ? "flex" : "none";
+  syncVisualInspector(poly, isVisual);
   // Media source (linked vs library). Linking is the default for a media
   // shape with neither set yet — big video shouldn't be copied by accident.
   const usingLink = isMedia && (!!poly.media_link || !poly.media);
@@ -4412,10 +4364,10 @@ function renderPolyInspector(){
   // fit/clip only mean anything for content-bearing shapes (scene/media/
   // webcam/text) — a knockout cutout is its own arbitrary-point shape
   // already, nothing to fit or further clip.
-  $("poly-fit-field").style.display = isKnockout ? "none" : "flex";
-  $("poly-fit-hint").style.display = isKnockout ? "none" : "block";
+  // A visualiser renders at its quad's own aspect, so fit has nothing to do.
+  $("poly-fit-field").style.display = (isKnockout || isVisual) ? "none" : "flex";
+  $("poly-fit-hint").style.display = (isKnockout || isVisual) ? "none" : "block";
   $("poly-clip-field").style.display = isKnockout ? "none" : "flex";
-  if (document.activeElement !== $("poly-scene")) $("poly-scene").value = poly.scene || "";
   if (document.activeElement !== $("poly-media")) $("poly-media").value = poly.media || "";
   if (document.activeElement !== $("poly-webcam-device")) $("poly-webcam-device").value = poly.webcam_device || "";
   if (document.activeElement !== $("poly-text-content")) $("poly-text-content").value = poly.text_content || "";
@@ -4493,7 +4445,7 @@ function renderShapeList(){
   const polys = (_canvasDoc && _canvasDoc.polygons) || [];
   // locked is part of the signature (9) so toggling the lock repaints the
   // padlock straight away rather than waiting for an unrelated list change.
-  const sig = polys.map(p => p.id + ":" + (p.label || "") + ":" + (p.scene || "") +
+  const sig = polys.map(p => p.id + ":" + (p.label || "") + ":" + (p.source_type || "") +
                              ":" + (p.locked ? "L" : "")).join(",");
   if (box.dataset.sig !== sig){
     box.dataset.sig = sig;
@@ -4502,7 +4454,7 @@ function renderShapeList(){
       const el = document.createElement("div");
       el.className = "item";
       el.dataset.id = poly.id;
-      const name = poly.label || poly.scene || ("shape " + (i+1));
+      const name = poly.label || ("shape " + (i+1));
       // Padlock trails the name on the right edge, where it reads as a
       // status badge for the row rather than something you might click.
       // No delete affordance here on purpose: a single mis-click on a list
@@ -4554,8 +4506,6 @@ $("poly-locked").onchange = () => {
 };
 $("poly-source-type").onchange = () => selectedPolyId &&
   send({type:"poly_set", id:selectedPolyId, key:"source_type", value:$("poly-source-type").value});
-$("poly-scene").onchange = () => selectedPolyId &&
-  send({type:"poly_set", id:selectedPolyId, key:"scene", value:$("poly-scene").value || null});
 $("poly-media").onchange = () => selectedPolyId &&
   send({type:"poly_set", id:selectedPolyId, key:"media", value:$("poly-media").value || null});
 $("poly-webcam-device").onchange = () => selectedPolyId &&
@@ -4829,46 +4779,21 @@ $("poly-delete").onclick = () => {
 };
 $("poly-add-btn").onclick = () => { _pendingSelectNewPoly = true; send({type:"poly_add"}); };
 
-// Monitor filters/Motion/Shape camera (column 3) — active only when a
-// polygon is selected AND has a scene assigned (media-sourced shapes don't
-// qualify — see renderPolyInspector). Motion and Shape camera are mutually
-// exclusive by the selected shape's scene type (2D vs 3D, same split the
-// single-scene Camera/Motion pair used before) — both stay visible always
-// (hiding either read as "missing" per earlier feedback), whichever doesn't
-// apply just greys out alongside Monitor filters when nothing's selected.
+// Gates the Colourize and Transform panes on a content-bearing shape being
+// selected — a knockout cutout is the one source_type with nothing to filter
+// (a pure boolean mask). Both stay visible (hiding read as "missing" in
+// earlier feedback); they grey out instead.
 function updatePolyControlsGate(){
   const poly = polyById(selectedPolyId);
-  // Monitor filters (glow/trail/mirror/brightness/contrast) now apply to
-  // any content-bearing shape (5) — a knockout is the one source_type with
-  // nothing to filter (pure boolean mask). Motion/Shape camera stay gated
-  // on an actual scene assignment — they drive generator params a
-  // media/webcam/text shape doesn't have.
   const hasContent = !!(poly && poly.source_type !== "knockout");
-  const sceneSelected = !!(poly && poly.scene);
-  const layer = poly ? _lastComposite.find(l=>l.id===poly.id) : null;
-  const is3d = layer ? layer.is_3d : false;
-  const motionEnabled = sceneSelected && !is3d, cameraEnabled = sceneSelected && is3d;
-  const gMonitor = $("g-monitor"), gTransform = $("g-transform"), gMotion = $("g-motion"), gCamera = $("g-shapecamera");
+  const gMonitor = $("g-monitor"), gTransform = $("g-transform");
   gMonitor.classList.toggle("disabled", !hasContent);
   gTransform.classList.toggle("disabled", !hasContent);
-  gMotion.classList.toggle("disabled", !motionEnabled);
-  gCamera.classList.toggle("disabled", !cameraEnabled);
   gMonitor.querySelectorAll("input").forEach(inp => inp.disabled = !hasContent);
   gTransform.querySelectorAll("input").forEach(inp => inp.disabled = !hasContent);
-  gMotion.querySelectorAll("input").forEach(inp => inp.disabled = !motionEnabled);
-  gCamera.querySelectorAll("input,select").forEach(inp => inp.disabled = !cameraEnabled);
-  // Vector-only filters (1) — glow/trail are a stroke shadow and a window-
-  // persistence fade respectively; neither means anything for a raster fill
-  // (media/webcam/text), unlike brightness/contrast/hue/saturation/
-  // colourize/mirror, which the ctx.filter approach applies uniformly.
-  const isVectorFill = !!(poly && poly.source_type === "scene");
-  $("mf-vector-fields").style.display = isVectorFill ? "flex" : "none";
   if (!hasContent) return;
-  const ov = poly.overrides || {}, l0 = ov.layer0 || {}, cam = ov.camera || {};
-  if (isVectorFill){
-    if (document.activeElement !== $("mf-glow")) { $("mf-glow").value = ov.glow||0; $("v-mfglow").textContent = (ov.glow||0).toFixed(2); }
-    if (document.activeElement !== $("mf-trail")) { $("mf-trail").value = ov.trail||0; $("v-mftrail").textContent = (ov.trail||0).toFixed(2); }
-  }
+  const ov = poly.overrides || {};
+  if (document.activeElement !== $("mf-trail")) { $("mf-trail").value = ov.trail||0; $("v-mftrail").textContent = (ov.trail||0).toFixed(2); }
   if (document.activeElement !== $("mf-mirror-x")) $("mf-mirror-x").checked = !!ov.mirror_x;
   if (document.activeElement !== $("mf-mirror-y")) $("mf-mirror-y").checked = !!ov.mirror_y;
   if (document.activeElement !== $("mf-mirrorx-point")){
@@ -4899,20 +4824,6 @@ function updatePolyControlsGate(){
   if (document.activeElement !== $("mf-saturation")) { $("mf-saturation").value = ov.saturation ?? 1; $("v-mfsaturation").textContent = (ov.saturation ?? 1).toFixed(2); }
   if (document.activeElement !== $("mf-colourize-amount")) { $("mf-colourize-amount").value = ov.colourize_amount ?? 0; $("v-mfcolourizeamount").textContent = (ov.colourize_amount ?? 0).toFixed(2); }
   if (document.activeElement !== $("mf-colourize-color")) $("mf-colourize-color").value = hueToHex(ov.colourize_hue ?? 0);
-  if (motionEnabled){
-    if (document.activeElement !== $("s-speed")) { $("s-speed").value = l0.speed ?? 0.2; $("v-speed").textContent = (+$("s-speed").value).toFixed(2); }
-    if (document.activeElement !== $("s-turb")) { $("s-turb").value = l0.turbulence ?? 0.35; $("v-turb").textContent = (+$("s-turb").value).toFixed(2); }
-    if (document.activeElement !== $("s-hue")) { $("s-hue").value = l0.hue ?? 0.55; $("v-hue").textContent = (+$("s-hue").value).toFixed(2); }
-  }
-  if (cameraEnabled){
-    if (document.activeElement !== $("sc-mode")) $("sc-mode").value = cam.mode ?? "orbit";
-    if (document.activeElement !== $("sc-speed")) { $("sc-speed").value = cam.speed ?? 0.6; $("v-scspeed").textContent = (+$("sc-speed").value).toFixed(2); }
-    if (document.activeElement !== $("sc-radius")) { $("sc-radius").value = cam.orbit_radius ?? 10; $("v-scradius").textContent = (+$("sc-radius").value).toFixed(1); }
-    if (document.activeElement !== $("sc-fov")) { $("sc-fov").value = cam.fov ?? 62; $("v-scfov").textContent = (+$("sc-fov").value).toFixed(0); }
-    if (document.activeElement !== $("sc-far")) { $("sc-far").value = cam.far ?? 30; $("v-scfar").textContent = (+$("sc-far").value).toFixed(0); }
-    if (document.activeElement !== $("sc-max")) { $("sc-max").value = cam.max_strokes ?? 120; $("v-scmax").textContent = (+$("sc-max").value).toFixed(0); }
-    if (document.activeElement !== $("sc-disable-plane")) $("sc-disable-plane").checked = !!ov.disable_plane;
-  }
 }
 
 // #cv-edit's backing buffer (3) tracks its own rendered CSS box 1:1 — the
@@ -5239,7 +5150,32 @@ function effectiveOutputViewport(s, index){
 // inside a box the wrong shape, which is exactly what a preview must not do.
 // Tiles can now differ from each other, since outputs can have different
 // crops.
+// Tiles are built only while the Output Preview tab is visible, and torn
+// down when it isn't. Each tile is a full output.html renderer with its own
+// <video> decoders, and a display:none iframe keeps decoding and painting
+// regardless: measured on a 3-output project, the three hidden tiles held 8
+// decoders (5 actively decoding) and painted ~16 times a second each into
+// invisible 300x150 canvases. Removing them freed 307MB and raised the
+// editor's own state rate from 17.4 to 20 messages/s.
+function previewTabVisible(){
+  const tab = $("tab-output-preview");
+  return !!tab && tab.style.display !== "none";
+}
+function refreshOutputPreview(){
+  const s = _lastState;
+  if (!s) return;
+  renderOutputPreview((s.outputs || []).length || 2, s.project_width || 1920,
+                      s.project_height || 1080, s);
+  syncPreviewTestFlags(s.test_pattern || []);
+}
 function renderOutputPreview(count, projW, projH, state){
+  if (!previewTabVisible()){
+    if (_outputPreviewSig){
+      $("output-preview-grid").innerHTML = "";   // destroys the iframes and their decoders
+      _outputPreviewSig = "";
+    }
+    return;
+  }
   const s = state || _lastState || {};
   const vps = [];
   for (let i = 0; i < count; i++) vps.push(effectiveOutputViewport(s, i));
@@ -5296,6 +5232,28 @@ function setZBadges(on){
 }
 $("toggle-z-badges").onclick = () => setZBadges(!_zBadges);
 setZBadges(_zBadges);
+
+// Live preview (perf). This page is a full renderer in its own right: it
+// repaints the whole canvas on every state message and decodes its own copy
+// of every video. Chrome pushes every window's drawing through ONE shared GPU
+// process, so the editor's work comes straight out of the outputs' budget.
+// Measured 2026-11 on a 3-output project (3072x768, three 1080p videos, AMD
+// iGPU): about +1fps on every output with it off, and the editor stops
+// decoding its own copy of every video. Off, the editor draws outlines and
+// handles only — enough to edit
+// geometry — and its videos are released by the eviction sweep. A per-viewer
+// preference, like the other view toggles.
+// (_livePreview itself is declared near the top of the script, next to
+// _lastComposite: the canvas repaints during page load, before this point,
+// and a `let` read before its line throws — which stopped the whole script.)
+function setLivePreview(on){
+  _livePreview = !!on;
+  try { localStorage.setItem("ls_live_preview", on ? "1" : "0"); } catch (e) {}
+  $("toggle-live-preview").classList.toggle("amber", _livePreview);
+  paintCanvasEditor();
+}
+$("toggle-live-preview").onclick = () => setLivePreview(!_livePreview);
+setLivePreview(_livePreview);
 
 $("canvas-freeze-btn").onclick = () =>
   send({type:"set_frozen", value: !$("canvas-freeze-btn").classList.contains("amber")});
@@ -5428,17 +5386,6 @@ function syncCanvasDoc(s){
   }
   if (document.activeElement !== csel) csel.value = _canvasDoc.name;
   renderPolyInspector();
-}
-function syncPolySceneOptions(s){
-  const sel = $("poly-scene");
-  const sig = (s.library||[]).join(",");
-  if (sel.dataset.sig === sig) return;
-  sel.dataset.sig = sig;
-  sel.innerHTML = '<option value="">— none —</option>';
-  (s.library||[]).forEach(name => {
-    const opt = document.createElement("option"); opt.value = name; opt.textContent = name;
-    sel.appendChild(opt);
-  });
 }
 $("canvas-select").onchange = () => send({type:"canvas_load", name:$("canvas-select").value});
 $("canvas-new").onclick = () => { selectedPolyId = null; send({type:"canvas_new"}); };
@@ -5649,7 +5596,7 @@ function renderEffectors(s){
   const routeList = $("fx-route-list");
   const routeSig = fx.routes.map(x=>x.id).join(",") + "|" +
     fx.sources.map(x=>x.id+":"+x.name).join(",") + "|" +
-    polys.map(p=>p.id+":"+(p.label||p.scene||"")).join(",");
+    polys.map(p=>p.id+":"+(p.label||"")).join(",");
   if (routeList.dataset.sig !== routeSig){
     routeList.dataset.sig = routeSig;
     routeList.innerHTML = "";
@@ -5658,7 +5605,7 @@ function renderEffectors(s){
       card.className = "fx-card"; card.dataset.id = route.id;
       const srcOpts = [...FX_AUDIO_PSEUDO_SOURCES, ...fx.sources]
         .map(x=>`<option value="${x.id}">${x.name}</option>`).join("");
-      const tgtOpts = polys.map((p,j)=>`<option value="${p.id}">${p.label||p.scene||("shape "+(j+1))}</option>`).join("")
+      const tgtOpts = polys.map((p,j)=>`<option value="${p.id}">${p.label||("shape "+(j+1))}</option>`).join("")
         || `<option value="">— no shapes —</option>`;
       card.innerHTML = `
         <div class="row">
@@ -5903,7 +5850,10 @@ function tickAudioAnalysis(){
   const master = (_audioBands.low + _audioBands.mid + _audioBands.high) / 3;
   $("audio-meter-master").style.width = (master*100).toFixed(0) + "%";
   const now = performance.now();
-  if (now - _lastAudioSend > 80){   // ~12Hz over the wire — plenty for already-smoothed bands
+  // ~30Hz. It was ~12Hz, plenty for effector routes on already-smoothed
+  // bands, but visualisers react to these directly and 80ms steps added
+  // that much again to mic-to-projector latency (and read as stepping).
+  if (now - _lastAudioSend > 33){
     _lastAudioSend = now;
     send({type: "set_audio_bands", low: _audioBands.low, mid: _audioBands.mid, high: _audioBands.high});
   }
@@ -6055,6 +6005,86 @@ $("cutout-add-punch-btn").onclick = () => {
   _pendingNewPolyDefaults = {source_type: "knockout", knockout_punch: true};
   send({type: "poly_add"});
 };
+// Visualisers (see visuals.py / visuals.js). The preset list and every
+// param's label, range and default come from the server's one definition
+// (GET /visuals/presets) rather than being repeated here, so a new preset or
+// a retuned range is a change in one place.
+let _visualPresets = {};
+fetch("/visuals/presets").then(r => r.json()).then(p => {
+  _visualPresets = p || {};
+  renderVisualPresetList();
+  const sel = $("poly-visual-preset");
+  sel.innerHTML = Object.entries(_visualPresets)
+    .map(([k, v]) => `<option value="${k}">${v.label}</option>`).join("");
+  renderPolyInspector();
+}).catch(e => console.warn("[lightsaber] could not load visualiser presets:", e));
+
+function renderVisualPresetList(){
+  const box = $("visual-preset-list");
+  box.innerHTML = "";
+  Object.entries(_visualPresets).forEach(([key, p]) => {
+    const el = document.createElement("div");
+    el.className = "item";
+    el.title = p.hint || "";
+    el.innerHTML = `<span>${p.label}</span><span class="plus" title="Add as a new shape">+</span>`;
+    // Whole row adds, same as the "+" (10: the whole button is clickable).
+    el.onclick = () => {
+      _pendingSelectNewPoly = true;
+      _pendingNewPolyDefaults = {source_type: "visual", visual_preset: key, label: p.label};
+      send({type: "poly_add"});
+    };
+    box.appendChild(el);
+  });
+}
+
+// Shape settings for a visual shape: the preset picker plus one slider per
+// param, rebuilt only when the preset changes (rebuilding on every state
+// message would steal a slider out from under a drag).
+let _visualParamsSig = "";
+function syncVisualInspector(poly, isVisual){
+  $("poly-visual-preset-field").style.display = isVisual ? "flex" : "none";
+  $("poly-visual-params").style.display = isVisual ? "flex" : "none";
+  $("poly-visual-hint").style.display = isVisual ? "block" : "none";
+  if (!isVisual) return;
+  const preset = _visualPresets[poly.visual_preset] ? poly.visual_preset : Object.keys(_visualPresets)[0];
+  const spec = _visualPresets[preset];
+  if (!spec) return;                                  // presets not loaded yet
+  if (document.activeElement !== $("poly-visual-preset")) $("poly-visual-preset").value = preset;
+  $("poly-visual-hint").textContent = spec.hint || "";
+  const box = $("poly-visual-params");
+  if (_visualParamsSig !== preset){
+    _visualParamsSig = preset;
+    box.innerHTML = "";
+    spec.params.forEach(prm => {
+      const row = document.createElement("div");
+      row.className = "field";
+      row.innerHTML = `<label>${prm.label}</label>
+        <input type="range" min="${prm.min}" max="${prm.max}" step="${prm.step}" data-key="${prm.key}">
+        <span class="val"></span>`;
+      const input = row.querySelector("input"), val = row.querySelector(".val");
+      input.oninput = () => {
+        val.textContent = (+input.value).toFixed(2);
+        if (selectedPolyId) send({type: "poly_set", id: selectedPolyId,
+                                  key: "visual_param." + prm.key, value: +input.value});
+      };
+      // Double-click a slider to put it back to the preset's default.
+      input.ondblclick = () => { input.value = prm.default; input.oninput(); };
+      input.title = `double-click to reset to ${prm.default}`;
+      box.appendChild(row);
+    });
+  }
+  const stored = (poly.visual_params || {})[preset] || {};
+  box.querySelectorAll("input[type=range]").forEach(input => {
+    if (document.activeElement === input) return;
+    const prm = spec.params.find(q => q.key === input.dataset.key);
+    const v = stored[prm.key] ?? prm.default;
+    input.value = v;
+    input.nextElementSibling.textContent = (+v).toFixed(2);
+  });
+}
+$("poly-visual-preset").onchange = () => selectedPolyId &&
+  send({type: "poly_set", id: selectedPolyId, key: "visual_preset", value: $("poly-visual-preset").value});
+
 $("text-add-btn").onclick = () => {
   _pendingSelectNewPoly = true;
   _pendingNewPolyDefaults = {source_type: "text", text_content: "Hello"};
@@ -6077,7 +6107,6 @@ function polySlider(id, key, label, fmt=(v)=>(+v).toFixed(2)){
     if (selectedPolyId) send({type:"poly_set", id:selectedPolyId, key, value:+s.value});
   };
 }
-polySlider("mf-glow", "glow", "mfglow");
 polySlider("mf-trail", "trail", "mftrail");
 polySlider("mf-brightness", "brightness", "mfbrightness");
 polySlider("mf-contrast", "contrast", "mfcontrast");
@@ -6134,62 +6163,6 @@ $("mf-mirror-predistort").onchange = () => selectedPolyId &&
   send({type:"poly_set", id:selectedPolyId, key:"mirror_pre_distort", value:$("mf-mirror-predistort").checked});
 polySlider("mf-rotation", "rotation", "mfrotation", v => Math.round(+v) + "°");
 polySlider("mf-scale", "scale", "mfscale");
-polySlider("s-speed","layer0.speed","speed");
-polySlider("s-turb","layer0.turbulence","turb");
-polySlider("s-hue","layer0.hue","hue");
-
-// Shape camera (column 3) — same per-polygon poly_set round-trip as Motion
-// above, just addressed at the selected shape's camera.* instead of
-// layer0.* (see composite.py's set_polygon). Distinct from column 1's plain
-// "Camera", which still drives the single-scene #view preview.
-polySlider("sc-speed","camera.speed","scspeed",(v)=>(+v).toFixed(2));
-polySlider("sc-radius","camera.orbit_radius","scradius",(v)=>(+v).toFixed(1));
-polySlider("sc-fov","camera.fov","scfov",(v)=>(+v).toFixed(0));
-polySlider("sc-far","camera.far","scfar",(v)=>(+v).toFixed(0));
-polySlider("sc-max","camera.max_strokes","scmax",(v)=>(+v).toFixed(0));
-$("sc-mode").onchange = () => selectedPolyId &&
-  send({type:"poly_set", id:selectedPolyId, key:"camera.mode", value:$("sc-mode").value});
-$("sc-disable-plane").onchange = () => selectedPolyId &&
-  send({type:"poly_set", id:selectedPolyId, key:"disable_plane", value:$("sc-disable-plane").checked});
-
-let generating = false, genTimer = null;
-function startGen(){
-  if (generating) return;
-  generating = true;
-  $("gen").disabled = true;
-  $("gen").innerHTML = '<span class="spinner"></span>';
-  $("genprog").classList.add("active");
-  $("genbar").style.width = "2%";
-  genTimer = setTimeout(endGen, 120000);   // safety restore
-}
-function endGen(){
-  generating = false;
-  $("gen").disabled = false;
-  $("gen").textContent = "Generate";
-  $("genprog").classList.remove("active");
-  $("genbar").style.width = "0%";
-  if (genTimer) { clearTimeout(genTimer); genTimer = null; }
-}
-$("gen").onclick = () => {
-  const k = $("kw").value.trim();
-  if (!k || generating) return;
-  startGen();
-  send({type:"generate", keyword:k, name:$("scenename").value.trim(), size:$("d-size").value,
-        aspect:$("d-aspect").value});
-};
-// multiline field: Ctrl/Cmd+Enter submits, plain Enter makes a new line
-$("kw").addEventListener("keydown", e => {
-  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("gen").click();
-});
-
-$("d-model").onchange = () => send({type:"set_model", value:$("d-model").value});
-$("d-effort").onchange = () => send({type:"set_effort", value:$("d-effort").value});
-
-$("o-maxpps").addEventListener("change", () => {
-  const n = parseInt($("o-maxpps").value.trim(), 10);
-  if (!isNaN(n) && n > 0) send({type:"set_max_pps", value:n});
-});
-
 $("master-toggle").onclick = () => {
   const nowActive = $("master-toggle").dataset.active === "1";
   send({type:"set_active", value: !nowActive});
@@ -6249,20 +6222,6 @@ setInterval(() => {
   }
 }, 1000);
 
-$("apisave").onclick = () => {
-  const k = $("apikey").value.trim();
-  if (!k) return;
-  $("apistatus").dataset.touched = "1";
-  $("apistatus").textContent = "saving…";
-  send({type:"set_api_key", key:k});
-};
-$("apitest").onclick = () => {
-  $("apistatus").dataset.touched = "1";
-  $("apistatus").textContent = "testing…";
-  $("apistatus").style.color = "var(--dim)";
-  send({type:"test_api_key"});
-};
-
 // modals: open/close by class toggle, backdrop click (not bubbled from
 // inside the dialog itself) also closes
 function openModal(id){ $(id).classList.add("open"); }
@@ -6285,8 +6244,6 @@ window.addEventListener("keydown", e => {
 document.querySelectorAll(".modal-backdrop").forEach(m => {
   m.addEventListener("mousedown", e => { if (e.target === m) m.classList.remove("open"); });
 });
-$("gen-open").onclick = () => openModal("modal-generate");
-$("gen-close").onclick = () => closeModal("modal-generate");
 // About (25). Deliberately a tiny renderer rather than a markdown library:
 // about.md is a handful of headings, paragraphs, bullets and links, and
 // pulling in a parser for that would cost more than it's worth. Anything it
@@ -7089,7 +7046,7 @@ function openNameModal(mode, prefill){
   _nameModalMode = mode;
   $("saveas-name").value = prefill || "";
   const copy = {
-    "canvas": ["Save canvas as", "saves the current canvas (its shapes and scene assignments) into the canvas library under this new name"],
+    "canvas": ["Save canvas as", "saves the current canvas (its shapes and what fills them) into the canvas library under this new name"],
     "project-new": ["New project", "creates an empty project with its own canvas library and sequence"],
     "project-dup": ["Save project as", "duplicates the current project — canvases, sequence, and all — under this new name"],
   }[mode];

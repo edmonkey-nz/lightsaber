@@ -18,7 +18,8 @@ settings.json
 # Per-asset media durations + default trims, keyed to THIS machine's media
 # roots (see media_meta.py) — local runtime state, not project content.
 media_meta.json
-scenes/generated/*.json
+# The removed scene director's cache (2026-11). Nothing reads it; delete at will.
+scenes/
 media/*
 # Each project's canvases/sequence — run.py bootstraps an empty "default"
 # project from scratch on first run (ProjectManager), so nothing here needs

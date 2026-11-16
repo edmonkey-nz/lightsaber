@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # .venv/bin/pip has previously targeted a different interpreter)
 .venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python run.py --web            # then http://localhost:8080
+.venv/bin/python run.py --web --open default  # same, plus the editor in its own Chrome profile
 ```
 
 Useful `run.py` flags: `--web-port`, `--fps` (startup compositor rate; a project's
@@ -23,7 +24,7 @@ browser — there is no unit-test layer, because what breaks here are render pat
 Run them after any change to a draw path, the model, or the inspector:
 
 ```bash
-.venv/bin/python test-scripts/run.py              # render + ui + perf, ~80s
+.venv/bin/python test-scripts/run.py              # render, ui, output, perf, resilience; ~2 min
 .venv/bin/python test-scripts/run.py --suite render
 ```
 
@@ -55,19 +56,41 @@ Three traps the harness already handles, each of which has cost real time here:
 - **Python changes need a server restart.** A stale process presents as a confusing UI
   bug, not an error.
 
+## Symptoms that are not what they look like
+
+Three of these have each cost an hour. `docs/TECHNICAL.md`'s Troubleshooting
+section has the full list; the ones worth knowing before you start digging:
+
+- **An output window opens white with an empty console** — check its URL. If
+  it is `about:blank`, no page loaded: Chrome could not spawn a renderer,
+  i.e. the machine is out of memory. Each output window costs 420-770MB
+  because it decodes every media layer independently. Measure free memory and
+  swap before reading any code (ARCHITECTURE.md, GPU-cost item 7).
+- **Outputs black, editor fine** — check `active` in the broadcast. Outputs go
+  fully black on Stop by design.
+- **"The outputs stopped"** may be the EDITOR having lost its socket, since it
+  is the control surface driving them. It reconnects on its own now; the
+  engine dot is the only signal.
+
 ## Architecture
 
 **The compositor runs server-side; the browser draws.** `CompositeRenderer`
 (`composite.py`) owns a render loop on its own thread and broadcasts, over one
 websocket, a `state` (project/canvas document, authoritative shape geometry) plus a
-`composite` payload (per-shape layer dicts carrying strokes and effector-resolved live
-values). `Engine` (`engine.py`) wires the libraries into it. Canvas polygons — "shapes" —
-are the only thing that ever gets drawn; there is no other render path.
+`composite` payload (per-shape layer dicts: corners after effectors, compositing
+settings, a video playhead). The server never touches pixels: video, images, webcams
+and text are all decoded and drawn in the browser. `Engine` (`engine.py`) wires the
+libraries into it. Canvas polygons — "shapes" — are the only thing that ever gets
+drawn; there is no other render path.
+
+**There are no vector scenes any more.** The promptwaver scene pipeline (generators,
+3D camera, the Claude scene director, the scene library) was removed in 2026-11 —
+lightsaber is a video tool. A saved shape with `source_type: "scene"` loads as an
+empty media shape (`PolygonSpec.from_dict`). Don't reintroduce server-side rendering.
 
 **Two renderers, synced by hand.** `web/static/index.html` (editor preview, canvas
 `cv-edit`) and `web/static/output.html` (the real projector window, `/output?out=N`)
-define **~45 identically-named functions** — `homography`, `drawWarpedStrokes`,
-`drawMediaWarped`, `polyClipPath`, `applyPunch`, `applyMirrorFoldPost`… These are
+define **~40 identically-named functions** — `homography`, `drawMediaWarped`, `polyClipPath`, `applyPunch`, `applyMirrorFoldPost`… These are
 duplicated source, not shared imports. **Any change to a draw path must be made in
 both files**, and their comments cross-reference each other deliberately. They differ
 in coordinate mapping only: the editor works in artboard pixels (`normToPx` +
@@ -96,14 +119,21 @@ blitted once; per-primitive alpha double-blends where the warp mesh's overlap sk
 meet, which shows as a visible grid at fractional opacity. Side buffers (punch runs,
 feather) follow the same rule.
 
-**Scene pipeline.** `director/` (Claude, or `fallback.py` keyword mapping with no API
-key) emits a `SceneSpec` → `generators/` + `primitives.py` build 3D polylines →
-`scene3d.py` flies a camera and projects to normalized 2D paths → the compositor
-broadcasts them as strokes. Add a primitive with a `@register` function in
-`primitives.py` and it is available to both the director and the fallback.
+**Output paint pacing.** An output window repaints the newest state on its own
+rAF clock (capped at the project fps) while video or webcam is on screen, not only
+when a message arrives, and converges on the server's playhead only on the first
+paint after a message (`_paintIsFresh`). Don't put playhead sync back on every
+paint: between messages the playhead is stale and would drag every video back.
 
-**Projects vs scenes.** Scenes are global and shared; a project owns its canvas library,
-sequence, output resolution and output count.
+**Visualisers are the one shared renderer file.** `web/static/visuals.js` is
+loaded by both pages rather than duplicated (shaders are long). It renders a
+"visual" shape already warped — no triangle mesh, because the mesh's overlap
+skirts show as a grid through semi-transparent content — and each page places
+it with one `drawImage`. Presets and parameter ranges live only in
+`lightsaber/visuals.py`. See TECHNICAL.md's "Visualisers".
+
+**Projects vs media.** Uploaded media and media roots are global and shared; a
+project owns its canvas library, sequence, output resolution, output count and fps.
 
 **`about.md` is read at runtime** by the `/about` route, resolved relative to the repo
 root — it is app content, not a developer doc, which is why it stayed at root when the
@@ -164,6 +194,48 @@ rather than projectors), present as the `upstream` remote. **Never merge or reba
 it** — port one feature at a time by hand. Procedure and divergence map are in
 docs/TECHNICAL.md's "Relationship to promptwaver".
 
-`projects/**` is deny-listed for Edit/Write and `settings.json` for Read (it holds the
-API key) in `.claude/settings.local.json`. Both are gitignored, along with `media/`,
-`scenes/generated/` and `sequence.json`. Commit only when asked, and don't push.
+`projects/**` is deny-listed for Edit/Write and `settings.json` for Read (an old
+install's copy may still hold an Anthropic API key from the removed scene director) in
+`.claude/settings.local.json`. Both are gitignored, along with `media/` and
+`sequence.json`. Commit only when asked, and don't push.
+
+## Performance — measured 2026-11
+
+Full findings are in `docs/ARCHITECTURE.md` §12, "Measured on the laptop, 2026-11".
+What to know before touching performance:
+
+- **The GTX 1650 can't show video in this Wayland session.** Chrome on it via
+  PRIME offload draws `<video>` white and canvas copies black (OpenGL/GLX), or
+  loses GPU compositing (EGL, Vulkan). Video work runs on the AMD iGPU. An
+  earlier "1650 is 1.5-5x faster" finding was measured with the video black
+  and is withdrawn. **Whenever measuring video, screenshot it.** An Xorg
+  session (`prime-select nvidia` is already set) is the untested way out.
+- **One output window per laptop.** Each window repeats all video work for its
+  slice: a 3-projector canvas ran 5fps per window with three windows, 16-17fps
+  as one window. Multi-projector is the render host's job.
+- **RAM matters per output window**, not for one: each window is its own renderer
+  with its own decoders (the white `about:blank` window).
+- **The server is no longer a factor.** Building every layer is ~0.5ms a tick and
+  one broadcast payload ~0.8ms, since the vector scenes went. Keep it that way:
+  assume anything in the broadcast path runs at frame rate forever, competing for
+  the GIL — build it once per tick, never per client.
+- **A WebGL warp inside the Canvas2D pipeline was tried and was no faster.**
+  Don't redo it; the real fix is the render host's single GL compositor.
+- **Measuring video:** Playwright's bundled Chromium has no H.264 (an .mp4 layer
+  silently draws black), so use `channel="chrome"`; the harness makes a VP8 WebM
+  fixture instead. `getImageData` readback permanently halves an iGPU canvas's
+  throughput, so for absolute numbers paint every rAF and count frames; readback
+  timing is only good for same-run deltas.
+- **If a paced thread ever starves**, promptwaver's proven fix was
+  `sys.setswitchinterval(0.0005)` (36% missed → 0.0%). Real-time thread priority
+  was noise — it doesn't beat the GIL.
+
+**Before trusting any timing on the dev laptop,** check the CPU isn't capped:
+compare `scaling_max_freq` with `cpuinfo_max_freq` under
+`/sys/devices/system/cpu/cpu*/cpufreq/`. On 2026-09-16, 11 of 12 cores were
+pinned at 2.1GHz of 4.06GHz; the fix does not survive a reboot. Read the real
+clock from `/proc/cpuinfo` MHz, not `scaling_cur_freq`. Absolute numbers taken
+before that date — `docs/ARCHITECTURE.md`'s "10 distorted 1080p layers across 4
+outputs ≈113ms/frame" among them — may be up to 2x pessimistic for their
+CPU-side share. `suite_perf.py`'s same-run deltas with a 3x factor are
+unaffected as regression tripwires.

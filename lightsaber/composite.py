@@ -1,14 +1,20 @@
-"""THE renderer: renders one live Scene per canvas polygon, each on its own
-modulation matrix (routes are matrix-global — see ModMatrix.add_route — so
-simultaneous scenes can't share one), and hands the browser the raw
-per-polygon stroke lists plus each polygon's current corners so the quad
-warp (unit square -> polygon) happens client-side.
+"""THE renderer's clock and state: owns every canvas shape's live values and
+publishes them, once per tick, as a list of layer dicts the browser draws.
+
+There is no server-side drawing. Each layer carries a shape's corners (after
+any effector routes), its compositing settings, and for video the playhead
+every window should converge on. The quad warp, masks, keys and FX all happen
+client-side, in index.html (editor) and output.html (projector window).
 
 Runs on its own thread and clock. Owns the master Start/Stop gate (`active`)
-and the "Disable Visuals" fade (`master_gain`) — this used to be a second,
-monitor-only render path alongside Engine._loop's single-scene/laser loop;
-now that the laser is gone and there's no single-scene preview either, this
-is the only render loop in the app, so those controls moved here.
+and the "Disable Visuals" fade (`master_gain`).
+
+Until 2026-11 this also rendered one generated vector Scene per shape (the
+promptwaver scene pipeline, with a Claude scene director). That path was
+removed: lightsaber is a video/projection tool, and the per-shape scene
+render was by far the most expensive thing in the Python process — measured
+at ~17ms a tick for two scenes at full CPU clock, ~50ms with the laptop's CPU
+capped, competing with the broadcaster for the GIL either way.
 """
 
 from __future__ import annotations
@@ -16,12 +22,11 @@ from __future__ import annotations
 import threading
 import time
 
-from .modulation import ModMatrix, LFO
-from .scenes import Scene
-from .canvases import (CanvasManager, CanvasSpec, PolygonSpec,
+from .canvases import (CanvasManager, CanvasSpec, PolygonSpec, SOURCE_TYPES,
                        DEFAULT_CLIP_POINTS, sanitize_clip_points)
 from .media_roots import resolve as media_link_path, link_exists
 from . import media_meta
+from . import visuals
 from .sequencer import Sequencer
 from .projects import ProjectManager, ProjectSpec, OutputMonitorConfig
 from .perf import LoopStats
@@ -43,52 +48,15 @@ def media_cfg_sig(poly: PolygonSpec) -> str:
             f"/{poly.media_rate}/{poly.media_offset}")
 
 
-# Same attr mapping as Engine._apply_param's "camera." branch (engine.py) —
-# kept in sync so a polygon's camera override behaves identically to the
-# single-scene one, just applied to that polygon's own live Scene.camera.
-_CAMERA_ATTR_MAP = {
-    "mode": ("mode", str),
-    "speed": ("base_speed", float),
-    "orbit_radius": ("orbit_radius", float),
-    "fov": ("fov", float),
-    "far": ("far", float),
-    "max_strokes": ("max_strokes", int),
-}
-
-
-def _apply_camera_overrides(cam, overrides: dict):
-    if cam is None:
-        return
-    for attr, value in overrides.items():
-        mapped = _CAMERA_ATTR_MAP.get(attr)
-        if mapped is None:
-            continue
-        field, cast = mapped
-        setattr(cam, field, cast(value))
-
-
-class _Slot:
-    __slots__ = ("scene", "matrix", "t0", "scene_name")
-
-    def __init__(self, scene, matrix, t0, scene_name):
-        self.scene = scene
-        self.matrix = matrix
-        self.t0 = t0
-        self.scene_name = scene_name
-
-
 class CompositeRenderer:
-    def __init__(self, canvases: CanvasManager, sequencer: Sequencer, scene_loader,
+    def __init__(self, canvases: CanvasManager, sequencer: Sequencer,
                  projects: ProjectManager, fps: int = 20):
-        """`scene_loader(name) -> SceneSpec` — pass SceneManager.load_spec so
-        a polygon's scene comes from the exact same library/file every
-        project shares. `projects` — the on-disk project library; switching
-        projects retargets `canvases`/`sequencer` in place (see their
-        `retarget` methods) rather than replacing them, since this class
-        holds a live reference to both."""
+        """`projects` — the on-disk project library; switching projects
+        retargets `canvases`/`sequencer` in place (see their `retarget`
+        methods) rather than replacing them, since this class holds a live
+        reference to both."""
         self.canvases = canvases
         self.sequencer = sequencer
-        self._scene_loader = scene_loader
         self.projects = projects
         self.current_project: ProjectSpec | None = None
         # Same 1..120 clamp the other two writers use (set_project_fps and
@@ -105,29 +73,24 @@ class CompositeRenderer:
                                     # same discipline as Engine._enqueue, so the
                                     # render thread never races the websocket thread
 
-        self._slots: dict[str, _Slot] = {}
-        self._canvas_sig = None   # (name, ((poly_id, scene), ...)) — rebuild trigger
-        self._last_layers: list[dict] = []   # published composite payload (raw Frames)
+        self._last_layers: list[dict] = []   # published composite payload
 
         # Master Start/Stop — nothing draws/animates until this is on. While
-        # off, every slot's clock is frozen the same way Engine._loop used
-        # to freeze the single scene's (shift t0 forward by dt each tick, so
-        # resuming continues rather than jumping), and the published layers
-        # go empty so the output windows go black — the show's "blackout".
+        # off, the canvas clocks are frozen (t0 shifted forward by dt each
+        # tick, so resuming continues rather than jumping) and the output
+        # windows draw nothing — the show's "blackout".
         self.active = False
         # "Freeze shape playback" (Canvas panel, next to resolution) — unlike
-        # `active`, content stays visible (rendered + published normally),
-        # just with every slot's clock stopped (same t0-shift trick as the
-        # `active=False` freeze, without the "publish nothing" part). For
+        # `active`, content stays visible (published normally), just with
+        # the canvas clocks stopped (same t0-shift trick as the
+        # `active=False` freeze, without the "draw nothing" part). For
         # calmer editing: `active` off shows nothing at all, which is no use
         # while dragging a shape's corners and wanting to actually see it.
         self.frozen = False
         # "Disable Visuals" (Global section) — a gracefully-fadeable dim,
-        # independent of active/blank, applied client-side: composite_preview
-        # publishes `master_gain` and both painters multiply it into opacity
-        # (see index.html/output.html's drawWarpedStrokes) rather than
-        # scaling colours server-side per point the way the old single-scene
-        # loop did.
+        # independent of active/blank, applied client-side: state() publishes
+        # `master_gain` and both painters apply it once, to the finished
+        # frame (see paintComposite's single blit).
         self.visuals_disabled = False
         # Per-output test pattern (Project tab > Output monitors) — a
         # calibration aid, not show content: which projector is which, and
@@ -156,17 +119,15 @@ class CompositeRenderer:
         self._diag_enabled = False
 
         # Effector matrix clock (see effectors.py) — a canvas-wide t,
-        # independent of any one scene slot's own t0, shifted by dt during
-        # blackout/freeze exactly like every slot.t0 below, so LFOs stop
+        # shifted by dt during blackout/freeze, so LFOs stop
         # advancing right along with everything else instead of jumping
         # ahead when playback resumes.
         self._effector_t0 = time.monotonic()
-        # Media playback clock (item 15) — canvas-wide, and reset when the
-        # canvas CHANGES (not on every slot rebuild, which also fires for an
-        # unrelated shape being added: that would restart every "once" video
-        # mid-show). Freeze/blackout shift it by dt exactly like the effector
-        # clock and every slot.t0, so video stops and resumes with everything
-        # else instead of running on underneath.
+        # Media playback clock (item 15) — canvas-wide, and reset only when
+        # the canvas CHANGES (not when a shape is added: that would restart
+        # every "once" video mid-show). Freeze/blackout shift it by dt
+        # exactly like the effector clock, so video stops and resumes with
+        # everything else instead of running on underneath.
         self._media_t0 = time.monotonic()
         self._media_canvas = None
         # Elapsed canvas time as of the current tick — set once at the top of
@@ -177,8 +138,15 @@ class CompositeRenderer:
         # Live mic analysis (see effectors.py's "audio" source type) — a
         # browser (the control panel, not output windows) streams these up
         # via set_audio_bands; NOT a function of t, just "whatever was last
-        # reported", same category as modulation.py's Value class.
+        # reported".
         self._audio_bands = {"low": 0.0, "mid": 0.0, "high": 0.0}
+        # Visualiser motion (see visuals.py): per-shape running total of an
+        # audio-modulated speed, integrated HERE once per tick so every output
+        # window draws the same position. _visual_rate is the latest
+        # d(phase)/dt, published so windows can extrapolate between messages.
+        # Both reset when the canvas changes, like the media clock.
+        self._visual_phase: dict[str, float] = {}
+        self._visual_rate: dict[str, float] = {}
 
     # lifecycle ---------------------------------------------------------
     def start(self):
@@ -229,7 +197,7 @@ class CompositeRenderer:
     def _do_set_project(self, name: str):
         """Not queued itself — call only from inside another queued
         callable, so a whole project switch (retarget canvases, retarget
-        sequencer, load the active canvas, clear stale slots, rebind
+        sequencer, load the active canvas, rebind
         current_project) commits as one atomic step. Otherwise a broadcast
         tick reading `canvases.current` and `current_project` between two
         separate queued steps could see project A's name next to project
@@ -239,8 +207,6 @@ class CompositeRenderer:
         self.sequencer.retarget(self.projects.sequence_path(name))
         if spec.active_canvas and spec.active_canvas in self.canvases.names():
             self.canvases.current = self.canvases.load_spec(spec.active_canvas)
-        self._slots = {}
-        self._canvas_sig = None
         self.current_project = spec
         # Opening a project adopts its own frame rate (ProjectSpec.fps) —
         # otherwise the number shown in the Project tab would disagree with
@@ -282,7 +248,7 @@ class CompositeRenderer:
 
     # canvas editing (queued) --------------------------------------------
     def new_canvas(self):
-        # Starts EMPTY (51). It used to arrive with one blank scene polygon,
+        # Starts EMPTY (51). It used to arrive with one blank polygon,
         # which is a guess about intent: the first thing you do is pick a
         # source, and a placeholder shape has to be repurposed or deleted
         # first either way. The Input rail is how a shape gets added.
@@ -446,9 +412,9 @@ class CompositeRenderer:
         aspect = self.current_project.width / self.current_project.height
         return 0.5 * aspect / max(0.01, target_aspect)
 
-    def add_polygon(self, scene: str | None = None):
+    def add_polygon(self):
         def apply():
-            poly = PolygonSpec(scene=scene, label=scene or "")
+            poly = PolygonSpec()
             if self.current_project is not None and self.current_project.height:
                 half_h = self.default_half_height()
                 poly.corners = [[-0.5, half_h], [0.5, half_h], [0.5, -half_h], [-0.5, -half_h]]
@@ -465,7 +431,6 @@ class CompositeRenderer:
         def apply():
             self.canvases.current.polygons = [
                 p for p in self.canvases.current.polygons if p.id != poly_id]
-            self._slots.pop(poly_id, None)
         self._enqueue(apply)
 
     def set_polygon_corners(self, poly_id: str, corners: list):
@@ -490,11 +455,8 @@ class CompositeRenderer:
             poly = self._find_polygon(poly_id)
             if poly is None:
                 return
-            if key == "scene":
-                poly.scene = value or None
-            elif key == "source_type":
-                poly.source_type = value if value in (
-                    "scene", "media", "knockout", "webcam", "text") else "scene"
+            if key == "source_type":
+                poly.source_type = value if value in SOURCE_TYPES else "media"
             elif key == "media":
                 poly.media = value or None
             elif key == "media_link":
@@ -515,6 +477,15 @@ class CompositeRenderer:
                 poly.text_color = str(value or "#ffffff")
             elif key == "text_size":
                 poly.text_size = max(0.02, min(1.0, float(value)))
+            elif key == "visual_preset":
+                poly.visual_preset = visuals.preset_key(value)
+            elif key.startswith("visual_param."):
+                # Stored under the CURRENT preset, so each preset keeps its
+                # own tweaks (see PolygonSpec.visual_params).
+                pkey = key.split(".", 1)[1]
+                v = visuals.clamp_param(poly.visual_preset, pkey, value)
+                if v is not None:
+                    poly.visual_params.setdefault(poly.visual_preset, {})[pkey] = v
             elif key == "label":
                 poly.label = str(value or "")
             elif key == "opacity":
@@ -530,8 +501,6 @@ class CompositeRenderer:
                 poly.media_rate = max(0.05, min(8.0, float(value)))
             elif key == "media_offset":
                 poly.media_offset = max(0.0, float(value))
-            elif key == "time_offset":
-                poly.time_offset = float(value)
             elif key == "clip_shape":
                 poly.clip_shape = value if value in (
                     "circle", "hexagon", "triangle", "square", "custom") else None
@@ -578,15 +547,12 @@ class CompositeRenderer:
             elif key == "transform_anchor":
                 from .effectors import ANCHOR_POINTS
                 poly.transform_anchor = value if value in ANCHOR_POINTS else poly.transform_anchor
-            elif key in ("glow", "trail"):
-                poly.overrides[key] = max(0.0, float(value))
+            elif key == "trail":
+                poly.overrides[key] = max(0.0, min(0.95, float(value)))
             elif key in ("brightness", "contrast"):
-                # Applied client-side via ctx.filter around a layer's whole
-                # draw call (see paintCanvasEditor/paintComposite in the two
-                # HTML files) — 1.0 = neutral, same convention as CSS's own
-                # brightness()/contrast() filter functions. Unlike glow/trail
-                # (vector-only, a stroke shadow/window-persistence effect)
-                # this applies to any source_type, scene or raster alike.
+                # Applied client-side via ctx.filter (see paintCanvasEditor/
+                # paintComposite in the two HTML files) — 1.0 = neutral, same
+                # convention as CSS's own brightness()/contrast().
                 poly.overrides[key] = max(0.0, min(3.0, float(value)))
             elif key == "hue":
                 # Degrees, same convention/range as CSS's own hue-rotate() —
@@ -603,7 +569,7 @@ class CompositeRenderer:
                 poly.overrides[key] = max(0.0, min(1.0, float(value)))
             elif key == "colourize_hue":
                 poly.overrides[key] = max(0.0, min(360.0, float(value)))
-            elif key in ("mirror_x", "mirror_y", "disable_plane"):
+            elif key in ("mirror_x", "mirror_y"):
                 poly.overrides[key] = bool(value)
             elif key in ("mirror_x_point", "mirror_y_point"):
                 # 1.0 = off (shows the original, untouched) — see the fold
@@ -632,21 +598,6 @@ class CompositeRenderer:
                 # Degrees, static authored (Transform drawer) — the BASE an
                 # effector "rotation" route then adds to.
                 poly.overrides[key] = max(-180.0, min(180.0, float(value)))
-            elif key.startswith("layer0."):
-                attr = key.split(".", 1)[1]
-                poly.overrides.setdefault("layer0", {})[attr] = float(value)
-                # apply live, without waiting for a slot rebuild
-                slot = self._slots.get(poly_id)
-                if slot is not None and slot.scene._gens:
-                    slot.scene._gens[0][1][attr] = float(value)
-            elif key.startswith("camera."):
-                attr = key.split(".", 1)[1]
-                poly.overrides.setdefault("camera", {})[attr] = value
-                # apply live, without waiting for a slot rebuild — mirrors
-                # the layer0 branch above
-                slot = self._slots.get(poly_id)
-                if slot is not None:
-                    _apply_camera_overrides(slot.scene.camera, {attr: value})
         self._enqueue(apply)
 
     def _find_polygon(self, poly_id: str) -> PolygonSpec | None:
@@ -774,9 +725,9 @@ class CompositeRenderer:
         """Where a media shape's playhead should be right now, computed HERE
         rather than in the browser.
 
-        The compositor already owns time — generated scenes are pure
-        functions of t (that's what time_offset is for), and video is now the
-        same: position is derived from the canvas clock, not from letting
+        The compositor already owns time (effectors are functions of it),
+        and video is the same: position is derived from the canvas clock, not
+        from letting
         each <video> free-run. That matters for more than tidiness. Every
         output window is a separate page with its own <video> elements; left
         to themselves they drift apart within seconds, so one clip spanning
@@ -847,9 +798,8 @@ class CompositeRenderer:
 
     def _poly_layer_base(self, poly: PolygonSpec) -> dict:
         """The layer-payload fields that come straight off the PolygonSpec,
-        common to all three call sites below (blackout / missing-scene /
-        rendered) — factored out so adding a new per-polygon field (as with
-        webcam/text/clip_scale) is one edit instead of three."""
+        shared by the running and stopped paths of _loop — factored out so
+        adding a new per-polygon field is one edit, not one per path."""
         return {
             "id": poly.id, "corners": poly.corners, "opacity": poly.opacity,
             "clip_shape": poly.clip_shape, "clip_scale": poly.clip_scale,
@@ -872,6 +822,7 @@ class CompositeRenderer:
             # (and stay frame-identical), while differing ones get their own.
             "media_cfg": media_cfg_sig(poly),
             **self._media_playback_payload(poly),
+            **self._visual_payload(poly),
             # Resolved server-side (cached, see media_roots._EXISTS_TTL) so
             # the inspector can show the real path plus a found/missing
             # state without the browser needing filesystem access.
@@ -885,14 +836,13 @@ class CompositeRenderer:
     def _poly_override_payload(ov: dict) -> dict:
         """The `overrides` keys the two renderers read straight off a layer.
 
-        Factored out because this exact dict was built verbatim at three call
-        sites (media/raster, blackout, and the rendered-scene path). Adding one
-        key meant three edits, and missing one showed up as the value silently
-        never reaching that one kind of shape — the same failure mode
-        _poly_layer_base exists to prevent for the spec's own fields.
+        Factored out because this dict was once built verbatim at three call
+        sites, and missing a key at one showed up as the value silently never
+        reaching that kind of shape — the same failure mode _poly_layer_base
+        exists to prevent for the spec's own fields.
         """
         return {
-            "glow": float(ov.get("glow", 0.0)), "trail": float(ov.get("trail", 0.0)),
+            "trail": float(ov.get("trail", 0.0)),
             "mirror_x": bool(ov.get("mirror_x", False)),
             "mirror_y": bool(ov.get("mirror_y", False)),
             "mirror_x_point": float(ov.get("mirror_x_point", 1.0)),
@@ -922,11 +872,8 @@ class CompositeRenderer:
 
     def _apply_effectors(self, layers: list, t: float):
         """Post-processes already-built layer dicts in place (2/3) — cheaper
-        than threading effector resolution through every one of
-        _poly_layer_base's three call sites, and correct regardless of
-        which of them produced a given layer (scene slot, missing slot, or
-        blackout — see effectors.py's own docstring on why this covers
-        media/webcam/text too, not just scene shapes). A layer whose id has
+        than threading effector resolution through _poly_layer_base, and
+        correct for every source type. A layer whose id has
         no route targeting it just gets its own existing value back — a
         no-op, not a special case."""
         canvas = self.canvases.current
@@ -1069,53 +1016,71 @@ class CompositeRenderer:
         self._gain_fade_pos = 0.0
         self._gain_fade_on_complete = _swap_in
 
-    # slot management -------------------------------------------------------
-    def _rebuild_if_needed(self, now: float):
-        canvas = self.canvases.current
-        if canvas.name != self._media_canvas:
-            self._media_canvas = canvas.name
-            self._media_t0 = now
-        sig = (canvas.name, tuple((p.id, p.scene) for p in canvas.polygons))
-        if sig == self._canvas_sig:
-            return
-        self._canvas_sig = sig
-        new_slots: dict[str, _Slot] = {}
-        for poly in canvas.polygons:
-            if not poly.scene:
+    # visualisers --------------------------------------------------------
+    def _advance_visuals(self, canvas: CanvasSpec, dt: float):
+        """Integrate each visualiser's audio-modulated speed (see visuals.py's
+        module docstring for why this lives on the server). dt=0 while
+        frozen, so the phase holds and the published rate is 0 — a window
+        extrapolating from it then stands still too."""
+        rates = {}
+        for p in canvas.polygons:
+            if p.source_type != "visual":
                 continue
-            existing = self._slots.get(poly.id)
-            if existing is not None and existing.scene_name == poly.scene:
-                new_slots[poly.id] = existing
-                continue
-            try:
-                spec = self._scene_loader(poly.scene)
-            except Exception as e:
-                print(f"[lightsaber] composite: could not load scene {poly.scene!r}: {e}")
-                continue
-            matrix = ModMatrix()
-            matrix.add_source("lfo_slow", LFO(rate=0.05, shape="sine"))
-            matrix.add_source("lfo_mid", LFO(rate=0.2, shape="triangle"))
-            for r in spec.modulation:
-                matrix.add_route(r.get("source", "lfo_slow"), r.get("dest", ""),
-                                  float(r.get("depth", 1.0)), float(r.get("bias", 0.0)))
-            slot = _Slot(Scene(spec), matrix, now, poly.scene)
-            layer0 = poly.overrides.get("layer0")
-            if layer0 and slot.scene._gens:
-                slot.scene._gens[0][1].update(layer0)
-            camera_ov = poly.overrides.get("camera")
-            if camera_ov:
-                _apply_camera_overrides(slot.scene.camera, camera_ov)
-            new_slots[poly.id] = slot
-        self._slots = new_slots
+            params = visuals.resolve(p.visual_preset, p.visual_params)
+            rate = visuals.phase_rate(p.visual_preset, params, self._audio_bands) if dt else 0.0
+            rates[p.id] = rate
+            self._visual_phase[p.id] = self._visual_phase.get(p.id, 0.0) + rate * dt
+        self._visual_rate = rates
+
+    def _visual_payload(self, poly: PolygonSpec) -> dict:
+        if poly.source_type != "visual":
+            return {"visual_preset": None, "visual_params": None, "visual_t": None,
+                    "visual_phase": None, "visual_rate": 0.0}
+        return {
+            "visual_preset": visuals.preset_key(poly.visual_preset),
+            "visual_params": visuals.resolve(poly.visual_preset, poly.visual_params),
+            # The media clock: canvas-wide, frozen by Stop/Freeze, reset when
+            # the canvas changes.
+            "visual_t": round(self._media_now, 4),
+            "visual_phase": round(self._visual_phase.get(poly.id, 0.0), 5),
+            "visual_rate": round(self._visual_rate.get(poly.id, 0.0), 5),
+        }
 
     # loop --------------------------------------------------------------
+    def _static_layer(self, p: PolygonSpec) -> dict:
+        """A shape's layer in its authored pose, with no effector routes —
+        what a stopped engine publishes. Routes are skipped deliberately, so
+        live-modulated shapes reset to their unmodulated pose on Stop, but
+        the static authored scale/rotation (Transform drawer) is a property
+        of the pose itself and must still show, so it is applied by hand."""
+        ov = p.overrides
+        static_scale = float(ov.get("scale", 1.0))
+        static_rotation = float(ov.get("rotation", 0.0))
+        corners = p.corners
+        if static_scale != 1.0 or static_rotation:
+            corners = transform_corners(
+                p.corners, p.transform_anchor, 0.0, 0.0, static_scale, static_rotation)
+        return {**self._poly_layer_base(p), "corners": corners,
+                **self._poly_override_payload(ov)}
+
     def _loop(self):
-        period = 1.0 / self.fps
         prev = time.monotonic()
+        next_tick = prev
         while self._running:
             now = time.monotonic()
             dt = now - prev
             prev = now
+            # Read EVERY tick. This used to be computed once, before the
+            # loop, so opening a project (which adopts its own fps) or
+            # changing the field never reached the render rate: a 30fps
+            # project was measured running at 19.8fps, the --fps default it
+            # started with, while the UI and broadcaster both said 30.
+            period = 1.0 / max(1, self.fps)
+            if self.perf.fps != self.fps:
+                # Same bug, second copy: the diagnostics' target and frame
+                # budget were also fixed at the startup rate, so "dropped"
+                # was judged against the wrong budget.
+                self.perf.set_fps(self.fps)
 
             with self._lock:
                 q, self._queue = self._queue, []
@@ -1126,140 +1091,79 @@ class CompositeRenderer:
                     print(f"[lightsaber] composite action error: {e}")
 
             if not self.active:
-                # Master Start/Stop: freeze every slot's clock (shift t0
-                # forward by this tick's dt, same trick Engine._loop used)
-                # and publish nothing, so output windows go black — the
-                # show's blackout. Sequencer does not advance either.
-                for slot in self._slots.values():
-                    slot.t0 += dt
+                # Master Start/Stop: freeze the clocks (shift t0 forward by
+                # this tick's dt, so resuming continues rather than jumping)
+                # and let the output windows draw nothing — the show's
+                # blackout. The sequencer does not advance either.
                 self._effector_t0 += dt
                 self._media_t0 += dt
-                def _blackout_layer(p):
-                    ov = p.overrides
-                    # Static authored scale/rotation (Transform drawer) are a
-                    # base-pose property, not a live effector animation — it
-                    # must keep showing while stopped, unlike the corner
-                    # modulation _apply_effectors does (which this blackout
-                    # branch deliberately skips so LIVE routes reset to the
-                    # unmodulated pose — see this function's own comment
-                    # further down). So it's applied here by hand instead.
-                    static_scale = float(ov.get("scale", 1.0))
-                    static_rotation = float(ov.get("rotation", 0.0))
-                    corners = p.corners
-                    if static_scale != 1.0 or static_rotation:
-                        corners = transform_corners(
-                            p.corners, p.transform_anchor, 0.0, 0.0, static_scale, static_rotation)
-                    return {
-                        **self._poly_layer_base(p),
-                        "corners": corners,
-                        "missing": False, "is_3d": False,
-                        **self._poly_override_payload(ov),
-                        "aspect": "1:1",
-                        "frame": [],
-                    }
-                self._last_layers = [_blackout_layer(p) for p in self.canvases.current.polygons]
-                # Meters only (5) — NOT the full _apply_effectors: while
-                # stopped, shapes must show their ORIGINAL, unmodulated
-                # corners/hue/etc (_blackout_layer already built them that
-                # way from poly.overrides/poly.corners directly), not
-                # wherever an LFO happened to leave them. Source meters
-                # still read live though — the UI's own debugging affordance
-                # (PROMPT-effectors.md), useful to preview/tune before Start.
+                self._last_layers = [self._static_layer(p)
+                                     for p in self.canvases.current.polygons]
+                # Meters only (5) — NOT the full _apply_effectors: source
+                # meters still read live so an LFO can be previewed and tuned
+                # before Start (PROMPT-effectors.md), but no shape moves.
                 self._update_effector_meters(now - self._effector_t0)
                 self.perf.tick()
-                sleep = period - (time.monotonic() - now)
-                if sleep > 0:
-                    time.sleep(sleep)
-                continue
-
-            if self.frozen:
-                # Same t0-shift trick the `active=False` branch above uses,
-                # just without skipping the render/publish below — content
-                # stays on screen, at whatever instant it was frozen at.
-                # Also holds the sequencer's playhead, so the canvas being
-                # edited can't get swapped out from under you mid-edit.
-                for slot in self._slots.values():
-                    slot.t0 += dt
-                self._effector_t0 += dt
-                self._media_t0 += dt
-            elif self.sequencer.tick(dt):
-                self._swap_sequencer_canvas()
-
-            self._rebuild_if_needed(now)
-            # One clock reading per tick, so every layer built below agrees.
-            self._media_now = now - self._media_t0
-
-            if self._diag_enabled:
-                t_render0 = time.monotonic()
-
-            # "Disable Visuals" fade — see disable_visuals/enable_visuals;
-            # published as master_gain, applied client-side (both painters
-            # multiply it into each shape's opacity) rather than scaling
-            # colours here the way the old single-scene loop did per point.
-            if self._gain_fade_pos < self._gain_fade_dur:
-                self._gain_fade_pos += dt
-                prog = min(1.0, self._gain_fade_pos / self._gain_fade_dur)
-                self.master_gain = self._gain_from + (self._gain_to - self._gain_from) * prog
-                if self._gain_fade_pos >= self._gain_fade_dur and self._gain_fade_on_complete:
-                    on_complete = self._gain_fade_on_complete
-                    self._gain_fade_on_complete = None
-                    on_complete()
             else:
-                self.master_gain = self._gain_to
+                if self.frozen:
+                    # Same t0 shift as the blackout branch, without drawing
+                    # nothing: content stays on screen at whatever instant it
+                    # was frozen at. Also holds the sequencer's playhead, so
+                    # the canvas being edited can't be swapped out mid-edit.
+                    self._effector_t0 += dt
+                    self._media_t0 += dt
+                elif self.sequencer.tick(dt):
+                    self._swap_sequencer_canvas()
 
-            layers = []
-            for poly in self.canvases.current.polygons:
-                slot = self._slots.get(poly.id)
-                if slot is None:
-                    # No scene slot — either this polygon has no scene at
-                    # all (media/webcam/text/knockout, the normal case for
-                    # those source_types) or its assigned scene failed to
-                    # load ("missing" below). Either way, still read glow/
-                    # trail/mirror/brightness/contrast from its OWN
-                    # overrides rather than hardcoding neutral — those apply
-                    # regardless of source_type (see paintCanvasEditor/
-                    # paintComposite in the two HTML files), and this branch
-                    # is exactly the one media/webcam/text shapes always
-                    # take, so hardcoding here silently dropped their
-                    # brightness/contrast/mirror on the real output while
-                    # the editor (which reads overrides straight off the
-                    # polygon, not this broadcast layer) looked correct.
-                    ov = poly.overrides
-                    layers.append({
-                        **self._poly_layer_base(poly),
-                        "missing": bool(poly.scene), "is_3d": False,
-                        **self._poly_override_payload(ov),
-                        "aspect": "1:1",
-                        "frame": [],
-                    })
-                    continue
-                t = (now - slot.t0) + poly.time_offset
-                slot.matrix.update(t, dt)
-                ov = poly.overrides
-                frame = slot.scene.render(t, dt, slot.matrix,
-                                           disable_plane=bool(ov.get("disable_plane", False)))
-                layers.append({
-                    **self._poly_layer_base(poly),
-                    "missing": False, "is_3d": slot.scene.is_3d,
-                    **self._poly_override_payload(ov),
-                    "aspect": slot.scene.spec.aspect,
-                    "frame": frame,
-                })
-            self._apply_effectors(layers, now - self._effector_t0)
-            self._last_layers = layers
-            self.perf.tick()   # cheap interval/fps tracking — always on, see LoopStats.tick
-            if self._diag_enabled:
-                render_dur = time.monotonic() - t_render0
-                total_dur = time.monotonic() - now
-                n_points = sum(len(p.points) for l in layers for p in l["frame"])
-                # No separate "output" stage any more (no DAC write) — the
-                # per-slot render above already covers what this loop does.
-                self.perf.record(render_s=render_dur, output_s=0.0, total_s=total_dur,
-                                 n_points=n_points, crossfading=False)
+                canvas = self.canvases.current
+                if canvas.name != self._media_canvas:
+                    self._media_canvas = canvas.name
+                    self._media_t0 = now
+                    self._visual_phase = {}
+                # One clock reading per tick, so every layer built below agrees.
+                self._media_now = now - self._media_t0
+                self._advance_visuals(canvas, 0.0 if self.frozen else dt)
 
-            sleep = period - (time.monotonic() - now)
-            if sleep > 0:
-                time.sleep(sleep)
+                if self._diag_enabled:
+                    t_render0 = time.monotonic()
+
+                # "Disable Visuals" fade — see disable_visuals/enable_visuals;
+                # published as master_gain and applied client-side, once, to
+                # the finished frame.
+                if self._gain_fade_pos < self._gain_fade_dur:
+                    self._gain_fade_pos += dt
+                    prog = min(1.0, self._gain_fade_pos / self._gain_fade_dur)
+                    self.master_gain = self._gain_from + (self._gain_to - self._gain_from) * prog
+                    if self._gain_fade_pos >= self._gain_fade_dur and self._gain_fade_on_complete:
+                        on_complete = self._gain_fade_on_complete
+                        self._gain_fade_on_complete = None
+                        on_complete()
+                else:
+                    self.master_gain = self._gain_to
+
+                layers = [{**self._poly_layer_base(p), **self._poly_override_payload(p.overrides)}
+                          for p in self.canvases.current.polygons]
+                self._apply_effectors(layers, now - self._effector_t0)
+                self._last_layers = layers
+                self.perf.tick()   # cheap interval/fps tracking — always on, see LoopStats.tick
+                if self._diag_enabled:
+                    total_dur = time.monotonic() - now
+                    self.perf.record(render_s=time.monotonic() - t_render0, output_s=0.0,
+                                     total_s=total_dur, n_points=len(layers),
+                                     crossfading=False)
+
+            # Deadline pacing rather than "sleep a period after the work":
+            # the old form lost the work time plus time.sleep's own overshoot
+            # every tick, so it always ran a little under its target. If the
+            # tick overran, re-anchor rather than firing a burst of
+            # back-to-back ticks to catch up — a late frame is better than
+            # three frames at once.
+            next_tick += period
+            delay = next_tick - time.monotonic()
+            if delay > 0:
+                time.sleep(delay)
+            else:
+                next_tick = time.monotonic()
 
     # introspection for the UI -----------------------------------------
     def state(self) -> dict:
@@ -1296,33 +1200,17 @@ class CompositeRenderer:
             # (CanvasSpec.to_dict), this is just each source's CURRENT
             # sampled value, refreshed by the same tick that resolves routes.
             "effector_values": {k: round(v, 3) for k, v in self._last_effector_values.items()},
+            # The live mic levels, for visualisers to react to directly (the
+            # editor analyses the mic and streams these up — set_audio_bands).
+            "audio_bands": {k: round(v, 3) for k, v in self._audio_bands.items()},
         }
 
-    def composite_preview(self, max_points: int = 4000, stroke_thin: int = 200):
-        """Per-polygon polylines for the browser, thinned to a flat
-        per-polygon share of `max_points` so payload size stays roughly
-        constant regardless of how many polygons are live — mirrors
-        Engine.preview()'s thinning, just budgeted per layer instead of
-        globally."""
-        layers = self._last_layers
-        budget = max(40, max_points // max(1, len(layers)))
-        out = []
-        for layer in layers:
-            strokes = []
-            sent = 0
-            for p in layer["frame"]:
-                pts = p.points
-                if len(pts) > stroke_thin:
-                    pts = pts[:: max(1, len(pts) // stroke_thin)]
-                strokes.append({
-                    "c": [round(float(v), 3) for v in p.color],
-                    "p": [[round(float(x), 3), round(float(y), 3)] for x, y in pts],
-                })
-                sent += len(pts)
-                if sent > budget:
-                    break
-            # Pass every layer field through as-is except the raw `frame`
-            # (replaced by the thinned `strokes` above) — avoids hand-listing
-            # the same field set a 4th time; see _poly_layer_base.
-            out.append({**{k: v for k, v in layer.items() if k != "frame"}, "strokes": strokes})
-        return out
+    def composite_preview(self) -> list[dict]:
+        """The layers published this tick. Built once per tick by _loop and
+        never mutated after publishing, so the broadcaster can serialise it
+        without a copy. There used to be a std/HQ pair of these (differently
+        thinned stroke lists for the editor and the output windows), which
+        made the broadcaster json.dumps the whole state twice a tick; with
+        no strokes there is nothing to thin, so every client gets one
+        payload."""
+        return self._last_layers

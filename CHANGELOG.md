@@ -1,8 +1,145 @@
 # Changelog
 
 All notable changes to Lightsaber are logged here. This project is **pre-1.0
-and under active development** — expect breaking changes to scene JSON shape
-and APIs between minor versions until a 1.0 release.
+and under active development** — expect breaking changes to project/canvas JSON
+shape and APIs between minor versions until a 1.0 release.
+
+## [Unreleased]
+
+## [0.39.0]
+
+### Removed — vector scenes and the Claude scene director
+- **The generated vector-scene pipeline is gone**: `scenes.py`, `scene3d.py`,
+  `generators/`, `director/`, `primitives.py`, `shapes.py`, `geometry.py`,
+  `modulation.py`, the shipped `scenes/` library, the `anthropic` and `numpy`
+  dependencies, `run.py --model`, and in the UI the 3D Scenes input, the
+  Generate modal, the 3D Scene Settings pane, the glow control, the Claude API
+  status dot and the API key / scene-complexity settings. Lightsaber is a
+  video and projection tool; the scene renderer was the most expensive thing
+  on the server (~17ms a tick for two scenes) and drove nothing a show needs.
+- **Saved canvases still open.** A shape with `source_type: "scene"` loads as
+  an empty media shape with its corners, mask, z-order and effector routes
+  intact, labelled with its old scene name if it had no label. Scene-only
+  overrides (`glow`, `layer0`, `camera`, `disable_plane`) and `time_offset`
+  are dropped on load. New shapes start as empty media shapes.
+- An existing `settings.json` may still hold `anthropic_api_key`; nothing
+  reads it. Delete it by hand if you want it off disk.
+
+### Fixed — performance (measured 2026-11, see ARCHITECTURE.md §12)
+- **The render loop now runs at the project's frame rate.** It read `fps`
+  once, before the loop, so a 30fps project ran at the `--fps` default of 20
+  (measured 19.8). The diagnostics' target and frame budget were stuck the
+  same way. Both loops are now deadline-paced: the broadcaster used to sleep a
+  full period after its work and delivered 27.5/s for a 30fps target; now 30.
+- **A colour filter on a distorted shape is applied once, not per triangle.**
+  Brightness/contrast/hue/saturation/colourize on a warped mesh ran the filter
+  72 times per layer. Now drawn through the scratch buffer and filtered on the
+  blit: 12 distorted 1080p layers, iGPU 17.5 -> 32fps.
+- **Output windows paint video on their own clock.** They only painted when a
+  state message arrived, which tied the picture to the server's tick and
+  network jitter. They now repaint the newest state every period while video
+  or webcam is on screen, and still images only when something changes.
+- **Output Preview tiles exist only while their tab is open.** Each tile is a
+  full output renderer with its own video decoders, and they ran hidden behind
+  every other tab: on a 3-output project, 8 decoders and ~16 invisible paints
+  a second each. Closing them freed 307MB.
+- **One broadcast payload per tick, not two.** The std/HQ pair existed to
+  thin vector strokes differently; with no strokes, every client gets the same
+  ~28kB payload, built in ~0.8ms (was ~25ms of GIL time a tick).
+- **A client that stops reading no longer freezes every output.** Each
+  websocket client now has its own sender holding only the newest state;
+  previously one stalled client blocked delivery to all of them.
+- Media elements are evicted after 3s unused by wall time, not paint count
+  (which shrank to 1s once windows paint at 60).
+- Viewport culling now covers text layers too.
+
+### Added
+- **`run.py --open default`** (or `--open nvidia`) — starts the server and
+  opens the editor in its own Chrome profile, so a show needs one command.
+  `nvidia` asks for the NVIDIA card via PRIME offload but falls back to the
+  default GPU in a Wayland session, where Chrome can't show video on it
+  (override with `LIGHTSABER_FORCE_NVIDIA=1` for video-free shows). Chrome is detached: stopping or
+  restarting the server leaves the editor and outputs open to reconnect, and
+  re-running doesn't open a duplicate. Chrome's log noise goes to
+  `~/.config/lightsaber-chrome/launch.log` instead of the terminal.
+- **Audio-responsive visualisers** — a new "Visualiser" fill and Input-rail
+  section, with six presets: **Starfield** (bass pushes the speed, highs make
+  it sparkle), **Dreamy clouds** (the level swells them, bass makes them
+  billow), **Turbulence** (marbled flow; mids make it churn), **Oil slick**
+  (thin-film interference colours summed across the visible spectrum; the
+  level makes it shimmer), **Ink in water** (drops blooming into tendrils;
+  bass quickens them) and **Aurora** (swaying curtains; highs shimmer).
+  All six hold 30fps together on one 1080p output on the AMD iGPU. Each has its own sliders in Shape settings
+  (double-click one to reset it). They react to the mic once audio input is
+  started in the Effectors pane, and run fine without it. Rendered in the
+  browser by GLSL shaders in a new shared `web/static/visuals.js`, drawn
+  straight into the shape's warped outline (a true projective warp, one draw
+  call, no triangle mesh), so every output window draws the same picture and
+  masks, feather, FX, kaleidoscope and effectors all apply. Audio levels now
+  go up to the server ~30 times a second (was ~12).
+- **GPU indicator in the header** (ported from promptwaver). Each output window
+  reports which GPU the browser gave it; the header shows the model with a dot:
+  green dedicated, amber integrated, grey unknown, red software rendering. The
+  tooltip lists every output window with its paint rate and canvas size, and
+  says how to move Chrome onto the NVIDIA card. Before an output is open it
+  shows the editor's own GPU, which is the same browser process.
+- **`output` regression suite**: server tick follows project fps; preview
+  iframes only while visible; filtered translucent mesh is flat and correct in
+  both renderers; output paints video at the project rate when messages thin
+  out. The harness makes a VP8 WebM fixture with ffmpeg, because Playwright's
+  bundled Chromium has no H.264.
+
+### Documented
+- **Video can't run on the GTX 1650 in a Wayland session** — Chrome draws it
+  white/black there. An earlier note in this entry recommending the 1650 for
+  video was measured with the video black and is withdrawn.
+- **One output window per laptop.** A 3-projector canvas ran 5fps per window
+  as three windows and 16-17fps as one: each window repeats all the video
+  work. Multi-projector shows belong on the render host.
+- **Editor live preview toggle** (screen icon, canvas toolbar): off draws
+  outlines only and releases the editor's own video decoders.
+- A WebGL warp inside the Canvas2D pipeline was prototyped and was no faster;
+  recorded so it isn't tried again.
+- `getImageData` readback permanently halves an iGPU canvas's throughput, so
+  readback-synced perf numbers are only good as same-run deltas.
+
+### Fixed
+- **One failing layer no longer blanks the whole output.** Every draw ran
+  unguarded inside `paintComposite`, so an exception in any of them — a
+  decoder in a broken state, a stream that went away, a filter the GPU
+  refused — abandoned the entire frame. Nothing after that layer drew, and a
+  layer throwing every tick left the window black with no clue which one did
+  it, which is indistinguishable from "the output just stopped working". Each
+  layer is now guarded and names itself in the console once (not once per
+  frame) while the rest of the frame still paints.
+- **The editor now reconnects when the server restarts.** It held one
+  WebSocket for the life of the page, so a restart - which every Python change
+  needs - left it silently dead: `send` quietly became a no-op, nothing
+  repainted, and the only clue was the engine dot going out. That reads as
+  "the app broke", and specifically as "the output windows have stopped",
+  since they are the visible end of a control surface that has gone quiet.
+  `output.html` has always reconnected; the editor now does too, backing off
+  to a 5s ceiling.
+
+### Documented
+- **Why a third output window opens white.** Measured each open output window
+  at 420-770MB — every window is a separate renderer decoding every media
+  layer independently — and recorded the failure mode: past the limit Chrome
+  cannot spawn a renderer, so the window stays at `about:blank` and paints
+  white with an empty console. It resembles neither an out-of-memory error nor
+  a render bug. See ARCHITECTURE.md's GPU-cost item 7 and TECHNICAL.md's new
+  Troubleshooting section. This is the sharpest argument yet for the render
+  host: topology B decodes once into a shared FBO, so another projector costs
+  a crop rather than another full set of decoders.
+
+### Changed
+- **The perf suite compares deltas over a baseline measured in the same run**,
+  not absolute times. A busy machine tripled the absolute baseline and failed
+  a budget that was fine — and a regression check that cries wolf is one
+  people learn to ignore.
+- New **`resilience`** suite covers the reconnect, and a suite can now declare
+  errors it provokes on purpose (`Session.expect_error`) so deliberately
+  killing the server doesn't register as a JS-error failure.
 
 ## [0.38.0]
 

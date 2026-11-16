@@ -22,6 +22,8 @@
 <canvas id="out"></canvas>
 <div id="hint">Lightsaber output — drag this window to your projector/second screen, then press F11 for fullscreen</div>
 <div id="status">disconnected — retrying…</div>
+<!-- Visualiser shaders, shared with index.html — see visuals.js's header. -->
+<script src="/static/visuals.js"></script>
 <script>
 const cv = document.getElementById("out"), cx = cv.getContext("2d");
 const statusEl = document.getElementById("status");
@@ -62,8 +64,8 @@ if (isPreview){
   hintEl.textContent = `Lightsaber output ${outputId} — drag this window to your projector/second screen, then press F11 for fullscreen`;
 }
 
-// Monitor-only visual filters — pure canvas rendering, no effect on the
-// vector data. glow/trail/mirror are per-POLYGON now (see composite.py's
+// Monitor-only visual filters — pure canvas rendering. trail/mirror and
+// the colour filters are per-POLYGON (see composite.py's
 // overrides, carried on each layer in the composite payload itself), not a
 // window-level setting read from here any more. flip is different: a
 // per-OUTPUT-MONITOR physical-orientation setting, keyed by this window's
@@ -235,7 +237,7 @@ function applyKeystone(x, y, kh, kv){
 
 // Reverses the WHOLE image, no reflection — the per-output-monitor "flip"
 // (Project tab > Output monitors). Unlike per-polygon mirror (a same-shape
-// axis flip applied to each layer's own strokes before warping, see
+// axis flip applied to each layer's own source sampling before warping, see
 // paintComposite), this runs the finished composited frame through a
 // physical-orientation correction for this specific screen.
 function applyFlip(ctx, canvas, flipX, flipY){
@@ -316,12 +318,6 @@ function quadOffScreen(corners, mapWin, w, h){
 // Shape fit (1) — identical maths to index.html's canvas editor; see its
 // comment for the derivation. Only difference here is quadAspect uses this
 // window's own letterboxed mapWin instead of a plain square normToPx.
-function parseAspectRatio(str){
-  const m = /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/.exec(String(str||"").trim());
-  if (!m) return 1;
-  const w = parseFloat(m[1]), h = parseFloat(m[2]);
-  return h > 0 ? w/h : 1;
-}
 function quadAspect(corners, mapWin){
   const pts = corners.map(c => mapWin(c[0], c[1]));
   const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
@@ -766,7 +762,7 @@ function polyClipPath(ctx, layer, corners, mapWin){
   clipShapePath(ctx, layer.clip_shape, cx, cy, rx*s, ry*s, !!layer.clip_uniform);
 }
 
-// Mirror-point fold — identical maths to index.html's foldFraction/foldG
+// Mirror-point fold — identical maths to index.html's foldFraction
 // (see its comment for the full rationale): keeps [0,point] as-is and
 // mirrors it to fill [point,1], clamping once the source region runs out
 // rather than tiling. point=1 is a no-op (the "off" default).
@@ -774,55 +770,6 @@ function foldFraction(u, point){
   if (point >= 0.999) return u;
   return u <= point ? u : Math.max(0, 2*point - u);
 }
-function foldG(g, point){
-  if (point >= 0.999) return g;
-  return foldFraction(g*0.5+0.5, point)*2 - 1;
-}
-// Draws one polygon's warped strokes (incl. glow) into `ctx` — identical
-// structure to index.html's canvas editor, just using this window's own
-// letterboxed mapWin instead of a plain square normToPx.
-function drawWarpedStrokes(ctx, w, h, layer, H, mapWin, opacity, fitMode, ca, qa){
-  ctx.save();
-  ctx.globalAlpha = opacity;
-  const glowPx = (layer.glow || 0) * Math.min(w, h) * 0.05;
-  const preFold = layer.mirror_pre_distort ?? true;
-  const mxPoint = preFold ? (layer.mirror_x_point ?? 1) : 1;
-  const myPoint = preFold ? (layer.mirror_y_point ?? 1) : 1;
-  layer.strokes.forEach(st => {
-    const [r, g, b] = st.c;
-    const col = `rgb(${r*255|0},${g*255|0},${b*255|0})`;
-    ctx.strokeStyle = col;
-    ctx.shadowBlur = glowPx > 0 ? glowPx : 0;
-    ctx.shadowColor = col;
-    ctx.lineWidth = Math.max(1, Math.min(w,h) / 520);
-    ctx.lineJoin = "round";
-    ctx.beginPath();
-    st.p.forEach((pt, i) => {
-      let [gx, gy] = pt;
-      if (layer.mirror_x) gx = -gx;
-      if (layer.mirror_y) gy = -gy;
-      gx = foldG(gx, mxPoint); gy = foldG(gy, myPoint);
-      [gx, gy] = fitPoint(gx, gy, fitMode, ca, qa);
-      const [wx, wy] = applyHomography(H, gx, gy);
-      const [X, Y] = mapWin(wx, wy);
-      i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y);
-    });
-    ctx.stroke();
-  });
-  ctx.restore();
-}
-// Clip Shape (4) — hard-edged only now, same as index.html's drawClippedStrokes:
-// Canvas 2D's own clip() does this directly, no offscreen canvas/blur (used
-// to support a soft/feathered edge, but that was expensive enough to
-// visibly stall the render loop with more than a couple of clipped shapes).
-function drawClippedStrokes(ctx, w, h, layer, H, mapWin, opacity, fitMode, ca, qa){
-  ctx.save();
-  polyClipPath(ctx, layer, layer.corners, mapWin);
-  ctx.clip();
-  drawWarpedStrokes(ctx, w, h, layer, H, mapWin, opacity, fitMode, ca, qa);
-  ctx.restore();
-}
-
 // Builds the ctx.filter string from a layer's fields — identical logic to
 // index.html's buildCssFilter (see its comment for the colourize
 // sepia()+hue-rotate() rationale); layer.* here has the same field names as
@@ -956,9 +903,8 @@ function blitBuffer(dstCtx, buf, bx, by, bw, bh){
 // websocket's own state messages below) — same "doesn't play until Start"
 // behaviour as the editor. Unlike the editor though, this window does NOT
 // draw a media layer at all while inactive (see paintComposite's `active`
-// check) — matching how vector scenes already go fully black on Stop here,
-// rather than showing a static preview frame (that's an editing aid, this
-// is the real output).
+// check): the output goes fully black on Stop rather than showing a static
+// preview frame (that's an editing aid, this is the real output).
 const _mediaEls = new Map();
 const _MEDIA_VIDEO_EXT = new Set(["mp4","mov","webm","m4v","mkv","avi","ogv"]);
 // Media source descriptors — a shape's content is either a file uploaded
@@ -1005,6 +951,9 @@ function mediaUrlFor(ref){
 // So: nudge playbackRate to converge gently, and seek ONLY for a real
 // discontinuity — a loop wrap, a scrub, a mode change — with a cooldown
 // afterwards so the stall a seek itself causes can't retrigger one.
+// True only for the first paint of a newly-arrived state message — see
+// drawPending, and drawLayerMedia's guard.
+let _paintIsFresh = true;
 const MEDIA_NUDGE_DEADBAND = 0.08;   // seconds — below this, leave it alone
 const MEDIA_SEEK_COOLDOWN = 1500;    // ms — ignore drift while a seek settles
 const MEDIA_TARGET_JUMP = 1.0;       // seconds — what counts as a discontinuity
@@ -1109,11 +1058,13 @@ function reportMediaDuration(assetKey, el){
 // leave several 4K decoders running), and a stale element can even be found
 // ahead of the live one when debugging. Anything not drawn for a few seconds
 // is released; it reloads on demand if it comes back.
-let _mediaFrame = 0;
-const _MEDIA_EVICT_AFTER = 60;   // ticks (~3s at 20fps)
+// Measured in wall time, not paints: it used to count paint ticks ("60 ~=
+// 3s at 20fps"), which silently shrinks to 1s once a window paints at 60.
+const _MEDIA_EVICT_AFTER_MS = 3000;
 function evictUnusedMedia(){
+  const now = performance.now();
   for (const [key, m] of _mediaEls){
-    if (_mediaFrame - (m.lastUsed || 0) <= _MEDIA_EVICT_AFTER) continue;
+    if (now - (m.lastUsed || 0) <= _MEDIA_EVICT_AFTER_MS) continue;
     try {
       if (m.kind === "video"){ m.el.pause(); m.el.removeAttribute("src"); m.el.load(); }
     } catch (e) {}
@@ -1128,7 +1079,7 @@ function getMediaEl(ref, layer){
   const cfg = (layer && layer.media_cfg) || "";
   const cacheKey = ref.key + "|" + cfg;
   let m = _mediaEls.get(cacheKey);
-  if (m){ m.lastUsed = _mediaFrame; return m; }
+  if (m){ m.lastUsed = performance.now(); return m; }
   const ext = (ref.name.split(".").pop() || "").toLowerCase();
   const kind = _MEDIA_VIDEO_EXT.has(ext) ? "video" : "image";
   const url = mediaUrlFor(ref);
@@ -1145,7 +1096,7 @@ function getMediaEl(ref, layer){
     el.addEventListener("load", () => { m.ready = true; });
     el.src = url;
   }
-  m = {el, kind, ready: false, seeking: false, seekUntil: 0, lastTarget: null, lastResync: 0, assetKey: ref.key, lastUsed: _mediaFrame};
+  m = {el, kind, ready: false, seeking: false, seekUntil: 0, lastTarget: null, lastResync: 0, assetKey: ref.key, lastUsed: performance.now()};
   _mediaEls.set(cacheKey, m);
   return m;
 }
@@ -1155,7 +1106,7 @@ function mediaAspect(m){
   return (w && h) ? w / h : 1;
 }
 function updateMediaPlayback(active, frozen){
-  _mediaFrame++; evictUnusedMedia();
+  evictUnusedMedia();
   const shouldPlay = !!(active && !frozen);
   for (const m of _mediaEls.values()){
     if (m.kind !== "video") continue;
@@ -1268,11 +1219,18 @@ function drawWarpedTriangle(ctx, img, s0,s1,s2, d0,d1,d2){
 // the shape. Measured on flat grey at 50%%: the band reached 125 where the
 // body was 64 — nearly double.
 //
-// Same bug, same fix as the vector renderer (ARCHITECTURE.md's "per-primitive
-// opacity blended BEFORE compositing double-counts anti-seam overlap"):
-// draw the mesh at FULL opacity into an offscreen buffer, then blend that
-// finished layer in once. The parallelogram fast path is a single drawImage
-// with nothing to overlap, so it keeps applying opacity directly.
+// Same bug, same fix as the old vector renderer (ARCHITECTURE.md's
+// "per-primitive opacity blended BEFORE compositing double-counts anti-seam
+// overlap"): draw the mesh at FULL opacity into an offscreen buffer, then
+// blend that finished layer in once. The parallelogram fast path is a single
+// drawImage with nothing to overlap, so it keeps applying opacity directly.
+//
+// A colour FILTER takes the same route, for cost rather than correctness.
+// ctx.filter applies per draw call, so a filtered mesh ran the filter 72
+// times per layer, once per triangle. Through the scratch it runs once, on
+// the blit. Measured, 1920x1080, 12 distorted 1080p video layers with
+// brightness 1.2: AMD iGPU 17.5 -> 32fps — back to within a few fps of the
+// same layers unfiltered (ARCHITECTURE.md §12).
 let _meshScratch = null;
 function getMeshScratch(w, h){
   if (!_meshScratch){
@@ -1326,10 +1284,18 @@ function drawMediaWarped(ctx, mapWin, H, corners, img, iw, ih, opacity, fitMode,
     }
     dst.push(drow); src.push(srow);
   }
-  // Translucent: build the whole mesh opaque off-screen, then blend once.
-  const translucent = opacity < MESH_OPAQUE;
+  // Translucent or filtered: build the whole mesh opaque and unfiltered
+  // off-screen, then blend (and filter) once.
+  //
+  // A semi-transparent SOURCE still shows the seams (the skirts overlap in
+  // the scratch too), and "copy"-compositing each triangle only turned the
+  // bright grid into a faint dark one. Visualisers, the source that is
+  // translucent everywhere, therefore skip this mesh entirely — see
+  // visuals.js's frame().
+  const filtered = !!ctx.filter && ctx.filter !== "none";
+  const viaScratch = opacity < MESH_OPAQUE || filtered;
   let out = ctx, scratch = null;
-  if (translucent){
+  if (viaScratch){
     scratch = getMeshScratch(ctx.canvas.width, ctx.canvas.height);
     out = scratch.ctx;
     // Same transform, so the mesh lands on the same device pixels. The
@@ -1345,10 +1311,10 @@ function drawMediaWarped(ctx, mapWin, H, corners, img, iw, ih, opacity, fitMode,
       drawWarpedTriangle(out, img, src[j][i+1], src[j+1][i+1], src[j+1][i], dst[j][i+1], dst[j+1][i+1], dst[j+1][i]);
     }
   }
-  if (translucent){
+  if (viaScratch){
     ctx.setTransform(1,0,0,1,0,0);
     ctx.globalAlpha = opacity;
-    ctx.drawImage(scratch, 0, 0);
+    ctx.drawImage(scratch, 0, 0);       // ctx.filter, if any, applies here, once
   }
   ctx.restore();
 }
@@ -1360,7 +1326,11 @@ function drawLayerMedia(ctx, layer, mapWin, opacity){
   // Element first, so a finished "once" clip stays warm rather than being
   // evicted and reloaded when the canvas comes back around.
   const m = getMediaEl(ref, layer);
-  syncMediaTime(m, layer);
+  // Only against a playhead that just arrived: between messages this
+  // window repaints the same state (see drawPending), and its media_t is
+  // stale by then, so converging on it would read as "running ahead" and
+  // drag every video back.
+  if (_paintIsFresh) syncMediaTime(m, layer);
   if (layer.media_visible === false) return;
   if (!m.ready) return;
   const img = getMediaFrame(m);
@@ -1401,7 +1371,12 @@ function getWebcamStream(deviceId){
   if (s) return s;
   s = {video: null, ready: false, frameCanvas: null, frameCtx: null};
   _webcamStreams.set(key, s);
-  const constraints = {video: deviceId ? {deviceId: {exact: deviceId}} : true, audio: false};
+  // `ideal`, not `exact`: Chrome hands out a different deviceId for the same
+  // camera in every browser PROFILE, so an id saved from one (your everyday
+  // Chrome) doesn't exist in another (run.py --open's own profile). With
+  // `exact` that threw OverconstrainedError and the shape drew nothing; with
+  // `ideal` it uses that camera when it's there and the default one when not.
+  const constraints = {video: deviceId ? {deviceId: {ideal: deviceId}} : true, audio: false};
   navigator.mediaDevices.getUserMedia(constraints).then(stream => {
     const video = document.createElement("video");
     video.muted = true; video.playsInline = true; video.srcObject = stream;
@@ -1498,6 +1473,30 @@ function drawLayerText(ctx, layer, mapWin, opacity){
   } else {
     drawMediaWarped(ctx, mapWin, H, layer.corners, frame, frame.width, frame.height, opacity, fitMode, ca, qa, mx, my, mxPt, myPt);
   }
+}
+
+// Visualiser layers ("visual" fill, see visuals.js / visuals.py). Not through
+// drawMediaWarped: visuals.js renders the shape already warped (a true
+// projective warp in the shader, no triangle mesh — the mesh's overlap
+// skirts showed as a grid through semi-transparent clouds) and this places
+// it with one drawImage, under the same mask clip, opacity and filter as any
+// other fill. Mirrors index.html's drawPolyVisual.
+function drawLayerVisual(ctx, layer, mapWin, opacity){
+  if (!window.LSVisuals || (layer.corners || []).length !== 4) return;
+  const quad = layer.corners.map(c => mapWin(c[0], c[1]));
+  const preFold = layer.mirror_pre_distort ?? true;
+  const f = LSVisuals.frame(layer, quad, {
+    pxScale: 1,
+    clip: {x: 0, y: 0, w: ctx.canvas.width, h: ctx.canvas.height},
+    mirror: [!!layer.mirror_x, !!layer.mirror_y,
+             preFold ? (layer.mirror_x_point ?? 1) : 1, preFold ? (layer.mirror_y_point ?? 1) : 1],
+  });
+  if (!f) return;
+  ctx.save();
+  if (polyClipActive(layer)){ polyClipPath(ctx, layer, layer.corners, mapWin); ctx.clip(); }
+  ctx.globalAlpha = opacity;
+  ctx.drawImage(f.canvas, 0, 0, f.canvas.width, f.canvas.height, f.x, f.y, f.w, f.h);
+  ctx.restore();
 }
 
 // Post-distort mirror fold — see index.html's applyMirrorFoldPost for the
@@ -1608,6 +1607,28 @@ function drawTestPattern(ctx, w, h, mapWin, outId){
   barColors.forEach((col,i) => { ctx.fillStyle = col; ctx.fillRect(i*bw, h-barH, bw, barH); });
   ctx.restore();
 }
+// One bad layer must not cost the whole frame. Every draw call below runs
+// inside paintComposite, so an exception in any of them — a decoder in a
+// broken state, a stream that went away, a filter the GPU refused — abandoned
+// the ENTIRE frame: nothing after that layer was drawn, and a layer that
+// throws every tick leaves the window black with no clue which one did it.
+// That is indistinguishable from "the output just stopped working".
+//
+// Logged once per layer+message so a persistent failure names itself without
+// flooding the console at frame rate.
+const _layerErrSeen = new Set();
+function safeLayer(layer, draw){
+  try { draw(); }
+  catch (e){
+    const id = (layer && layer.id) || "?", type = (layer && layer.source_type) || "?";
+    const key = id + ":" + (e && e.message);
+    if (!_layerErrSeen.has(key)){
+      _layerErrSeen.add(key);
+      console.error(`[lightsaber] layer ${id} (${type}) threw while drawing and was `
+                    + `skipped; the rest of the frame still painted:`, e);
+    }
+  }
+}
 // THE monitor output (2): one Scene per canvas polygon, each warped into
 // that polygon's quad and composited here — the only rendering path this
 // window has now. Letterboxed to the canvas's own resolution/aspect —
@@ -1618,7 +1639,7 @@ function paintComposite(layers, resW, resH, masterGain, active, testPattern, sho
   const scratch = getScratchCanvas(w, h), tctx = scratch.ctx;
   tctx.shadowBlur = 0;
   tctx.globalCompositeOperation = "source-over";
-  // No single global "trail" setting any more (glow/trail are per-polygon
+  // No single global "trail" setting any more (trail is a per-polygon
   // overrides now — see composite.py) — approximate the window-level
   // persistence fade with whichever active layer wants the most trail.
   // Lives on the scratch buffer now, not `cx` — see the comment above.
@@ -1670,20 +1691,21 @@ function paintComposite(layers, resW, resH, masterGain, active, testPattern, sho
     // back from the surface it just drew into.
     const paintLayerContent = (surf, layer, opacity) => {
       const dst = surf.ctx;
-      // Viewport culling (see quadOffScreen) — only the decoder-backed layer
-      // types, where skipping is worth real hardware. Vector layers can draw
-      // a glow well outside their quad, so their bbox isn't a safe bound.
-      if ((layer.source_type === "media" || layer.source_type === "webcam")
-          && quadOffScreen(layer.corners, mapWin, w, h)) return;
+      // Viewport culling (see quadOffScreen). Every content type now draws
+      // through drawMediaWarped, which never paints outside the quad (or a
+      // mask that clips back to it), so the quad is a sound bound for all
+      // of them. Vector layers were the exception — a glow reached well
+      // past the quad — and are gone. For media/webcam this also releases
+      // the decoder (see the eviction sweep).
+      if (quadOffScreen(layer.corners, mapWin, w, h)) return;
       // Filters (5/2) — see index.html's paintCanvasEditor for the full
       // rationale; layer.brightness/contrast/hue/saturation/colourize_* come
       // straight off the broadcast (composite.py's per-poly overrides), not
       // recomputed here.
       dst.filter = buildCssFilter(layer);
       if (layer.source_type === "media"){
-        // Real output stays fully black on Stop, same as vector scenes
-        // (empty frame) — a media layer would otherwise keep showing its
-        // last frame regardless of active, since it isn't scene-clock-driven.
+        // Real output stays fully black on Stop — a media layer would
+        // otherwise keep showing its last frame regardless of active.
         if (active) { drawLayerMedia(dst, layer, mapWin, opacity); applyMirrorFoldPost(dst, layer, mapWin, surf); }
         return;
       }
@@ -1695,21 +1717,9 @@ function paintComposite(layers, resW, resH, masterGain, active, testPattern, sho
         if (active) { drawLayerText(dst, layer, mapWin, opacity); applyMirrorFoldPost(dst, layer, mapWin, surf); }
         return;
       }
-      if (!layer.strokes || !layer.strokes.length) return;
-      const H = homography(layer.corners);
-      const fitMode = layer.fit || "stretch";
-      const ca = parseAspectRatio(layer.aspect), qa = quadAspect(layer.corners, mapWin);
-      if (polyClipActive(layer)) {
-        drawClippedStrokes(dst, w, h, layer, H, mapWin, opacity, fitMode, ca, qa);
-      } else if (fitMode === "crop") {
-        dst.save();
-        clipToQuadPath(dst, layer.corners, mapWin);
-        drawWarpedStrokes(dst, w, h, layer, H, mapWin, opacity, fitMode, ca, qa);
-        dst.restore();
-      } else {
-        drawWarpedStrokes(dst, w, h, layer, H, mapWin, opacity, fitMode, ca, qa);
+      if (layer.source_type === "visual"){
+        if (active) { drawLayerVisual(dst, layer, mapWin, opacity); applyMirrorFoldPost(dst, layer, mapWin, surf); }
       }
-      applyMirrorFoldPost(dst, layer, mapWin, surf);
     };
     // One layer, through its own feathered mask edge if it has one. The
     // content is drawn into a buffer with the hard clip suppressed (see
@@ -1794,7 +1804,7 @@ function paintComposite(layers, resW, resH, masterGain, active, testPattern, sho
       run = {key, hits, surf: hits.length ? openBuffer(getPunchCanvas(w, h), w, h) : scratch};
       return run.surf;
     };
-    ordered.forEach(layer => {
+    ordered.forEach(layer => safeLayer(layer, () => {
       const opacity = layer.opacity ?? 1;   // gain applied once at the end, not here
       tctx.filter = "none";
       if (layer.source_type === "knockout"){
@@ -1815,7 +1825,7 @@ function paintComposite(layers, resW, resH, masterGain, active, testPattern, sho
         return;
       }
       drawContentLayer(surfaceFor(layer.z_index ?? 5), layer, opacity);
-    });
+    }));
     flushRun();
   }
   tctx.shadowBlur = 0;
@@ -1877,59 +1887,109 @@ function drawFpsOverlay(ctx, fps){
 }
 
 let ws = null;
+// Paint scheduling, outside connect() so a reconnect doesn't start a second
+// loop.
+//
+// Paint is decoupled from delivery (36). Painting straight out of onmessage
+// means a burst of queued messages — which is exactly what a busy window
+// gets once the socket backlog flushes — becomes a burst of full-canvas
+// repaints of near-identical frames. That makes the stall worse, which makes
+// the next backlog bigger: a window that falls behind is punished for it.
+// So: keep only the newest state, paint on requestAnimationFrame, and never
+// faster than the project's own frame rate.
+//
+// And paint on THIS window's clock, not only when a message lands. Video
+// and webcam frames advance on their own, inside this browser; the server
+// only supplies corners, settings and a playhead to converge on. Tying
+// every paint to a message tied the picture to the server's tick and its
+// network jitter — measured 27.5 paints/s at a 30fps target, from a window
+// that could paint 55-60 — so while anything is live, the newest state is
+// simply repainted every period, and a message arriving just refreshes what
+// gets painted. Static content (images, text, a stopped engine) still only
+// repaints when something changes. Visualisers count as live: their clock is
+// extrapolated locally between messages (see visuals.js's clockFor).
+let _latest = null, _fresh = false, _lastPaintAt = 0;
+function _wantsContinuousPaint(m){
+  const st = m && m.state;
+  if (!st || !st.active || st.frozen) return false;
+  return (m.composite || []).some(l => l.source_type === "webcam" || l.source_type === "visual"
+    || (l.source_type === "media" && _MEDIA_VIDEO_EXT.has(
+         String(l.media_link || l.media || "").split(".").pop().toLowerCase())));
+}
+function drawPending(){
+  requestAnimationFrame(drawPending);
+  const m = _latest;
+  if (!m || !(_fresh || _wantsContinuousPaint(m))) return;
+  const targetFps = Math.max(1, (m.state && m.state.project_fps) || 30);
+  const now = performance.now();
+  // 0.85 rather than 1.0: rAF lands on ~16.7ms boundaries, so demanding a
+  // full period would quantise 30fps down to 30 -> 20 (two refreshes
+  // become three). The slack lets it take the nearer refresh.
+  if (now - _lastPaintAt < (1000 / targetFps) * 0.85) return;
+  _lastPaintAt = now;
+  _paintIsFresh = _fresh;
+  _fresh = false;
+  _paintsSinceReport++;
+  // Resolution lives on the project (ProjectSpec), not the canvas — every
+  // canvas in a project's sequencer shares one output resolution.
+  const active = !!(m.state && m.state.active);
+  updateMediaPlayback(active, m.state && m.state.frozen);
+  applyOutputFilters(m.state);
+  const tp = !!(m.state && m.state.test_pattern && m.state.test_pattern[(+outputId || 1) - 1]);
+  paintComposite(m.composite, (m.state && m.state.project_width) || 1920,
+                  (m.state && m.state.project_height) || 1080,
+                  m.state && m.state.master_gain, active, tp,
+                  !!(m.state && m.state.show_fps));
+}
+requestAnimationFrame(drawPending);
+
+// GPU report — ported from promptwaver's GPU indicator (gpu-view.js's
+// gpuName/_report and the "client_stats" message). Every 2s this window tells
+// the server which GPU the browser gave it, plus its canvas size and real
+// paint rate; the editor's header shows the GPU. On a hybrid laptop which one
+// a show is on matters and isn't obvious: on the dev laptop's Wayland session
+// the NVIDIA card can't even display video (ARCHITECTURE.md §12,
+// "Correction"), so it needs to be visible rather than guessed.
+//
+// This page draws with Canvas2D, so the name comes from a throwaway WebGL
+// context, released straight away. Every window of one browser shares its GPU
+// process, so it is the GPU the 2D canvas is drawn on too.
+let _gpuName = null, _paintsSinceReport = 0, _lastReportAt = performance.now();
+function gpuName(){
+  if (_gpuName !== null) return _gpuName;
+  try {
+    const gl = document.createElement("canvas").getContext("webgl2")
+            || document.createElement("canvas").getContext("webgl");
+    const ext = gl && gl.getExtension("WEBGL_debug_renderer_info");
+    _gpuName = gl ? (ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)) : "";
+    gl?.getExtension("WEBGL_lose_context")?.loseContext();
+  } catch (e) { _gpuName = ""; }
+  return _gpuName;
+}
+function reportClientStats(){
+  const now = performance.now();
+  const fps = _paintsSinceReport * 1000 / Math.max(1, now - _lastReportAt);
+  _paintsSinceReport = 0; _lastReportAt = now;
+  if (!ws || ws.readyState !== 1) return;
+  try {
+    ws.send(JSON.stringify({type: "client_stats",
+      role: isPreview ? "preview" : "output " + outputId, gpu: gpuName(),
+      w: cv.width, h: cv.height, fps: +fps.toFixed(1)}));
+  } catch (e) { /* socket closing: the next report will try again */ }
+}
+setInterval(reportClientStats, 2000);
+
 function connect(){
-  ws = new WebSocket(`ws://${location.host}/ws?hq=1`);
-  ws.onopen = () => statusEl.classList.remove("show");
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => { statusEl.classList.remove("show"); reportClientStats(); };
   ws.onclose = () => { statusEl.classList.add("show"); setTimeout(connect, 1000); };
   ws.onerror = () => ws.close();
-  // Paint is decoupled from delivery (36). Painting straight out of
-  // onmessage means a burst of queued messages — which is exactly what a
-  // busy window gets once the socket backlog flushes — becomes a burst of
-  // full-canvas repaints of near-identical frames. That makes the stall
-  // worse, which makes the next backlog bigger: a window that falls behind
-  // is punished for it.
-  //
-  // Instead: keep only the newest state, paint on requestAnimationFrame,
-  // and never faster than the project's own frame rate. Stale frames are
-  // dropped rather than drawn, and rAF also stops us painting faster than
-  // the display can actually show — a repaint between two refreshes is work
-  // nobody ever sees.
-  let _pending = null, _rafQueued = false, _lastPaintAt = 0;
-  function drawPending(){
-    _rafQueued = false;
-    const m = _pending;
-    if (!m) return;
-    const targetFps = Math.max(1, (m.state && m.state.project_fps) || 30);
-    const minPeriod = 1000 / targetFps;
-    const now = performance.now();
-    // 0.85 rather than 1.0: rAF lands on ~16.7ms boundaries, so demanding a
-    // full period would quantise 30fps down to 30 -> 20 (two refreshes
-    // become three). The slack lets it take the nearer refresh.
-    if (now - _lastPaintAt < minPeriod * 0.85){
-      _rafQueued = true;
-      requestAnimationFrame(drawPending);      // keep the newest, try again
-      return;
-    }
-    _pending = null;
-    _lastPaintAt = now;
-    // Resolution lives on the project (ProjectSpec), not the canvas — every
-    // canvas in a project's sequencer shares one output resolution.
-    const active = !!(m.state && m.state.active);
-    updateMediaPlayback(active, m.state && m.state.frozen);
-    applyOutputFilters(m.state);
-    const tp = !!(m.state && m.state.test_pattern && m.state.test_pattern[(+outputId || 1) - 1]);
-    paintComposite(m.composite, (m.state && m.state.project_width) || 1920,
-                    (m.state && m.state.project_height) || 1080,
-                    m.state && m.state.master_gain, active, tp,
-                    !!(m.state && m.state.show_fps));
-  }
   ws.onmessage = e => {
     const m = JSON.parse(e.data);
     if (m.type !== "state") return;
-    _pending = m;                               // newest wins; older ones are dropped
-    if (_rafQueued) return;
-    _rafQueued = true;
-    requestAnimationFrame(drawPending);
+    _latest = m;                                // newest wins; older ones are dropped
+    _fresh = true;
+    if (window.LSVisuals) LSVisuals.onState(m);  // clock + audio for visualisers
   };
 }
 connect();

@@ -1,8 +1,10 @@
-"""Tiny local settings store.
+"""Tiny local settings store — machine-level prefs (the media roots and the
+last-opened project) in a gitignored JSON file next to the project.
 
-Holds the Anthropic API key (and future prefs) in a plaintext JSON file next to
-the project. This is deliberately simple for local use — the file is gitignored.
-Before a public release, move the key to the OS keyring / an env-only flow.
+It used to hold an Anthropic API key for the scene director too. That feature
+is gone; an old settings.json may still contain the key, which nothing reads
+any more — delete the "anthropic_api_key" entry by hand if you want it off
+disk.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ def save(data: dict) -> None:
         json.dump(data, f, indent=2)
     os.replace(tmp, _PATH)
     try:
-        os.chmod(_PATH, 0o600)   # key is secret-ish; restrict perms
+        os.chmod(_PATH, 0o600)   # holds local paths; and an old API key may linger
     except Exception:
         pass
 
@@ -41,15 +43,3 @@ def set(key: str, value) -> None:
     data = load()
     data[key] = value
     save(data)
-
-
-def apply_env() -> bool:
-    """If a stored API key exists and the env var isn't already set, export it
-    so the director picks it up. Returns True if a key is now in the env."""
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        return True
-    k = get("anthropic_api_key")
-    if k:
-        os.environ["ANTHROPIC_API_KEY"] = k
-        return True
-    return False

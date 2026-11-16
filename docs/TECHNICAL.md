@@ -5,15 +5,11 @@ together, the file formats, and the extension points.
 
 - [Architecture](#architecture)
 - [Module map](#module-map)
-- [Scenes](#scenes)
-  - [Scene spec format](#scene-spec-format)
-  - [3D scenes and the camera](#3d-scenes-and-the-camera)
-  - [Claude authors the geometry](#claude-authors-the-geometry)
-  - [Adding a generator](#adding-a-generator)
 - [Canvas and shapes](#canvas-and-shapes)
   - [Masks](#masks)
   - [Per-shape overrides](#per-shape-overrides)
 - [Effectors](#effectors)
+- [Visualisers](#visualisers)
 - [Media](#media)
   - [Linked media and media roots](#linked-media-and-media-roots)
   - [Video playback](#video-playback)
@@ -27,7 +23,6 @@ together, the file formats, and the extension points.
   - [Profiles and shows](#profiles-and-shows)
   - [Hardware constraints](#hardware-constraints)
   - [Prototype status](#prototype-status)
-- [The scene director](#the-scene-director)
 - [Performance](#performance)
 - [Files on disk](#files-on-disk)
 
@@ -36,29 +31,23 @@ together, the file formats, and the extension points.
 ## Architecture
 
 ```
-keyword ─▶ Scene director (Claude, ~1 call per scene, cached)
-                 │  scene spec (JSON)
+       CompositeRenderer  ── own thread and clock (composite.py)
+                 │  per-shape layers: corners after effectors, compositing
+                 │  settings, and a video playhead (JSON over one websocket)
                  ▼
-        Scene library  ── plain files on disk
-                 │
-     one live Scene per canvas shape, each with its own modulation matrix
-                 │
-                 ▼
-       CompositeRenderer  ── own thread and clock
-                 │  per-shape stroke lists + corners (JSON over websocket)
-                 ▼
-   Browser: homography-warp each shape into its quad, composite, mask, filter
+   Browser: warp each shape's video/image/webcam/text into its quad,
+            then mask, key, filter and composite
      (the canvas editor, and every open Output window)
 ```
 
 Two decisions shape everything else:
 
-**There is no single "active scene".** Every shape is its own live `Scene`
-with its own `ModMatrix` (routes are matrix-global, so simultaneous shapes
-can't share one), all rendered by `CompositeRenderer` on one thread.
+**The server never touches pixels.** `CompositeRenderer` owns time, state and
+effector resolution, and publishes one list of layer dicts per tick. Video is
+decoded and drawn in the browser; the server only says which frame each clip
+should be on (see [Video playback](#video-playback)).
 
-**The warp happens client-side.** The server ships raw per-shape stroke lists
-plus each shape's current corners; the browser does the unit-square → quad
+**The warp happens client-side.** The browser does the unit-square → quad
 homography. The same payload drives the in-page editor and every Output
 window, so what you see while editing is what the projector gets.
 
@@ -70,14 +59,6 @@ can't race the render thread.
 
 | Module | Role |
 |---|---|
-| `geometry.py` | `Path` (normalized polyline + colour) — the unit everything speaks |
-| `modulation.py` | `LFO`, `Envelope`, `Value` sources and `ModMatrix` routing |
-| `generators/` | `flow_field`, `attractor`, `ripples`, `world`, `forest`, `ground` |
-| `scenes.py` | `SceneSpec`, live `Scene`, `SceneManager` (on-disk library) |
-| `director/` | `SceneDirector` (Claude + cache) and the local `fallback` |
-| `scene3d.py` | `Camera` + projection: near-clip, frame-clip, depth cueing |
-| `primitives.py` | Ready-made low-poly kit (planet, ring, jellyfish…) |
-| `shapes.py` | Shape-grammar interpreter for Claude-authored geometry |
 | `canvases.py` | `PolygonSpec` / `CanvasSpec` / `CanvasManager` |
 | `effectors.py` | Modulation matrix for canvas shapes — sources, routes, anchors |
 | `sequencer.py` | `Step` / `Sequence` / `Sequencer` — canvas playback over time |
@@ -85,128 +66,21 @@ can't race the render thread.
 | `media_roots.py` | Linked-media allowlist, path resolution, directory browsing |
 | `media_meta.py` | Per-asset duration and default trim |
 | `composite.py` | `CompositeRenderer` — the render loop, Start/Stop, playhead |
-| `settings.py` | Local settings (API key, current project) — gitignored |
+| `settings.py` | Local settings (media roots, current project) — gitignored |
 | `engine.py` | Thin coordinator wiring the above for the web server |
 | `web/` | aiohttp server, control UI (`index.html`), output (`output.html`) |
-
-## Scenes
-
-### Scene spec format
-
-```json
-{
-  "name": "water_flowing",
-  "layers": [{"generator": "flow_field", "params": {"turbulence": 0.3, "speed": 0.18}}],
-  "palette": ["#0a3d62", "#3c9dd0", "#c8f0ff"],
-  "modulation": [
-    {"source": "lfo_slow", "dest": "visual.speed",      "depth": 0.05},
-    {"source": "lfo_mid",  "dest": "visual.turbulence", "depth": 0.4}
-  ]
-}
-```
-
-Generators are pure functions of `t`, which is what makes playback
-reproducible: freeze, stop and sequencer scrubbing all work by manipulating
-the clock rather than by pausing anything.
-
-### 3D scenes and the camera
-
-A scene is 3D when any layer uses a 3D generator (`ground_grid`, `forest`,
-`world`). The world stays as 3D polylines; a slow-drifting `Camera` projects
-them into the same 2D `Path`s everything downstream consumes.
-
-Each shape draws only a few hundred strokes per frame (a browser-repaint
-budget), so the camera's `far` plane culls distant geometry — and *is* the
-fog — with per-object LOD dropping detail at distance.
-
-```json
-"camera": {
-  "fov": 62, "near": 0.4, "far": 14.0, "speed": 0.6, "max_strokes": 90,
-  "depth": {"mode": "hue", "near_color": [0.3,0.95,0.5], "far_color": [0.08,0.15,0.5]}
-}
-```
-
-`camera.depth.mode`:
-
-- `"hue"` — lerp `near_color` → `far_color` by distance
-- `"cull"` — hard-drop past `far`, no colour change
-- `"both"` — hue and cull
-
-Fly-through speed is a modulation destination (`camera.speed`) and is also
-exposed per-shape, so different shapes can move through the same scene at
-different rates.
-
-**Disable scene plane** is a per-shape override that hides floor/backdrop
-geometry, applied in the `World` generator before the frame is built. It
-matches the node's authored *name* — anything containing `floor`, `ground`,
-`plane` or `grid`, with a guard so `plane` doesn't catch `planet`. The
-scene-authoring prompt asks Claude to name backdrop shapes this way; older or
-oddly-named scenes may have nothing that matches.
-
-### Claude authors the geometry
-
-The director isn't limited to a fixed vocabulary of objects. For a prompt
-like *"inside a painter's studio"* it authors the geometry itself: a `defs`
-block defines each object as line art built from a small shape grammar, and
-nodes reference those defs. `shapes.py` is a general interpreter, not a
-noun list.
-
-Ops: `line`, `polyline` (raw escape hatch), `circle`, `rect`, `box`, `arc`,
-`grid`, `lathe` (revolve a profile — jars, vases, lamps, planets). Adding an
-op means adding a function in `shapes.py`.
-
-```json
-"layers": [{"generator": "world", "params": {
-  "defs": {
-    "easel": [{"op":"line","a":[0,2.4,0],"b":[-0.9,-2,0.7]},
-              {"op":"line","a":[0,2.4,0],"b":[0.9,-2,0.7]}],
-    "jar":   [{"op":"lathe","profile":[[0,0],[0.4,0.25],[0.3,0.7]],"meridians":4}]
-  },
-  "nodes": [
-    {"shape":"easel","pos":[0,0.5,-1],"scale":1.2,"color":[0.95,0.8,0.5]},
-    {"shape":"jar","pos":[4.5,0.2,-2],"scale":1.2,"color":[0.7,1.0,0.9]}
-  ]
-}}]
-```
-
-Nodes may reference an authored `shape` **or** a ready-made `primitive` — mix
-freely. Geometry built from defs is cached per object (defs are static;
-motion comes from the node transform). A full example ships in
-`scenes/painters_studio.json`.
-
-**Complexity budget.** Settings › Scene complexity › point budget is the
-stroke-length ceiling sent with every generation, so scenes are authored
-within a budget that stays smooth in the browser rather than guessed at.
-
-### Adding a generator
-
-Drop a file in `lightsaber/generators/`, subclass `Generator`, `@register`
-it, and import it in `generators/__init__.py`:
-
-```python
-from ..geometry import Path, Frame
-from .base import Generator, register
-
-@register("lissajous")
-class Lissajous(Generator):
-    defaults = dict(a=3, b=2, speed=0.1, hue=0.5, points=300)
-
-    def render(self, t, p) -> Frame:
-        import numpy as np
-        th = np.linspace(0, 2*np.pi, int(p["points"]))
-        x = np.sin(p["a"]*th + t*p["speed"]); y = np.sin(p["b"]*th)
-        pts = np.stack([x, y], axis=1) * 0.9
-        return [Path(pts, (1, 1, 1))]
-```
-
-It's immediately available to the director and to the shape's Motion
-controls.
 
 ## Canvas and shapes
 
 A `CanvasSpec` is an ordered list of `PolygonSpec`. A shape is four corners
 (clockwise from top-left, `+y` up) plus what fills it — `source_type` is one
-of `scene`, `media`, `webcam`, `text`, or `knockout`.
+of `media`, `webcam`, `text`, or `knockout`. A media shape with no file set
+draws nothing; that is what a new shape starts as.
+
+Shapes saved while vector scenes existed (`source_type: "scene"`) load as
+empty media shapes: corners, mask, z-order and effector routes are kept, and
+the old scene name becomes the label if the shape had none. Scene-only
+overrides (`glow`, `layer0`, `camera`, `disable_plane`) are dropped on load.
 
 `knockout` is the odd one out: an arbitrary-point shape with no content of
 its own, there purely to act on what it overlaps. Use `z_index`
@@ -300,7 +174,7 @@ about ten times too optimistic.
 the key, in a fixed order: `fx_pixelate`, then `fx_solarize` -> `fx_posterize`
 -> `fx_invert` as one tone curve, then `fx_duotone` mapping the result onto
 `fx_duotone_dark`/`fx_duotone_light`. They run after the warp, so they apply to
-any fill — scene, media, webcam or text — and only a cutout is excluded.
+any fill — media, webcam or text — and only a cutout is excluded.
 
 `fx_pixelate` is a block size in project-canvas px and is **not** a filter: it
 is a downscale and redraw with `imageSmoothingEnabled=false`, which measured
@@ -365,16 +239,18 @@ Mode is editor state and is never persisted.
 
 ### Per-shape overrides
 
-Everything below is canvas-local — it never modifies the underlying scene
-file, so the same scene can look different in two shapes.
+Everything below is canvas-local — it never modifies the source file, so the
+same clip can look different in two shapes.
 
-- **Colourize** — glow, trails, brightness, contrast, hue, saturation, and a
-  colourize amount/hue pair.
+- **Colourize** — trails, brightness, contrast, hue, saturation, and a
+  colourize amount/hue pair. Trails are frame-wide: the output fades its
+  previous frame instead of clearing it, and the strongest setting on any
+  shape wins.
 - **Transform** — mirror x/y with adjustable fold points, pre- or
   post-distort, plus static rotate and scale about a chosen anchor.
-- **Motion** — flow speed / turbulence / hue, for a 2D scene's first layer.
-- **Shape camera** — mode, speed, orbit, fov, far, max strokes, disable
-  plane. Mutually exclusive with Motion by the scene's own type.
+
+A colour filter on a distorted shape is applied once, to the finished warp,
+not per mesh triangle — see [Performance](#performance).
 
 Compositing note: shapes are drawn into a full-frame scratch buffer at their
 own opacity, and master gain is applied once to the finished frame. Applying
@@ -404,6 +280,42 @@ logarithmic) and a `mode` (add / multiply / replace).
 
 While stopped, sources still meter live so you can tune an LFO before
 pressing Start, but shapes hold their unmodulated pose.
+
+## Visualisers
+
+A `visual` shape is filled by a GLSL fragment shader instead of a file or a
+camera. Presets and their parameters (label, range, default) are defined once,
+in `lightsaber/visuals.py`; the shaders live in `web/static/visuals.js`, shared
+by both pages and reading each parameter as a `u_<key>` uniform. The editor
+builds its sliders from `GET /visuals/presets`. Per-shape tweaks are stored
+sparse and per preset (`visual_params: {"clouds": {"hue": 0.3}}`), so switching
+a shape between presets and back keeps each one's settings.
+
+**Every output must draw the same picture**, because each window renders its
+own copy. So a preset is a pure function of the canvas clock (`visual_t`), the
+audio levels (`state.audio_bands`) and its parameters, with no frame-to-frame
+state. Audio-driven *speed* is the exception that needs care: position is the
+integral of speed, so the compositor integrates it each tick and publishes it
+as `visual_phase` (with its current rate, `visual_rate`, for windows to
+extrapolate between messages), the same way it publishes a video playhead.
+
+**No mesh.** A visualiser is semi-transparent almost everywhere, and the warp
+mesh's overlap skirts showed through it as a grid (blending twice, or with
+`copy` compositing, as faint dark lines). Instead the shader inverts the
+shape's corner-pin per output pixel and renders the shape already warped; the
+page places it with one `drawImage` under the shape's usual mask clip,
+opacity and filter. Each frame is rendered at the shape's on-screen size,
+capped at 1280 px on its long side.
+
+Presets: `starfield`, `clouds`, `turbulence`, `oil`, `ink`, `aurora`. All
+are stateless by design — the ink drops, for instance, are timed events seeded
+by drop index and cycle rather than a fluid simulation, which is what keeps
+every output in step. Six on one 1080p output hold 30fps on the AMD iGPU.
+
+**Adding a preset:** add its parameters to `PRESETS` (and, if speed should
+follow audio, a branch in `phase_rate`) in `visuals.py`, and a
+`vec4 shade(vec2 uv, float aspect)` in `PRESET_FS` in `visuals.js` returning
+premultiplied colour (`emit()` turns emitted light into that).
 
 ## Media
 
@@ -446,8 +358,8 @@ than none — and carries the trim across.
 ### Video playback
 
 Position is derived from the canvas clock and published per layer by
-`composite.py`, rather than letting each `<video>` free-run. Generated scenes
-were already pure functions of `t`; video now matches.
+`composite.py`, rather than letting each `<video>` free-run, the same way
+effectors are pure functions of the canvas clock.
 
 This is not tidiness. Every output window is a separate page with its own
 elements; left alone they drift apart within seconds, so one clip spanning
@@ -456,8 +368,14 @@ Clients converge on the published time, correcting only when drift exceeds
 ~250 ms — seeking a 30-minute file is expensive, so it's a nudge, not a
 per-frame seek. Measured drift between two independent outputs: 1–5 ms.
 
-Freeze and Stop shift the media clock by `dt` exactly like every scene clock,
-so video halts with everything else.
+Freeze and Stop shift the media clock by `dt` exactly like the effector
+clock, so video halts with everything else.
+
+An output window repaints on its own clock while video or webcam is on screen
+(at the project frame rate), not only when a state message arrives, so the
+picture isn't tied to the server's tick and network jitter. It converges on the
+published playhead only on the first paint after a message: between messages
+that playhead is stale, and converging on it would drag every video back.
 
 **Trim** is per instance — `media_in`, `media_out`, `media_mode`,
 `media_rate`, `media_offset` on the shape. `in`/`out` default to `null`,
@@ -717,47 +635,94 @@ main thread — since the render loop owns the main thread there, `run_app()`
 crashes immediately in a background thread. Use the lower-level
 `AppRunner`/`TCPSite` API, which doesn't touch signal handling.
 
-## The scene director
-
-At most **one structured call per new keyword**, using a low-cost
-(Haiku-class) model by default. Successful results are cached to
-`scenes/generated/`; fallback scenes are never cached, so fixing a broken key
-takes effect immediately. Between generations there is zero API traffic.
-
-**Model and effort** are set in the Generate panel and persist. Model picks
-the brain (Haiku fast/cheap, Sonnet better, Opus best); effort scales the
-token budget (4k / 8k / 14k) and asks for a simpler or richer scene (≈5 vs
-≈13 objects). Preset model IDs live in `MODEL_PRESETS`
-(`director/claude_director.py`) and change over time — verify against
-<https://docs.claude.com/en/docs/about-claude/models>. Override the ceiling
-with `LIGHTSABER_MAX_TOKENS`.
-
-**Prompt detail matters.** "swimming with jellyfish" leaves count, scale and
-colour to the model's default guess. "exploring underwater with dozens of
-large jellyfish, long pink trailing tentacles, shafts of light from above"
-gives it concrete things to place and colour. The keyword field is multiline
-for exactly this.
-
-**The progress bar is a proxy, not an ETA.** The API doesn't know its final
-response length in advance, so there's no true percentage — the bar compares
-streamed output against the effort tier's token budget. Read it as "working,
-this far into the budget".
-
-The director line reports where the last scene came from: composed by Claude,
-from cache, or local fallback with a reason. A status dot in the header
-reflects live director state on every broadcast, so a key that stops working
-mid-session is visible without re-testing.
-
-**Key storage.** The key persists to a gitignored `settings.json` in
-plaintext. That's a local-use convenience; move it to the OS keyring or an
-env-only flow before any public deployment.
-
 ## Performance
 
-Per-tick render timing and dropped-tick tracking, so "is this falling behind
-its target frame rate" is a number rather than a guess. **Off by default** —
-the instrumentation has a small real cost. Enable live in Settings ›
-Diagnostics or launch with `--diag`; no relaunch needed either way.
+Measured findings, and what they mean for running a show, are in
+[ARCHITECTURE.md](ARCHITECTURE.md) §12 ("Measured on the laptop, 2026-11").
+The short version for a single-output show on the dev laptop:
+
+- **One output window.** Each output window does all of the video work for
+  its own slice, so the same 3-projector canvas ran at 5fps per window with
+  three windows and 16-17fps as one window showing the whole canvas. Several
+  projectors are the render host's job (ARCHITECTURE.md §12, "Correction").
+- **Video runs on the AMD iGPU, not the GTX 1650, in a Wayland session.**
+  Chrome on the NVIDIA card through PRIME offload either can't show video at
+  all (OpenGL/GLX: `<video>` white, canvas copies black) or loses GPU
+  compositing (EGL, Vulkan). `run.py --open nvidia` therefore falls back to the
+  default GPU under Wayland. Untested but likely to work: log in to "Ubuntu on
+  Xorg", where `prime-select nvidia` makes the 1650 the primary GPU. Video-free
+  content (visualisers) does render correctly on the 1650 under Wayland
+  (`LIGHTSABER_FORCE_NVIDIA=1`). By hand, the NVIDIA launch is:
+
+  ```bash
+  __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia \
+    google-chrome --ozone-platform=x11 \
+    --user-data-dir="$HOME/.config/lightsaber-chrome" http://localhost:8080
+  ```
+
+  Check that a video is visible before trusting it. `--user-data-dir` is not
+  optional: Chrome runs one process per profile, so
+  with your everyday Chrome already open, launching without it only opens a
+  window in that existing process — on the iGPU. `--ozone-platform=x11` is
+  needed under Wayland, where Chrome otherwise ignores the PRIME variables.
+  `prime-select nvidia` doesn't help on Wayland (verified 2026-11: set, and
+  Chrome still got the iGPU). A `dri_gbm.so: Permission denied` line from
+  Chrome's sandbox is harmless — confirmed on the 1650 with the sandbox on.
+
+  The whole browser shares one GPU process, so the editor and every output
+  window it opens move together. The **GPU** dot in the header shows which one
+  each output window got: green for the dedicated card, amber for integrated,
+  red for software rendering. Hover it for every window's paint rate.
+- **Don't set the project fps above what the content needs.** 30 is plenty
+  for 25fps footage. At 60, the iGPU with 12 filtered distorted layers
+  collapsed to 9fps rather than settling at 30.
+- **Turn off the editor's live preview** (the screen icon in the canvas
+  toolbar) during a show. The editor is a full renderer with its own copy of
+  every video; off, it draws outlines only.
+- **Plug the laptop in** — on battery the CPU runs at its power-saving clock.
+- The **Output Preview** tab is a real renderer per output. Its tiles exist
+  only while the tab is open; leave it closed during a show.
+
+The server-side diagnostics (Settings › Diagnostics, or `--diag`) time the
+compositor's tick, which is now well under a millisecond for ten shapes. They
+do **not** measure what an output window paints; tick "show output FPS" in
+the Project tab for that.
+
+## Troubleshooting
+
+**An output window opens white / blank, with an empty console.** Check the
+window's URL: if it says `about:blank`, no page ever loaded and nothing in
+lightsaber is at fault. Chrome could not spawn a renderer process, which in
+practice means the machine is out of memory. Each output window costs
+420-770MB because it decodes every media layer independently — see
+ARCHITECTURE.md's GPU-cost list, item 7, for the measurements and the
+mitigations. Typically the first one or two windows open and later ones do
+not.
+
+**Output windows are black but the editor looks fine.** Look at `active` in
+the state broadcast: media, webcam and text layers deliberately draw nothing
+when the engine is stopped, so an output goes fully black on Stop. That is by
+design, not a fault.
+
+**The editor stops responding after a server restart.** It should reconnect on
+its own within a second or two (`connectWS`). If it does not, the engine dot
+in the header stays out — that is the only signal, so watch it.
+
+**One shape vanishes but the rest of the frame is fine.** A layer that throws
+while drawing is skipped and named in the console once (see `safeLayer` in
+both renderers). Before that guard existed, one bad layer abandoned the whole
+frame and the window simply went black.
+
+**Video shapes draw black (or a `<video>` shows white) but everything else
+is fine.** Check the GPU dot: on the NVIDIA card in a Wayland session, Chrome
+can't display video. Use the default GPU (see Performance).
+
+**Outputs all stutter at the same rate.** Count the output windows: each one
+repeats every video's work, and they share one Chrome GPU process.
+
+**Output windows are 1-indexed.** `?out=1` is the first output; `?out=0` is
+falsy and silently falls back to output 1, which makes it easy to think you
+are testing a window you are not.
 
 ## Relationship to promptwaver
 
@@ -770,13 +735,16 @@ upstream  edmonkey-nz/promptwaver
 ```
 
 **They are not merged, and shouldn't be.** Promptwaver drives a vector
-*laser*; lightsaber drives *projectors*. That single difference has pushed the
-two apart everywhere output is concerned, while leaving the scene engine
-largely shared. Roughly, by divergence:
+*laser*; lightsaber drives *projectors*. Until 2026-11 they still shared the
+generated vector-scene engine and its Claude scene director. Lightsaber
+removed that whole path (`scenes.py`, `scene3d.py`, `generators/`,
+`director/`, `primitives.py`, `shapes.py`, `geometry.py`, `modulation.py`) to
+become a video tool, so **there is no longer any shared engine code** —
+nothing from promptwaver's scene pipeline, camera or director applies here.
 
-| Shared, drifting slowly | Diverged heavily | Lightsaber-only |
-|---|---|---|
-| `scene3d.py`, `modulation.py`, `geometry.py`, `generators/`, `director/` | `engine.py`, `web/server.py`, `scenes.py` | `projects.py`, `sequencer.py`, `media_roots.py`, `media_meta.py`, `canvases.py`, `renderhost/` |
+| Diverged heavily | Lightsaber-only |
+|---|---|
+| `engine.py`, `web/server.py`, `composite.py`, both HTML renderers | `projects.py`, `sequencer.py`, `media_roots.py`, `media_meta.py`, `canvases.py`, `effectors.py`, `renderhost/` |
 
 So changes flow **selectively, by hand, one feature at a time** — never as a
 merge or a rebase. A merge would drag laser assumptions into the projector
@@ -784,40 +752,23 @@ path and vice versa.
 
 ### Porting a feature across
 
+What can still come across is web/UI-side or server plumbing (say, a websocket
+or reconnect fix), since the engines no longer overlap.
+
 1. `diff -u lightsaber/<file> ../promptwaver/promptwaver/<file>` to see the
    whole delta, then decide which hunks are the feature and which are
    divergence. They are always mixed together.
 2. Strip laser-specific parts. Promptwaver assumes an on/off beam and a
-   few-hundred-stroke budget; lightsaber has neither constraint. `ttl_quantize`
-   on `DepthCue` is the clearest example — it snaps colour channels to 0/1 for
-   TTL RGB units and is meaningless here.
+   few-hundred-stroke budget; lightsaber has neither constraint.
 3. Reword ported comments and docstrings. "a dark laser" is "an empty frame";
    `print("[promptwaver] ...")` is `[lightsaber]`.
 4. Check any new knob **defaults to the old behaviour**, so existing saved
-   scenes are unaffected. Verify it, don't assume it: `camera.wander` defaults
-   to 0 and was checked bit-identical against the previous drift before
-   shipping.
-5. Check whether the feature needs UI, prompt text, or a token budget on this
-   side. `path` mode needed all three, and without the budget it would have
-   truncated into a silent fallback.
+   canvases are unaffected. Verify it, don't assume it.
 
 ### Ported so far
 
-- **Camera `path` mode + `PathSpline`** — a closed, arc-length-parameterised
-  Catmull-Rom circuit with `waypoints` / `look_at` / `lookahead`.
-- **`camera.wander`** on drift.
-- **The `massive` scene size** in the director, which specifies a route camera
-  *and* route-shaped geometry together, plus its 32k token floor.
-
-### Deliberately not ported
-
-- **`DepthCue.ttl_quantize`** — laser-only.
-- **Promptwaver's `aspect` projection fix.** It found its perspective divide
-  had `* aspect` where it should be `/ aspect`. Lightsaber has the same line,
-  but **never sets `Camera.aspect`** — `make_camera` doesn't pass it, so it
-  stays 1.0, where both conventions are identical. Latent, not live. If camera
-  aspect is ever wired through here, take promptwaver's version; output aspect
-  is currently handled per-shape in the client instead (see *Outputs*).
+The camera `path` mode, `camera.wander` and the director's `massive` scene
+size were ported before the scene engine was removed, and went with it.
 
 ## Files on disk
 
@@ -826,10 +777,8 @@ projects/<name>/
   project.json      # resolution, outputs, fps, notes
   canvases/*.json   # this project's canvases (+ .thumb.jpg)
   sequence.json     # this project's sequence
-scenes/             # shared scene library
-  generated/        # Claude results, cached
 media/              # uploaded copies (linked media stays where it lives)
-settings.json       # API key, current project, media roots — gitignored
+settings.json       # current project, media roots — gitignored
 media_meta.json     # per-asset duration + default trim — gitignored
 ```
 

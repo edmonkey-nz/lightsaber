@@ -23,7 +23,9 @@ anything failed, so it drops straight into a shell `&&` chain or a hook.
 |---|---|---|
 | `render` | 40s | punch-through depths, chroma/luma key, all five FX, feather ramps, kaleidoscope symmetry, and one check in the real output window |
 | `ui` | 20s | every pane exists and is in the right order; controls show the right rows for the selected shape; each control's value actually reaches the server |
-| `perf` | 20s | synced frame cost for feather, key, FX and kaleidoscope against reference numbers |
+| `output` | 30s | the server tick follows the project fps; Output Preview iframes exist only while their tab is open; a filtered, translucent warp mesh renders the right value with no seam grid, in both renderers; the output window paints video at the project rate when server messages thin out, and a still image only on messages |
+| `perf` | 20s | synced frame cost for feather, key, FX and kaleidoscope, as a delta over a baseline measured in the same run |
+| `resilience` | 20s | the editor survives the server restarting under it — runs last, since it cycles the server |
 
 ## Reading the output
 
@@ -43,14 +45,15 @@ someone — or to Claude — paste the failing block verbatim; it carries the
 symptom, the expectation and the first place to look. `--json` writes the same
 records for a tool to read.
 
-`perf` lines are notes, not assertions, except for a `within-budget` check that
-only fires at 2.5x the reference. The references were measured on one machine
-(named in the output) so they are a tripwire for "this got dramatically worse",
-not a spec.
+`perf` lines are notes, not assertions, except for a `within-budget` check.
+Those compare the **delta over a baseline measured moments earlier in the same
+run**, not an absolute time: absolute times move with machine load, and a check
+that cries wolf is one people learn to ignore. The references are still a
+tripwire for "this got dramatically worse", not a spec.
 
 ## Three things the harness handles that are easy to get wrong by hand
 
-- **It never touches your work.** `run.py` resolves `scenes/`, `projects/`,
+- **It never touches your work.** `run.py` resolves `projects/`,
   `media/` and `settings.json` relative to the repo root, so a test server
   started in the repo would read and write your real projects. The harness
   builds a throwaway copy in a temp dir with generated fixtures, on a free
@@ -64,6 +67,18 @@ not a spec.
   every filter looks free. And headless Chromium is SwiftShader even with the
   GPU flags, so headless timings are software and about ten times too slow.
   `--headless` works but skips the perf comparisons and says so.
+
+  The readback has a cost of its own worth knowing: on the AMD iGPU, a canvas
+  that has been read back runs at about **half** its previous throughput from
+  then on (measured 2026-11; the GTX 1650 is unaffected). The `perf` deltas are
+  still comparable run to run, but the absolute numbers are pessimistic.
+
+**Video fixtures are WebM, deliberately.** Playwright's bundled Chromium has no
+H.264 decoder: an `.mp4` layer never becomes ready and draws black, which looks
+exactly like a render bug. The harness makes `loop.webm` (VP8) with ffmpeg when
+it is installed; without ffmpeg the video checks report SKIPPED rather than
+failing. To test real H.264 media, launch system Chrome
+(`chromium.launch(channel="chrome")`).
 
 ## Adding a check
 
