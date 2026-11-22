@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Useful `run.py` flags: `--web-port`, `--fps` (startup compositor rate; a project's
 own saved fps overrides it), `--media-root NAME=PATH` (repeatable; only files under
-a registered root are ever served), `--diag`, `--model`.
+a registered root are ever served), `--diag`, `--host`.
 
 Ruff and Black are configured in `pyproject.toml` (line-length 100, `py310`) but are
 **not installed in the venv** — install them before claiming a lint pass.
